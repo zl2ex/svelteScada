@@ -7,11 +7,31 @@ const webSocketServer = {
 	name: 'webSocketServer',
 	configureServer(server: ViteDevServer) 
 	{
-		if (!server.httpServer) return
+		if (!server.httpServer) return;
 		const io = new Server(server.httpServer)
-		io.on('connection', (socket) => {
-			socket.emit('eventFromServer', 'Hello, World 👋')
-		})
+		io.on("connection", (socket) => {
+			socket.on("disconnect", () => {
+				console.log("socket disconnect");
+			})
+
+			socket.on("subscribe", (topics) => {
+				socket.join(topics);
+				console.log(topics);
+			});
+			
+			socket.on("unsubscribe", (topic) => {
+				socket.leave(topic);
+			});
+
+
+
+			socket.on("aprt01", (value) => {
+				console.log(value);
+				io.emit("aprt01", value);
+			});
+			
+			// send an event only to clients that have shown interest in the "foo" topic
+		});
 	}
 }
 

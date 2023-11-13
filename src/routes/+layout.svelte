@@ -41,6 +41,7 @@
 			<a href="/about">About</a>
 			<a href="/login">Login</a>
 			<a href="/register">Register</a>
+			<a href="/scada">Scada</a>
 		</nav>
 		<main>
 			<slot/>
