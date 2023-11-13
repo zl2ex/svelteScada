@@ -1,107 +1,159 @@
-@import '@fontsource/fira-mono';
-
-:root {
-	--font-body: Arial, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
-		Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-	--font-mono: 'Fira Mono', monospace;
-	--color-bg-0: rgb(202, 216, 228);
-	--color-bg-1: hsl(209, 36%, 86%);
-	--color-bg-2: hsl(224, 44%, 95%);
-	--color-theme-1: #ff3e00;
-	--color-theme-2: #4075a6;
-	--color-text: rgba(0, 0, 0, 0.7);
-	--column-width: 42rem;
-	--column-margin-top: 4rem;
-	font-family: var(--font-body);
-	color: var(--color-text);
+*
+{
+    box-sizing: border-box;
 }
 
-body {
-	min-height: 100vh;
-	margin: 0;
-	background-attachment: fixed;
-	background-color: var(--color-bg-1);
-	background-size: 100vw 100vh;
-	background-image: radial-gradient(
-			50% 50% at 50% 50%,
-			rgba(255, 255, 255, 0.75) 0%,
-			rgba(255, 255, 255, 0) 100%
-		),
-		linear-gradient(180deg, var(--color-bg-0) 0%, var(--color-bg-1) 15%, var(--color-bg-2) 50%);
+:root
+{
+    --app-font-size-desktop: 16px;
+    --app-font-size-mobile: 24px;
+
+    font-size: var(--app-font-size-desktop);
+    font-family: sans-serif;
+
+    --app-text-color: #ffffff;
+
+    --app-color-neutral-000: #000000;
+    --app-color-neutral-100: #101010;
+    --app-color-neutral-200: #202020;
+    --app-color-neutral-300: #303030;
+    --app-color-neutral-400: #505050;
+    --app-color-neutral-500: #707070;
+
+
+    --app-color-neutral-600: #909090;
+    --app-color-neutral-700: #a0a0a0;
+    --app-color-neutral-800: #c0c0c0;
+    --app-color-neutral-900: #ffffff;
+
+    --app-color-state-off: var(--app-color-neutral-300);
+    --app-color-state-on: #00ff00;
+    --app-color-state-warn: #ffd900;
+    --app-color-state-fault: #ff0000;
+    --app-color-state-error: #ff0000;
+    --app-color-stroke: #000;
+
+    --app-color-primary-000: hsl(283, 95%, 16%);
+    --app-color-primary-100: hsl(283, 86%, 25%);
+    --app-color-primary-200: hsl(283, 80%, 28%);
+    --app-color-primary-300: hsl(283, 74%, 32%);
+    --app-color-primary-400: hsl(283, 63%, 44%);
+    --app-color-primary-500: hsl(283, 56%, 49%);
+    --app-color-primary-600: hsl(283, 59%, 54%);
+    --app-color-primary-700: hsl(283, 76%, 65%);
+    --app-color-primary-800: hsl(283, 74%, 71%);
+    --app-color-primary-900: hsl(283, 81%, 79%);
+
+    --app-color-secondary-000: hsl(190, 95%, 16%);
+    --app-color-secondary-100: hsl(190, 86%, 25%);
+    --app-color-secondary-200: hsl(190, 80%, 28%);
+    --app-color-secondary-300: hsl(190, 74%, 32%);
+    --app-color-secondary-400: hsl(190, 63%, 44%);
+    --app-color-secondary-500: hsl(190, 56%, 49%);
+    --app-color-secondary-600: hsl(190, 59%, 54%);
+    --app-color-secondary-700: hsl(190, 76%, 65%);
+    --app-color-secondary-800: hsl(190, 74%, 71%);
+    --app-color-secondary-900: hsl(190, 81%, 79%);
+
+
+    --app-color-info-1: #ff00ff;
+    --app-color-info-2: #965096;
+    --app-color-info-3: #00ff80;
+    --app-color-info-4: #6ab361;
+    --app-color-info-5: #00ffdd;
+
+
+
+
+
+    /* hover active focus state varibles */
+
+    --app-hover-brightness: 0.9;
+    --app-active-brightness: 0.8;
+    --app-focus-brightness: 0.9;
+
 }
 
-h1,
-h2,
-p {
-	font-weight: 400;
+@media only screen and (max-aspect-ratio: 0.7)
+{
+    :root
+    {
+        font-size: var(--app-font-size-mobile);
+    }
 }
 
-p {
-	line-height: 1.5;
+body
+{
+    color: var(--app-text-color);
+    background-color: var(--app-color-neutral-300);
+    min-height: 100svh;
+    margin: 0;
 }
 
-a {
-	color: var(--color-theme-1);
+.app
+{
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+}
+
+
+a 
+{
 	text-decoration: none;
 }
 
-a:hover {
-	text-decoration: underline;
-}
-
-h1 {
-	font-size: 2rem;
-	text-align: center;
-}
-
-h2 {
-	font-size: 1rem;
-}
-
-pre {
-	font-size: 16px;
-	font-family: var(--font-mono);
-	background-color: rgba(255, 255, 255, 0.45);
-	border-radius: 3px;
-	box-shadow: 2px 2px 6px rgb(255 255 255 / 25%);
-	padding: 0.5em;
-	overflow-x: auto;
-	color: var(--color-text);
-}
-
-.text-column {
-	display: flex;
-	max-width: 48rem;
-	flex: 0.6;
-	flex-direction: column;
-	justify-content: center;
-	margin: 0 auto;
-}
-
 input,
-button {
+button,
+a
+{
 	font-size: inherit;
 	font-family: inherit;
 }
 
-button:focus:not(:focus-visible) {
-	outline: none;
+input:hover, 
+button:hover,
+a:hover,
+.btn:hover
+{
+    opacity: 0.85;
 }
 
-@media (min-width: 720px) {
-	h1 {
-		font-size: 2.4rem;
-	}
+input:active,
+button:active,
+a:active,
+.btn:active
+{
+    opacity: 0.75;
 }
 
-.visually-hidden {
-	border: 0;
-	clip: rect(0 0 0 0);
-	height: auto;
-	margin: 0;
-	overflow: hidden;
-	padding: 0;
-	position: absolute;
-	width: 1px;
-	white-space: nowrap;
+input:focus:not(:active), 
+button:focus:not(:active),
+a:focus:not(:active),
+.btn:focus:not(:active)
+{
+    outline: 2px solid var(--app-color-primary-600);
+    outline-offset: -2px;
+}
+
+.btn,
+button
+{
+    color: inherit;
+    cursor: pointer;
+    border: 1px solid var(--app-color-neutral-000);
+    border-radius: 0.2rem;
+    padding: 0.2rem 1rem;
+    width: fit-content;
+}
+
+.primary
+{
+    background-color: var(--app-color-primary-400);
+}
+
+.secondary
+{
+    background-color: var(--app-color-secondary-400);
 }
