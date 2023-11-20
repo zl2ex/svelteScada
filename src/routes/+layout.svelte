@@ -151,6 +151,7 @@
 		& main
 		{
 			flex: 1;
+			flex-wrap: wrap;
 			display: flex;
 			flex-direction: row;
 			align-items: start;

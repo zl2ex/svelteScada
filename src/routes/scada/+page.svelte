@@ -1,78 +1,132 @@
 <script lang="ts">
-    import type { PageData } from './$types';
-    import DigitalInRound from '$lib/componets/DigitalInRound.svelte';
-    
-    //export let data: PageData;
-
     import { io } from 'socket.io-client';
     import { onDestroy } from 'svelte';
+    import { type Writable } from 'svelte/store';
 
+    
+    import DigitalInRound from '$lib/componets/scada/DigitalInRound.svelte';
+    import type { Tags } from '$lib/tag/tags';
+    import type { BaseTag } from '$lib/tag/baseTag';
+    import NumberDisplay from '$lib/componets/scada/NumberDisplay.svelte';
+    import { createTagStore } from '$lib/tag/tagStore';
+
+    
+
+    //export let data; // server load is cached'
+
+    /*
+
+    function createTagStore()
+    {
+        let tags = writable<BaseTag<object>>(undefined);
+        function update()
+        {
+            console.log("update");
+
+        }
+        return {
+            ...tags,
+            update
+        };
+    }
+
+*/
+   let tags: Tags;// = createTagStore();
+
+    // WIP Make this auto populate by referencing the tag attribute on elements
+    // tags used on page
+    let subscriptions: string[] = ["aprt01", "aprt02", "attx01"];
+    let tagNames = subscriptions;
+
+    /*
+
+    let tagsArray: Writable<BaseTag<object>> = {};
+    for(let name of tagNames)
+    {
+        tagsArray[name] = createTagStore();
+    };
+
+    console.log(tagsArray.attx01.data.value);
+    
+
+    
+*/
+
+    let tagStoreDemo = createTagStore<AnalogIn>();
+
+    
+
+
+
+
+    
     const socket = io();
 
-    let subscriptions: string[] = [];
-
-    function subscribe(topic: string) 
-    {
-        subscriptions.push(topic);
-        if (socket.connected) 
-        {
-            socket.emit("subscribe", [topic]);
-        }
-    }
-
-    function unsubscribe(topic: string) 
-    {
-        const i = subscriptions.indexOf(topic);
-        if (i !== -1) 
-        {
-            subscriptions.splice(i, 1);
-            if (socket.connected) 
-            {
-                socket.emit("unsubscribe", topic);
-            }
-        }
-    }
-
-    function unsubscribeAll()
-    {
-        for (let topic of subscriptions)
-        {
-            unsubscribe(topic);
-        }
-    }
 
     // restore the subscriptions upon reconnection
     socket.on("connect", () => {
-        if (subscriptions.length && !socket.recovered) {
-            socket.emit("subscribe", subscriptions);
+        // new connection get tags data
+        if(tags == undefined) 
+        {
+            socket.emit("tags:read", subscriptions);
         }
-    });
-
-    //subscribe("aprt01");
-
-    socket.on("connect", () => {
-        console.log("Socket connected");
-    });
-
-    socket.on("aprt01", (data) => {
-        aprt01.data = data;
+        // always subscribe for updates
+        socket.emit("tags:subscribe", subscriptions);
     });
 
 
-    let aprt01: BaseTag<DigitalIn> = {
-        name: "aprt01",
-        data: {
-            value: false,
-            fault: true
-        },
-        enabled: true
-    };
+    socket.on("disconnect", () => {
+        console.log("socket disconnected");
+    });
+
+
+    
+    socket.on("tags:read", (data) => {
+        tags = data;
+    });
+
+
+    socket.on("tag:update", (tag:BaseTag<object>) => {
+        // WIP if((tag in tags) == false) return; // no key of that name in tags
+        tags[tag.name as keyof typeof tags] = tag;
+        console.log("tag:update " + tag.name);
+        console.log(tag);
+    });
+
+    function unsubscribeAll()
+    {
+        socket.emit("tags:unsubscribe", subscriptions);
+        socket.disconnect();
+    }
+
+    function writeTag(tag: BaseTag<object>)
+    {
+        //WIP move to tags.tag.set() so we can check its been updated on the server before setting state
+        console.log(tag);
+       /* let badTag:BaseTag<object> = {
+            name:"bad",
+            data: {
+                value: false,
+            },
+            enabled: true
+        };*/
+        socket.emit("tag:update", tag);
+    }
 
       // WIP  ////////////////////////////////
     function onClick()
     {
-        aprt01.data.fault = !aprt01.data.fault;
-        socket.emit("aprt01", aprt01.data);
+        tags.aprt01.data.value = !tags.aprt01.data.value;
+        writeTag(tags.aprt01);
+        console.log("click");
+    }
+
+
+    function onClick1()
+    {
+        tags.aprt02.data.value = !tags.aprt02.data.value;
+        writeTag(tags.aprt02);
+        console.log("click");
     }
 ///////////////////////////////////////
 
@@ -80,4 +134,7 @@
 
 </script>
 
-<DigitalInRound bind:tag={aprt01} on:click={onClick} size="20px" faultFlash/>
+<DigitalInRound tag={tags?.aprt01} on:click={onClick} style="width: 20px" faultFlash/>
+<DigitalInRound tag={tags?.aprt02} on:click={onClick1} style="width: 20px" faultFlash/>
+
+<NumberDisplay tag={tagStoreDemo} style="" faultFlash></NumberDisplay>

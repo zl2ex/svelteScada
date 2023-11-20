@@ -1,5 +1,8 @@
-import type { PageServerLoad } from './$types';
+/*import { tags } from '$lib/tag/tags';
 
-export const load = (async () => {
-    return {};
-}) satisfies PageServerLoad;
+export async function load(event)
+{
+        console.log("server load");
+        console.log(tags);
+    return {tags};
+}*/

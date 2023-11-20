@@ -1,21 +1,20 @@
-
 <script lang="ts">
-    //import { type DigitalIn } from '../tag/baseTag.ts';
-
+    import type { BaseTag } from '$lib/tag/baseTag.ts';
     import { browser } from '$app/environment'; 
 
 	export let tag: BaseTag<DigitalIn>;
-    export let size: string = "30px";
+
+    export let style: string = "";
     export let faultFlash: boolean = false;
 
     let c = "fault"; // default state
 
     let flashToggle = false;
-    let intervalId: NodeJS.Timeout;
+    let intervalId: NodeJS.Timeout | undefined;
     function flash()
     {
         if(!browser) return; // only run on client
-        if(tag.data.fault)
+        if(tag?.data.fault)
         {
             c = "fault";
             if(flashToggle) c = "";
@@ -36,20 +35,20 @@
     $: 
     {
         c = "";
-        if(tag.data.value) c = "on";
-        if(tag.data.fault) c = "fault";
+        if(tag?.data.value) c = "on";
+        if(tag?.data.fault) c = "fault";
 
         if(faultFlash) flash();
     }
 
 </script>
-
-    <svg viewBox="0 0 60 60" class={c} width={size} on:click>
+    <p>{tag?.name}</p>
+    <svg viewBox="0 0 60 60" class={c} style={style} on:click>
         <g stroke-width="5%">
+            <text>T</text>
             <circle cx="50%" cy="50%" r="45%"></circle>
         </g>
     </svg>
-
 
 <style>
 
@@ -57,6 +56,19 @@
     {
         fill: var(--app-color-neutral-400);
         stroke: var(--app-color-neutral-000);
+       
+        & text
+        {
+            font: italic 6px serif;
+            fill: var(--app-color-neutral-000);
+        }
+        
+    }
+
+    p
+    {
+        font-size: 0.6rem;
+        margin: 0;
     }
 
     .on
