@@ -52,7 +52,31 @@
     
 */
 
-    let tagStoreDemo = createTagStore<AnalogIn>();
+        let tag = {
+            tagStoreDemo: createTagStore<AnalogIn>(
+            "tagStoreDemo", {
+                value: 0,
+                scaling: {
+                    inMin: 0,
+                    inMax: 1023,
+                    outMin: 0,
+                    outMax: 100
+                }, fault: true
+            }),
+            tagStoreDem01: createTagStore<AnalogIn>(
+            "tagStoreDemo1", {
+                value: 1,
+                scaling: {
+                    inMin: 0,
+                    inMax: 1023,
+                    outMin: 0,
+                    outMax: 100
+                }, fault: false
+            })
+        };
+
+
+        type Tag = typeof tag;
 
     
 
@@ -60,7 +84,7 @@
 
 
     
-    const socket = io();
+    const socket = io("ws://localhost:3000");
 
 
     // restore the subscriptions upon reconnection
@@ -86,7 +110,7 @@
     });
 
 
-    socket.on("tag:update", (tag:BaseTag<object>) => {
+    socket.on("tag:update", (tag) => {
         // WIP if((tag in tags) == false) return; // no key of that name in tags
         tags[tag.name as keyof typeof tags] = tag;
         console.log("tag:update " + tag.name);
@@ -137,4 +161,5 @@
 <DigitalInRound tag={tags?.aprt01} on:click={onClick} style="width: 20px" faultFlash/>
 <DigitalInRound tag={tags?.aprt02} on:click={onClick1} style="width: 20px" faultFlash/>
 
-<NumberDisplay tag={tagStoreDemo} style="" faultFlash></NumberDisplay>
+<NumberDisplay tag={tag.tagStoreDemo} style="" faultFlash></NumberDisplay>
+

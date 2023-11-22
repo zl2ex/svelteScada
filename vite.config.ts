@@ -1,19 +1,23 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { type ViteDevServer, defineConfig } from 'vite';
+
+import { BaseTagServer } from './src/lib/tag/baseTag';
 import { Server } from 'socket.io';
 
-import { tags } from './src/lib/tag/tags';
-import type { BaseTag } from '$lib/tag/baseTag';
-import { error } from '@sveltejs/kit';
+import { webSocketServer } from './socketIoPluginVite';
 
-const webSocketServer = {
+/*
+export const webSocketServer = {
 	name: 'webSocketServer',
 	configureServer(server: ViteDevServer) 
 	{
 		if (!server.httpServer) return;
+		
+		//BaseTagServer.socketIoInit(server.httpServer);
+
 		const io = new Server(server.httpServer);
 
-
+		/*
 		function updateTag(tag: BaseTag<object>)
 		{
 			io.to(tag.name).emit("tag:update", tag);
@@ -21,13 +25,14 @@ const webSocketServer = {
 
 		function incrimentTest()
 		{
-			tags.attx01.data.value++;
+			/*tags.attx01.data.value++;
 			updateTag(tags.attx01);
 			console.log(tags.attx01.data.value);
+			test.data = {value: !test.data.value, fault: false};
 			setTimeout(incrimentTest, 1000);
 		}
 
-		incrimentTest();
+		//incrimentTest();
 		
 		io.on("connection", (socket) => {
 
@@ -37,6 +42,7 @@ const webSocketServer = {
 				console.log("socket disconnected  id " + socket.id);
 			})
 
+			/*
 			// get a list of tags, same as a GET request basically
 			socket.on("tags:read", (names: string[]) => {
 				let ret:any = {};
@@ -88,10 +94,16 @@ const webSocketServer = {
 				}
 				console.log("tags:unsubscribe " + names);
 			});
+			
 		});
+
 	}
-}
+};
+
+*/
+
 
 export default defineConfig({
 	plugins: [sveltekit(), webSocketServer]
 });
+

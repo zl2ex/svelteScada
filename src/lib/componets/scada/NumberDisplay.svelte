@@ -1,8 +1,17 @@
 <script lang="ts">
     import type { BaseTag } from '$lib/tag/baseTag.ts';
     import { browser } from '$app/environment'; 
+    import type { Writable } from 'svelte/store';
 
-	export let tag: BaseTag<AnalogIn>;
+	export let tag: Writable<BaseTag<AnalogIn>>;
+    
+    let _tag: BaseTag<AnalogIn>;
+
+    tag.subscribe((value) => {
+        console.log("number display subscribed");
+        console.log(value);
+        _tag = value;
+    });
 
     export let style: string = "";
     export let faultFlash: boolean = false;
@@ -14,7 +23,7 @@
     function flash()
     {
         if(!browser) return; // only run on client
-        if(tag?.data.fault)
+        if(_tag?.data.fault)
         {
             c = "fault";
             if(flashToggle) c = "";
@@ -35,15 +44,35 @@
     $:
     {
         c = "";
-        if(tag?.data.fault) c = "fault";
+        if(_tag?.data.fault) c = "fault";
 
         if(faultFlash) flash();
     }
 
+
+    function onClick()
+    {
+        console.log("click");
+        tag.set({ 
+            name: "tagStoreDemo",
+            data: {
+                value: 1,
+                scaling: {
+                    inMin: 0,
+                    inMax: 1023,
+                    outMin: 0,
+                    outMax: 100
+                }, 
+                fault: true
+            },
+            enabled: true
+        });
+    }
+
 </script>
-<div class={c} style={style}>
-    <p class="label">{tag?.name}</p>
-    <p class="value">{tag?.data.value}</p>
+<div class={c} style={style} on:click={onClick}>
+    <p class="label">{_tag?.name}</p>
+    <p class="value">{_tag?.data.value}</p>
 </div>
 
 <style>
