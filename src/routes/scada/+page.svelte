@@ -8,8 +8,6 @@
     import type { Tags } from '$lib/tag/tags';
     import type { BaseTag } from '$lib/tag/baseTag';
     import NumberDisplay from '$lib/componets/scada/NumberDisplay.svelte';
-    import { createTagStore } from '$lib/tag/tagStore';
-
     
 
     //export let data; // server load is cached'
@@ -50,7 +48,7 @@
     
 
     
-*/
+
 
         let tag = {
             tagStoreDemo: createTagStore<AnalogIn>(
@@ -80,11 +78,11 @@
 
     
 
-
+*/
 
 
     
-    const socket = io("ws://localhost:3000");
+    const socket = io('ws://localhost:5173');
 
 
     // restore the subscriptions upon reconnection
@@ -161,5 +159,6 @@
 <DigitalInRound tag={tags?.aprt01} on:click={onClick} style="width: 20px" faultFlash/>
 <DigitalInRound tag={tags?.aprt02} on:click={onClick1} style="width: 20px" faultFlash/>
 
-<NumberDisplay tag={tag.tagStoreDemo} style="" faultFlash></NumberDisplay>
+<!--<NumberDisplay tag={tag.tagStoreDemo} style="" faultFlash></NumberDisplay>
+-->
 

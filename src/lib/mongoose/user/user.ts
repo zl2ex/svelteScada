@@ -38,5 +38,6 @@ userSchema.pre('save', async function (this: UserDocument) {
     this.password = hashedPassword;
 });
 
-// only overwrite if it doesnt exist
-export const UserModel = mongoose.models.UserModel || mongoose.model('User', userSchema);
+// WIP only overwrite if it doesnt exist
+
+ export const UserModel = mongoose.model('User', userSchema);

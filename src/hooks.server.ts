@@ -14,7 +14,7 @@ type SessionUser = {
 await dataBaseConnect();
 
 export const handle: Handle = async ({ event, resolve }) => {
-    console.log("handle");
+    console.log("handleHook");
     const { headers } = event.request;
     const cookies = parse(headers.get("cookie") ?? "");
    
@@ -44,13 +44,19 @@ export const handle: Handle = async ({ event, resolve }) => {
                 id: user.id,
                 username: user.username,
             };
-   
+            
+            console.log(sessionUser);
             event.locals.user = sessionUser;
+
         } 
-        catch (error) 
+        catch (error)
         {
             console.error(error);
         }
+    }
+    else 
+    {
+        console.log("no cookie provided");
     }
    
     return await resolve(event);

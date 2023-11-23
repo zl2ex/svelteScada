@@ -1,10 +1,7 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { type ViteDevServer, defineConfig } from 'vite';
 
-import { BaseTagServer } from './src/lib/tag/baseTag';
-import { Server } from 'socket.io';
-
-import { webSocketServer } from './socketIoPluginVite';
+import { webSocketServer } from './server/socketIoPluginVite';
 
 /*
 export const webSocketServer = {
