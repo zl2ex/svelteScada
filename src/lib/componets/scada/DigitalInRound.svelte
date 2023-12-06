@@ -1,13 +1,17 @@
 <script lang="ts">
     import type { BaseTag } from '$lib/tag/baseTag.ts';
-    import { browser } from '$app/environment'; 
+    import { browser } from '$app/environment';
 
-	export let tag: BaseTag<DigitalIn>;
+    type props = {
+        tag: BaseTag<DigitalIn>;
+        style: string;
+        faultFlash: boolean;
+    };
 
-    export let style: string = "";
-    export let faultFlash: boolean = false;
+    let { tag, style = "", faultFlash = false } = $props<props>();
 
-    let c = "fault"; // default state
+
+    let c = $state("fault"); // default state
 
     let flashToggle = false;
     let intervalId: NodeJS.Timeout | undefined;
@@ -32,14 +36,14 @@
         }
     }
     
-    $: 
+    $effect(() =>
     {
         c = "";
-        if(tag?.data.value) c = "on";
+        if(tag?.data.value) c = "on"
         if(tag?.data.fault) c = "fault";
 
         if(faultFlash) flash();
-    }
+    });
 
 </script>
     <p>{tag?.name}</p>
@@ -57,12 +61,13 @@
         fill: var(--app-color-neutral-400);
         stroke: var(--app-color-neutral-000);
        
-        & text
-        {
-            font: italic 6px serif;
-            fill: var(--app-color-neutral-000);
-        }
         
+    }
+
+    text
+    {
+        font: italic 6px serif;
+        fill: var(--app-color-neutral-000);
     }
 
     p

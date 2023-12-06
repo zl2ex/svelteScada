@@ -2,14 +2,22 @@
 	import './styles.css';
 	import github from '$lib/images/github.svg';
     import Hamburger from '$lib/componets/Hamburger.svelte';
+	import { onMount } from "svelte";
+	//import { createSocketIo, createTagStore } from "$lib/tag/tagStore.svelte.ts";
 
-	let menuOpen = false;
+
+	//let tagsC = createTagStore();
+
+	// create socketIo conection for tags store
+	//createSocketIo();
+
+	let menuOpen = $state(false);
+
 
 </script>
 
 <div class="app">
 	
-
 	<header>
 		<div class="corner">
 			<!--
@@ -62,83 +70,28 @@
 		justify-content: space-between;
 		align-items: center;
 		background-color: var(--app-color-neutral-400);
-
-		& .corner
-		{
+		
+	}
+	
+	header .corner
+	{
 			display: flex;
 			align-items: center;
+			
+			
+	}
 
-			& img
-			{
-				width: 2rem;
-				height: 2rem;
-				object-fit: contain;
-			}
+	header .corner img
+	{
+		width: 2rem;
+		height: 2rem;
+		object-fit: contain;
+	}
 
-			& .Hamburger
-			{
-				display: flex;
-			}
-
-			/*
-			& #hamburger
-			{
-				position: absolute;
-				top: -1000px;
-				left: -1000px;
-				width: 0;
-				height: 0;
-
-				&:focus:not(:active)
-				{
-					outline: none;
-				}
-			}
-
-			& label
-			{
-				z-index: 20;
-				display: none;
-
-				&:focus:not(:active)
-				{
-					outline: 2px solid var(--app-color-primary-600);
-				}
-
-				& .hamburgerAnimation
-				{
-					width: 60px;
-					padding: 10px;
-					stroke: var(--app-color-neutral-900);
-
-					& .top, .middle, .bottom
-					{
-						transition: 0.1s;
-					}
-				}
-			}
-
-			& #hamburger:checked
-			{
-				& ~ label .hamburgerAnimation .top
-				{
-					transform-origin: top left;
-					transform: translate(25%, -5%) rotate(45deg) scaleX(0.85);
-				}
-
-				& ~ label .hamburgerAnimation .middle
-				{
-					opacity: 0;
-				}
-
-				& ~ label .hamburgerAnimation .bottom
-				{
-					transform-origin: bottom left;
-					transform: translate(25%, 5%) rotate(-45deg) scaleX(0.85);
-				}
-			}
-			*/
-		}
+	.Hamburger
+	{
+		display: flex;
+		
 	}
 
 
@@ -147,38 +100,38 @@
 		display: flex;
 		flex: 1;
 		flex-direction: row;
+	}
 
-		& main
-		{
-			flex: 1;
-			flex-wrap: wrap;
-			display: flex;
-			flex-direction: row;
-			align-items: start;
-			justify-content: center;
-		}
+	main
+	{
+		flex: 1;
+		flex-wrap: wrap;
+		display: flex;
+		flex-direction: row;
+		align-items: start;
+		justify-content: center;
+	}
 
-		& nav
-		{
-			display: flex;
-			flex: 0;
-			flex-direction: column;
-			justify-content: start;
-			background-color: brown;
-			z-index: 10;
+	nav
+	{
+		display: flex;
+		flex: 0;
+		flex-direction: column;
+		justify-content: start;
+		background-color: brown;
+		z-index: 10;
+	}
 
-			& a
-			{
-				display: flex;
-				align-items: center;
-				padding: 0.5rem 0.5rem;
-				color: inherit;
-				font-size: 0.8rem;
-				text-transform: uppercase;
-				letter-spacing: 0.1rem;
-				text-decoration: none;
-			}
-		}
+	nav a
+	{
+		display: flex;
+		align-items: center;
+		padding: 0.5rem 0.5rem;
+		color: inherit;
+		font-size: 0.8rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1rem;
+		text-decoration: none;
 	}
 
 	footer
@@ -193,12 +146,6 @@
 	/*on mobile show hamburger and have a closable side menu*/
 	@media only screen and (max-aspect-ratio: 0.7)
 	{
-
-		header .corner .Hamburger
-		{
-			display: flex;
-		}
-
 		section nav 
 		{
 			position: absolute;

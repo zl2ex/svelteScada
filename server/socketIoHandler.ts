@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
-import { tags } from '../src/lib/tag/tags.ts';
-import { BaseTagServer } from '../src/lib/tag/baseTag.ts';
+import { tags } from '../src/lib/tag/tags';
+import { BaseTagServer } from '../src/lib/tag/baseTag';
 
 
 export default function injectSocketIO(server) {
@@ -13,7 +13,7 @@ export default function injectSocketIO(server) {
 
     function onTagRead() 
     {
-        console.log("tag:read");
+        console.log("onTagRead");
     }
 
 
@@ -33,8 +33,11 @@ export default function injectSocketIO(server) {
             console.log("socket disconnected  id " + socket.id);
         })
 
-        // get a list of tags, same as a GET request basically
-        socket.on("tags:read", onTagRead);
+        // get all tags, same as a GET request basically
+        socket.on("tags:read", () => {
+            console.log("tags:read");
+            socket.emit("tags:read", tags);
+        });
 
         // update tag infomation on server,
         // then emit an event to update tag on subscribed clients
@@ -42,7 +45,7 @@ export default function injectSocketIO(server) {
             console.log("tags:update " + tag.name);
 
             // no key of that name in tags
-            if((tag.name in tags) == false) 
+            if((tag.name in tags) == false)
             {
                 console.error(`cant find ${tag.name} in tags object. please check name`);
                 return;
@@ -53,6 +56,7 @@ export default function injectSocketIO(server) {
             io.to(tag.name).emit("tag:update", tag);
         });
 
+        /*
         // subscribe to update events on that paticular tag
         socket.on("tags:subscribe", (names: string[]) => {
             for(let name of names)
@@ -73,6 +77,7 @@ export default function injectSocketIO(server) {
             }
             console.log("tags:unsubscribe " + names);
         });
+        */
 
     });
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { io } from 'socket.io-client';
+  
     import { onDestroy } from 'svelte';
     import { type Writable } from 'svelte/store';
 
@@ -8,6 +8,9 @@
     import type { Tags } from '$lib/tag/tags';
     import type { BaseTag } from '$lib/tag/baseTag';
     import NumberDisplay from '$lib/componets/scada/NumberDisplay.svelte';
+    import { tags } from '$lib/tag/tagStore.svelte';
+
+    import TagViewer from '$lib/componets/TagViewer.svelte';
     
 
     //export let data; // server load is cached'
@@ -29,14 +32,9 @@
     }
 
 */
-   let tags: Tags;// = createTagStore();
+  
 
-    // WIP Make this auto populate by referencing the tag attribute on elements
-    // tags used on page
-    let subscriptions: string[] = ["aprt01", "aprt02", "attx01"];
-    let tagNames = subscriptions;
-
-    /*
+/*
 
     let tagsArray: Writable<BaseTag<object>> = {};
     for(let name of tagNames)
@@ -80,66 +78,10 @@
 
 */
 
-
-    
-    const socket = io('ws://localhost:5173');
-
-
-    // restore the subscriptions upon reconnection
-    socket.on("connect", () => {
-        // new connection get tags data
-        if(tags == undefined) 
-        {
-            socket.emit("tags:read", subscriptions);
-        }
-        // always subscribe for updates
-        socket.emit("tags:subscribe", subscriptions);
-    });
-
-
-    socket.on("disconnect", () => {
-        console.log("socket disconnected");
-    });
-
-
-    
-    socket.on("tags:read", (data) => {
-        tags = data;
-    });
-
-
-    socket.on("tag:update", (tag) => {
-        // WIP if((tag in tags) == false) return; // no key of that name in tags
-        tags[tag.name as keyof typeof tags] = tag;
-        console.log("tag:update " + tag.name);
-        console.log(tag);
-    });
-
-    function unsubscribeAll()
-    {
-        socket.emit("tags:unsubscribe", subscriptions);
-        socket.disconnect();
-    }
-
-    function writeTag(tag: BaseTag<object>)
-    {
-        //WIP move to tags.tag.set() so we can check its been updated on the server before setting state
-        console.log(tag);
-       /* let badTag:BaseTag<object> = {
-            name:"bad",
-            data: {
-                value: false,
-            },
-            enabled: true
-        };*/
-        socket.emit("tag:update", tag);
-    }
-
       // WIP  ////////////////////////////////
     function onClick()
     {
-        tags.aprt01.data.value = !tags.aprt01.data.value;
-        writeTag(tags.aprt01);
+        tags.aprt01.data.fault = !tags.aprt01.data.fault;
         console.log("click");
     }
 
@@ -147,18 +89,17 @@
     function onClick1()
     {
         tags.aprt02.data.value = !tags.aprt02.data.value;
-        writeTag(tags.aprt02);
-        console.log("click");
+        console.log("click1");
     }
 ///////////////////////////////////////
 
-    onDestroy(unsubscribeAll);
-
 </script>
 
-<DigitalInRound tag={tags?.aprt01} on:click={onClick} style="width: 20px" faultFlash/>
-<DigitalInRound tag={tags?.aprt02} on:click={onClick1} style="width: 20px" faultFlash/>
+<DigitalInRound tag={tags.aprt01} on:click={onClick} style="width: 20px" faultFlash/>
+<DigitalInRound tag={tags.aprt02} on:click={onClick1} style="width: 20px" faultFlash/>
 
+<TagViewer tag={tags.aprt01}></TagViewer>
+<TagViewer tag={tags.attx01}></TagViewer>
 <!--<NumberDisplay tag={tag.tagStoreDemo} style="" faultFlash></NumberDisplay>
 -->
 

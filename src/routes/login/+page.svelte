@@ -45,7 +45,7 @@
         width: clamp(250px, 30%, 300px);
         gap: 1rem;
 
-        & .form-item
+        .form-item
         {
             display: flex;
             flex-direction: column;
@@ -54,13 +54,13 @@
             {
                 border-radius: 0.2rem;
             }
-        }
+        /*}  SVELTE5 CSS*/
 
-        & .form-action
+        .form-action
         {
             display: flex;
             justify-content: space-between;
         }
-    }
+    /*}  SVELTE5 CSS*/
 
 </style>

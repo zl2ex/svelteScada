@@ -1,6 +1,6 @@
 
 <script lang="ts">
-	export let active: boolean = false;
+	let { active = false } = $props();
 
     function toggleActive()
     {
@@ -28,6 +28,7 @@
         border: none;
         outline: none;
         padding: 0;
+        position: relative;
         z-index: 20;
     }
 
@@ -42,31 +43,32 @@
         padding: 10px;
         stroke: var(--app-color-neutral-900);
 
-        & .top, .middle, .bottom
-        {
-            transition: 0.1s;
-        }
     }
+
     
-    .active
+    .top, .middle, .bottom
     {
-        & .top
-        {
-            transform-origin: top left;
-            transform: translate(25%, -5%) rotate(45deg) scaleX(0.85);
-        }
-
-        & .middle
-        {
-            opacity: 0;
-        }
-
-        & .bottom
-        {
-            transform-origin: bottom left;
-            transform: translate(25%, 5%) rotate(-45deg) scaleX(0.85);
-        }
+        transition: 0.1s;
     }
+        
+    
+    .active .top
+    {
+        transform-origin: top left;
+        transform: translate(25%, -5%) rotate(45deg) scaleX(0.85);
+    }
+
+    .active .middle
+    {
+        opacity: 0;
+    }
+
+    .active .bottom
+    {
+        transform-origin: bottom left;
+        transform: translate(25%, 5%) rotate(-45deg) scaleX(0.85);
+    }
+
 </style>
 
 <!--
