@@ -1,6 +1,9 @@
 import { Server } from 'socket.io';
-import { tags } from '../src/lib/tag/tags';
-import { BaseTagServer } from '../src/lib/tag/baseTag';
+import { tags, type Tags } from '../src/lib/tag/tags';
+//import { BaseTagServer } from '../src/lib/tag/baseTag';
+
+
+let tags_server: Tags;
 
 
 export default function injectSocketIO(server) {
@@ -10,76 +13,70 @@ export default function injectSocketIO(server) {
         }
     });
 
-
-    function onTagRead() 
-    {
-        console.log("onTagRead");
-    }
-
-
-    function onTagUpdate(tag: BaseTagServer<object>)
-    {
-        io.to(tag.name).emit("tag:update", tag);
-    }
-
-    BaseTagServer.socketIoInit(onTagRead, onTagUpdate);
+    setInterval(logger, 1000);
 
        
     io.on("connection", (socket) => {
 
         console.log("socket connected  id " + socket.id);
+
+        socketIoIfy(tags, "tags");
         
         socket.on("disconnect", () => {
             console.log("socket disconnected  id " + socket.id);
-        })
-
-        // get all tags, same as a GET request basically
-        socket.on("tags:read", () => {
-            console.log("tags:read");
-            socket.emit("tags:read", tags);
         });
 
-        // update tag infomation on server,
-        // then emit an event to update tag on subscribed clients
-        socket.on("tag:update", (tag:BaseTagServer<object>) => {
-            console.log("tags:update " + tag.name);
-
-            // no key of that name in tags
-            if((tag.name in tags) == false)
+        function socketIoIfy(obj: any, topic: string) 
+        {
+            if(Array.isArray(obj)) 
             {
-                console.error(`cant find ${tag.name} in tags object. please check name`);
-                return;
-            }
-
-            tags[tag.name as keyof typeof tags] = tag;
-            console.log(tag);
-            io.to(tag.name).emit("tag:update", tag);
-        });
-
-        /*
-        // subscribe to update events on that paticular tag
-        socket.on("tags:subscribe", (names: string[]) => {
-            for(let name of names)
+                let items; // TODO FIX ARRAY NOT WORKING
+                for (let i = 0; i < obj.length; i++) 
+                {
+                    socketIoIfy(items[i], `${topic}[${i}]`);
+                }
+                return items;
+            } 
+            else if(typeof obj === 'object') 
             {
-                // tags object has that paticular tag
-                if(name in tags) socket.join(name);
-                else console.error(`subscribe to ${name} failed no tag with that name exists`);
-            }
-            console.log(`tags:subscribe ${names}`);
-        });
+                let output = {};
+                for(let key in obj) 
+                {
+                    if(typeof obj[key] === 'object') 
+                    {
+                        obj[key] = socketIoIfy(obj[key], `${topic}.${key}`);
+                    }
+                    Object.defineProperty(output, key, {
+                        get() { return obj[key]; },
+                        set(val) 
+                        { 
+                            //console.log('setting', key, val);
+                            socket.emit(`${topic}.${key}:update`, val);
+                            obj[key] = val;
+                        },
+                        enumerable: true
+                    });
 
-        socket.on("tags:unsubscribe", (names: string[]) => {
-            for(let name of names)
-            {
-                // tags object has that paticular tag
-                if(name in tags) socket.leave(name);
-                else console.log(`unsubscribed from ${name} failed no tag with that name exists`);
-            }
-            console.log("tags:unsubscribe " + names);
-        });
-        */
-
+                    // register socket on update event to get updates
+                    socket.on(`${topic}.${key}:update`, (value) => {
+                        console.log(`${topic}.${key}:update`, value);
+                        obj[key] = value;
+                    });
+                }
+                return output;
+            } 
+            else return obj;
+        }
     });
 
     console.log('SocketIO Tag server running');
+}
+
+
+
+function logger() 
+{
+    console.log(tags.aprt01.data.value);
+    tags.aprt01.data.value = !tags.aprt01.data.value;
+
 }

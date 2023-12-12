@@ -1,18 +1,21 @@
 <script lang="ts">
 	import './styles.css';
+	import { socketIoTagsClient } from '$lib/tag/tagStore.svelte';
+
 	import github from '$lib/images/github.svg';
     import Hamburger from '$lib/componets/Hamburger.svelte';
-	import { onMount } from "svelte";
-	//import { createSocketIo, createTagStore } from "$lib/tag/tagStore.svelte.ts";
+	
+	const { data } = $props();
 
-
-	//let tagsC = createTagStore();
+	socketIoTagsClient(data.tags);
 
 	// create socketIo conection for tags store
-	//createSocketIo();
+	
+	
+
+
 
 	let menuOpen = $state(false);
-
 
 </script>
 
@@ -91,7 +94,7 @@
 	.Hamburger
 	{
 		display: flex;
-		
+
 	}
 
 

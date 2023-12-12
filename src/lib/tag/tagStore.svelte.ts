@@ -1,106 +1,85 @@
 import { io } from 'socket.io-client';
 import type { Tags } from '$lib/tag/tags';
-import type { BaseTag } from './baseTag';
 
+let _tags= $state<Tags>();
 
-/*
-export function createTagStore(obj: BaseTag)
-{
-    let name: string = obj.name;
-    let data = runify(obj.data);
-
+// call this function in any component or page to get tags reference
+export function tagsRef():Tags {
+    /*
     return {
-        get name() { return name },
-
-        get data() { return data },
-        set data(v) { data = v }
-    }
+        get value() { return _tags },
+        set value(v) { _tags = v }
+    }*/
+    if(_tags) return _tags;
+    else console.error("Please call socketIoTagsClient() and pass inital value for tags");
 }
-*/
 
-export let tags = $state({
-    aprt01: {
-        name: "aprt01",
-        data: {
-            value: false,
-            fault: false
-        },
-        enabled: true
-    } as BaseTag<DigitalIn>,
 
-    aprt02: {
-        name: "aprt02",
-        data: {
-            value: false,
-            fault: false
-        },
-        enabled: true
-    } as BaseTag<DigitalIn>,
-
-    attx01: {
-        name: "attx01",
-        data: {
-            value: 0,
-            fault: false,
-            scaling: {
-                inMin: 0,
-                inMax: 1023,
-                outMin: 0,
-                outMax: 100
-            }
-        },
-        enabled: true
-    } as BaseTag<AnalogIn>,
-});
-
-/*
-export function createSocketIo()
+// pass object to be shared across client and server
+export function socketIoTagsClient(initalState: Tags)
 {
     console.log("createSocket on Client");
-    const socket = io('ws://localhost:5173');
+    const socket = io();
 
-    // restore the subscriptions upon reconnection
+    _tags = socketIoIfy(initalState, "tags");
+
     socket.on("connect", () => {
         console.log("socket connected");
-        // new connection get tags data
-        if(tags == undefined)
-        {
-            console.log("tags:read client");
-            socket.emit("tags:read");
-        }
-        // always subscribe for updates
-        socket.emit("tags:subscribe");
     });
-
 
     socket.on("disconnect", () => {
         console.log("socket disconnected");
     });
 
-
-    socket.on("tags:read", (data) => {
-        console.log(data);
-        tags = data;
-    });
-
-
-    socket.on("tag:update", (tag) => {
-        // WIP if((tag in tags) == false) return; // no key of that name in tags
-        tags[tag.name as keyof typeof tags] = tag;
-        console.log("tag:update " + tag.name);
-        console.log(tag);
-    });
-
-    function unsubscribeAll()
+    function socketIoUpdateServerVarible(path: string, val: any) 
     {
-        socket.emit("tags:unsubscribe");
-        socket.disconnect();
+        console.log(path, val);
     }
 
-    function writeTag(tag: BaseTagServer<object>)
+
+    // TODO FIX ARRAY's 
+    //let test = socketIoIfy([{test: 1, demo: 2, is:false}, {boo: false}])
+
+    function socketIoIfy(obj: any, topic: string) 
     {
-        //WIP move to tags.tag.set() so we can check its been updated on the server before setting state
-        console.log(tag);
-        socket.emit("tag:update", tag);
+        if(Array.isArray(obj)) 
+        {
+            let items;
+            for (let i = 0; i < obj.length; i++) 
+            {
+                socketIoIfy(items[i], `${topic}[${i}]`);
+            }
+            return items;
+        } 
+        else if(typeof obj === 'object') 
+        {
+            let rune = $state(obj);
+            let output = {};
+            for(let key in rune) 
+            {
+                if(typeof obj[key] === 'object') 
+                {
+                    obj[key] = socketIoIfy(obj[key], `${topic}.${key}`);
+                }
+                Object.defineProperty(output, key, {
+                    get() { return rune[key]; },
+                    set(val) 
+                    { 
+                        //console.log('setting', key, val);
+                        socket.emit(`${topic}.${key}:update`, val);
+                        rune[key] = val;
+                    },
+                    enumerable: true
+                });
+
+                // register socket on update event to get updates
+                socket.on(`${topic}.${key}:update`, (value) => {
+                    //console.log(`${topic}.${key}:update`, value);
+                    rune[key] = value;
+                });
+            }
+            return output;
+        } 
+        else return obj;
     }
-}*/
+}

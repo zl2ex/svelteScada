@@ -1,31 +1,9 @@
 import type { BaseTag } from "./baseTag";
 import './userDataTypes.ts';
-import { BaseTagServer } from "./baseTag";
-
-export let tags = {
-	aprt01: new BaseTagServer<DigitalIn>({
-		name: "aprt01",
-		data: {
-			value: false,
-			fault: false
-		},
-		enabled: true
-	}),
-	aprt02: new BaseTagServer<DigitalIn>({
-		name: "aprt02",
-		data: {
-			value: false,
-			fault: false
-		},
-		enabled: true
-	})
-};
 
 
 export type Tags = typeof tags;
 
-
-/*
 export let tags = {
 	aprt01: {
 		name: "aprt01",
@@ -74,4 +52,4 @@ export let tags = {
 		},
 		enabled: true
 	} as BaseTag<AnalogIn>,
-};*/
+};

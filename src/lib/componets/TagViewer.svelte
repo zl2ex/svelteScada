@@ -1,5 +1,11 @@
-<script>
-	let { tag } = $props();
+<script lang="ts">
+    import type { BaseTag } from "$lib/tag/baseTag";
+
+    type props = {
+        tag: BaseTag<any>;
+    }
+
+	let { tag } = $props<props>();
 
     /* WIP Works for displaying but no binding
     function tableContent(obj:object):string
@@ -51,9 +57,9 @@
             <tr>
                 <td>{key}</td>
                 {#if typeof value === "boolean"}
-                    <td><input type="checkbox" bind:checked={tag.data[key]}/></td>
+                    <td><input type="checkbox" bind:checked={tag.data[key]}></td>
                 {:else if typeof value === "number"}
-                    <td><input type="number" bind:value/></td>
+                    <td><input type="number" bind:value={tag.data[key]}></td>
                 {:else if typeof value === "object"}
                     <td>object</td>
                     <!--{#each Object.entries(tag.data) as [key, value], index(key) }

@@ -1,78 +1,33 @@
 <script lang="ts">
     import type { BaseTag } from '$lib/tag/baseTag.ts';
-    import { browser } from '$app/environment'; 
-    import type { Writable } from 'svelte/store';
+    import { flash } from '$lib/ui/flash.svelte';
 
-	export let tag: Writable<BaseTag<AnalogIn>>;
+    type props = {
+        tag: BaseTag<AnalogIn>;
+        style?: string;
+        faultFlash?: boolean;
+    };
+
+    let { tag, style = "", faultFlash = false } = $props<props>();
+
+    let c = $state("fault"); // default state
     
-    let _tag: BaseTag<AnalogIn>;
+    $effect(() => {
+        c = "";
+        if(tag?.data.value) c = "on"
+        if(tag?.data.fault) c = "fault";
 
-    tag.subscribe((value) => {
-        console.log("number display subscribed");
-        console.log(value);
-        _tag = value;
+        if(faultFlash) 
+        {
+            // flash on fault
+            if(tag?.data.fault && flash.isOn) c = "";
+        }
     });
 
-    export let style: string = "";
-    export let faultFlash: boolean = false;
-
-    let c = "fault"; // default state
-
-    let flashToggle = false;
-    let intervalId: NodeJS.Timeout | undefined;
-    function flash()
-    {
-        if(!browser) return; // only run on client
-        if(_tag?.data.fault)
-        {
-            c = "fault";
-            if(flashToggle) c = "";
-            flashToggle = !flashToggle;
-
-            if(!intervalId) intervalId = setInterval(flash, 500);
-        }
-        else
-        {
-            if(intervalId)
-            {
-                clearInterval(intervalId);
-                intervalId = undefined;
-            }
-        }
-    }
-    
-    $:
-    {
-        c = "";
-        if(_tag?.data.fault) c = "fault";
-
-        if(faultFlash) flash();
-    }
-
-
-    function onClick()
-    {
-        console.log("click");
-        tag.set({ 
-            name: "tagStoreDemo",
-            data: {
-                value: 1,
-                scaling: {
-                    inMin: 0,
-                    inMax: 1023,
-                    outMin: 0,
-                    outMax: 100
-                }, 
-                fault: true
-            },
-            enabled: true
-        });
-    }
-
 </script>
-<div class={c} style={style} on:click={onClick}>
-    <p class="label">{_tag?.name}</p>
-    <p class="value">{_tag?.data.value}</p>
+<div class={c} style={style} on:click>
+    <p class="label">{tag.name}</p>
+    <p class="value">{tag.data.value}</p>
 </div>
 
 <style>

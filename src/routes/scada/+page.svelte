@@ -3,80 +3,15 @@
     import { onDestroy } from 'svelte';
     import { type Writable } from 'svelte/store';
 
-    
+    import type { BaseTag } from '$lib/tag/baseTag.js';
     import DigitalInRound from '$lib/componets/scada/DigitalInRound.svelte';
-    import type { Tags } from '$lib/tag/tags';
-    import type { BaseTag } from '$lib/tag/baseTag';
     import NumberDisplay from '$lib/componets/scada/NumberDisplay.svelte';
-    import { tags } from '$lib/tag/tagStore.svelte';
+    import { tagsRef } from '$lib/tag/tagStore.svelte';
 
     import TagViewer from '$lib/componets/TagViewer.svelte';
-    
+    import Test from '$lib/componets/scada/Test.svelte';
 
-    //export let data; // server load is cached'
-
-    /*
-
-    function createTagStore()
-    {
-        let tags = writable<BaseTag<object>>(undefined);
-        function update()
-        {
-            console.log("update");
-
-        }
-        return {
-            ...tags,
-            update
-        };
-    }
-
-*/
-  
-
-/*
-
-    let tagsArray: Writable<BaseTag<object>> = {};
-    for(let name of tagNames)
-    {
-        tagsArray[name] = createTagStore();
-    };
-
-    console.log(tagsArray.attx01.data.value);
-    
-
-    
-
-
-        let tag = {
-            tagStoreDemo: createTagStore<AnalogIn>(
-            "tagStoreDemo", {
-                value: 0,
-                scaling: {
-                    inMin: 0,
-                    inMax: 1023,
-                    outMin: 0,
-                    outMax: 100
-                }, fault: true
-            }),
-            tagStoreDem01: createTagStore<AnalogIn>(
-            "tagStoreDemo1", {
-                value: 1,
-                scaling: {
-                    inMin: 0,
-                    inMax: 1023,
-                    outMin: 0,
-                    outMax: 100
-                }, fault: false
-            })
-        };
-
-
-        type Tag = typeof tag;
-
-    
-
-*/
+    let tags = tagsRef();
 
       // WIP  ////////////////////////////////
     function onClick()
@@ -91,15 +26,21 @@
         tags.aprt02.data.value = !tags.aprt02.data.value;
         console.log("click1");
     }
+
 ///////////////////////////////////////
 
 </script>
 
 <DigitalInRound tag={tags.aprt01} on:click={onClick} style="width: 20px" faultFlash/>
 <DigitalInRound tag={tags.aprt02} on:click={onClick1} style="width: 20px" faultFlash/>
+<NumberDisplay tag={tags.attx01} faultFlash></NumberDisplay>
 
-<TagViewer tag={tags.aprt01}></TagViewer>
-<TagViewer tag={tags.attx01}></TagViewer>
+
+<TagViewer bind:tag={tags.aprt01}></TagViewer>
+<TagViewer bind:tag={tags.aprt02}></TagViewer>
+<TagViewer bind:tag={tags.attx01}></TagViewer>
+
+<Test></Test>
 <!--<NumberDisplay tag={tag.tagStoreDemo} style="" faultFlash></NumberDisplay>
 -->
 

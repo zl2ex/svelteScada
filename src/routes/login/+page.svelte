@@ -44,23 +44,23 @@
         flex-direction: column;
         width: clamp(250px, 30%, 300px);
         gap: 1rem;
+    }
+    
+    input
+    {
+        border-radius: 0.2rem;
+    }
 
-        .form-item
-        {
-            display: flex;
-            flex-direction: column;
+    .form-item
+    {
+        display: flex;
+        flex-direction: column;
+    }
 
-            & input
-            {
-                border-radius: 0.2rem;
-            }
-        /*}  SVELTE5 CSS*/
-
-        .form-action
-        {
-            display: flex;
-            justify-content: space-between;
-        }
-    /*}  SVELTE5 CSS*/
+    .form-action
+    {
+        display: flex;
+        justify-content: space-between;
+    }
 
 </style>

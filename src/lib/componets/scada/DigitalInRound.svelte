@@ -1,11 +1,11 @@
 <script lang="ts">
     import type { BaseTag } from '$lib/tag/baseTag.ts';
-    import { browser } from '$app/environment';
+    import { flash } from '$lib/ui/flash.svelte';
 
     type props = {
         tag: BaseTag<DigitalIn>;
-        style: string;
-        faultFlash: boolean;
+        style?: string;
+        faultFlash?: boolean;
     };
 
     let { tag, style = "", faultFlash = false } = $props<props>();
@@ -13,36 +13,18 @@
 
     let c = $state("fault"); // default state
 
-    let flashToggle = false;
-    let intervalId: NodeJS.Timeout | undefined;
-    function flash()
-    {
-        if(!browser) return; // only run on client
-        if(tag?.data.fault)
-        {
-            c = "fault";
-            if(flashToggle) c = "";
-            flashToggle = !flashToggle;
-
-            if(!intervalId) intervalId = setInterval(flash, 500);
-        }
-        else
-        {
-            if(intervalId)
-            {
-                clearInterval(intervalId);
-                intervalId = undefined; // WIP TYPESCRIPT
-            }
-        }
-    }
+   
     
-    $effect(() =>
-    {
+    $effect(() => {
         c = "";
         if(tag?.data.value) c = "on"
         if(tag?.data.fault) c = "fault";
 
-        if(faultFlash) flash();
+        if(faultFlash) 
+        {
+            // flash on fault
+            if(tag?.data.fault && flash.isOn) c = "";
+        }
     });
 
 </script>
