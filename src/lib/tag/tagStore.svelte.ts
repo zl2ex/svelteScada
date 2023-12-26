@@ -31,11 +31,6 @@ export function socketIoTagsClient(initalState: Tags)
         console.log("socket disconnected");
     });
 
-    function socketIoUpdateServerVarible(path: string, val: any) 
-    {
-        console.log(path, val);
-    }
-
 
     // TODO FIX ARRAY's 
     //let test = socketIoIfy([{test: 1, demo: 2, is:false}, {boo: false}])
@@ -65,7 +60,7 @@ export function socketIoTagsClient(initalState: Tags)
                     get() { return rune[key]; },
                     set(val) 
                     { 
-                        //console.log('setting', key, val);
+                        console.log('setting', key, val);
                         socket.emit(`${topic}.${key}:update`, val);
                         rune[key] = val;
                     },
@@ -74,7 +69,7 @@ export function socketIoTagsClient(initalState: Tags)
 
                 // register socket on update event to get updates
                 socket.on(`${topic}.${key}:update`, (value) => {
-                    //console.log(`${topic}.${key}:update`, value);
+                    console.log(`${topic}.${key}:update`, value);
                     rune[key] = value;
                 });
             }
