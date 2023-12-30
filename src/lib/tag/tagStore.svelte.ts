@@ -58,7 +58,7 @@ export function socketIoTagsClient(initalState: Tags)
                 }
                 Object.defineProperty(output, key, {
                     get() { return rune[key]; },
-                    set(val) 
+                    set(val)
                     { 
                         console.log('setting', key, val);
                         socket.emit(`${topic}.${key}:update`, val);

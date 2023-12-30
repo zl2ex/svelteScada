@@ -1,7 +1,13 @@
 import { Server } from 'socket.io';
-import { tags } from '../src/lib/tag/tags';
+import { tagsInit, type Tags } from '../src/lib/tag/tags';
 
+let tagsServer: Tags = tagsInit; // copy over from init state
 
+export function tagsServerRef(): Tags
+{
+    console.log("tagServerRef ", tagsServer);
+    return tagsServer;
+}
 
 export default function injectSocketIO(server) {
     const io = new Server(server, {
@@ -32,7 +38,7 @@ export default function injectSocketIO(server) {
                 {
                     obj[key] = socketIoIfy(obj[key], `${topic}.${key}`);
                 }
-                console.log(`define properties`, topic, key);
+                //console.log(`define properties`, topic, key);
                 Object.defineProperty(output, key, {
                     get() { return obj[key]; },
                     set(val)
@@ -52,7 +58,7 @@ export default function injectSocketIO(server) {
 
     
 
-    socketIoIfy(tags, "tags");
+    socketIoIfy(tagsServer, "tags");
        
     io.on("connection", (socket) => {
 
@@ -62,7 +68,7 @@ export default function injectSocketIO(server) {
             console.log("socket disconnected  id " + socket.id);
         });
 
-        registerUpdateEvents(tags, "tags");
+        registerUpdateEvents(tagsServer, "tags");
 
         function registerUpdateEvents(obj: any, topic: string) 
         {
@@ -84,7 +90,7 @@ export default function injectSocketIO(server) {
                         registerUpdateEvents(obj[key], `${topic}.${key}`);
                     }
 
-                    console.log(`register update events ${topic}.${key}`);
+                    //console.log(`register update events ${topic}.${key}`);
                     // register socket on update event to get updates
                     socket.on(`${topic}.${key}:update`, (value) => {
                         socket.broadcast.emit(`${topic}.${key}:update`, value);
@@ -96,7 +102,7 @@ export default function injectSocketIO(server) {
             return obj;
         }
     });
-
+    
     console.log('SocketIO Tag server running');
 }
 
@@ -104,5 +110,6 @@ export default function injectSocketIO(server) {
 
 function logger() 
 {
-    //tags.aprt01.data.value = !tags.aprt01.data.value;
+    tagsServer.aprt01.data.value = !tagsServer.aprt01.data.value;
+    console.log(tagsServer.attx01.data.value);
 }

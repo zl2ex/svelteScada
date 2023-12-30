@@ -25,7 +25,7 @@ export const load: PageServerLoad = (event) => {
     console.log(user);
    
     if (user) {
-      throw redirect(302, '/');
+      redirect(302, '/');
     }
 };
 
@@ -64,6 +64,6 @@ export const actions = {
             maxAge: 60 * 60 * 24 // 1 day
         });
    
-        throw redirect(302, '/');
+        redirect(302, '/');
     }
 }

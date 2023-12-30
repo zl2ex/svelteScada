@@ -1,6 +1,10 @@
 
 <script lang="ts">
-	let { active = false } = $props();
+    type props = {
+        active: boolean;
+    }
+
+	let { active } = $props<props>();
 
     function toggleActive()
     {

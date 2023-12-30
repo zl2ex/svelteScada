@@ -7,6 +7,8 @@
 	
 	const { data } = $props();
 
+	console.log(data.tags);
+
 	socketIoTagsClient(data.tags);
 
 	// create socketIo conection for tags store

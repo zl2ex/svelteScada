@@ -2,11 +2,10 @@ import { BaseTag_c, type BaseTag } from "./baseTag";
 import './userDataTypes.ts';
 
 
-export type Tags = typeof tags;
+export type Tags = typeof tagsInit;
 
-export function tagsRef() { return tags }
-
-export let tags = {
+/*
+export let tagsInit = {
 	aprt01: new BaseTag_c<DigitalIn>({
 		name: "aprt01",
 		data: {
@@ -36,10 +35,10 @@ export let tags = {
 			}
 		}
 	})
-};
+};*/
 
-/*
-export let tags = {
+
+export let tagsInit = {
 	aprt01: {
 		name: "aprt01",
 		data: {
@@ -87,4 +86,4 @@ export let tags = {
 		},
 		enabled: true
 	} as BaseTag<AnalogIn>,
-};*/
+};
