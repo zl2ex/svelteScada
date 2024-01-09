@@ -25,7 +25,7 @@ export function setTagsServer(init: Tags): Tags
 export function injectSocketIO(server) {
     const io = new Server(server, {
         cors: {
-            origin: "http://localhost:5173"
+            origin: "http://localhost:4173"
         }
     });
 
@@ -45,7 +45,7 @@ export function injectSocketIO(server) {
         else if(typeof obj === 'object')
         {
             let output = {};
-            for(let key in obj) 
+            for(let key in obj)
             {
                 if(typeof obj[key] === 'object') 
                 {
@@ -105,11 +105,9 @@ export function injectSocketIO(server) {
                         socket.broadcast.emit(`${topic}.${key}:update`, value);
                         console.log(`${topic}.${key}:update`, value);
                         obj[key] = value;
-                        console.log(obj[key]);
                     });
                 }
             }
-            return obj;
         }
     });
     

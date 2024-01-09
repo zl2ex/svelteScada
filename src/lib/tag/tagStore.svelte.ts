@@ -29,7 +29,7 @@ export function socketIoTagsClient(initalState: Tags)
     }
     
     console.log("createSocket on Client");
-    const socket = io();
+    const socket = io("ws://localhost:3000");
 
     socket.on("connect", () => {
         console.log("socket connected");
