@@ -30,7 +30,6 @@
     
     
 
-    console.log(tags);
 
       // WIP  ////////////////////////////////
     function onClick()

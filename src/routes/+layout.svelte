@@ -7,7 +7,7 @@
 	
 	const { data } = $props();
 
-	console.log(data.tags);
+	console.log("+layout.svelte data.tags", data.tags);
 
 	socketIoTagsClient(data.tags);
 

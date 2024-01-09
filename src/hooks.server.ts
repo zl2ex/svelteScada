@@ -31,7 +31,7 @@ export const handle: Handle = async ({ event, resolve }) => {
                 throw new Error("Something went wrong");
             }
 
-            console.log(jwtUser);
+            console.log("jwtUser", jwtUser);
    
             const user = await UserModel.findOne({_id: jwtUser._id });
     
@@ -45,7 +45,7 @@ export const handle: Handle = async ({ event, resolve }) => {
                 username: user.username,
             };
             
-            console.log(sessionUser);
+            console.log('sessionUser', sessionUser);
             event.locals.user = sessionUser;
 
         } 

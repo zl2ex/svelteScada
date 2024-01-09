@@ -89,6 +89,11 @@
     {
         margin: 0;
     }
+
+    input[type="number"]
+    {
+        width: 6rem;
+    }
     
 	
 </style>

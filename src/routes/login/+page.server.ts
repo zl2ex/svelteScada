@@ -22,7 +22,7 @@ export const load: PageServerLoad = (event) => {
     console.log("/login/page.server.ts Load");
     const user = event.locals.user;
 
-    console.log(user);
+    console.log("user", user);
    
     if (user) {
       redirect(302, '/');
@@ -42,7 +42,7 @@ export const actions = {
 
         const user = await UserModel.findOne({email});
 
-        console.log(user);
+        console.log("user", user);
         
         var passwordCorrect = false;
         if(user) passwordCorrect = await bcrypt.compare(password, user.password);

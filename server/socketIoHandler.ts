@@ -1,22 +1,35 @@
 import { Server } from 'socket.io';
 import { tagsInit, type Tags } from '../src/lib/tag/tags';
+import { EventEmitter } from 'node:events';
 
-var tagsServer: Tags;
+export var tagsServer: Tags = tagsInit;
 
-export function tagsServerRef(): Tags
+// updater for server load fucntion
+export const tagsEmitter = new EventEmitter();
+
+
+
+export function getTagsServer(): Tags
 {
-    console.log("tagServerRef ", tagsServer);
+    //console.log("getTagsServer ", tagsServer);
     return tagsServer;
 }
 
-export default function injectSocketIO(server) {
+export function setTagsServer(init: Tags): Tags
+{
+    tagsServer = init;
+    //console.log("setTagsServer ", tagsServer);
+    return tagsServer;
+}
+
+export function injectSocketIO(server) {
     const io = new Server(server, {
         cors: {
             origin: "http://localhost:5173"
         }
     });
 
-    setInterval(logger, 1000);
+    
 
     function socketIoIfy(obj: any, topic: string)
     {
@@ -56,7 +69,7 @@ export default function injectSocketIO(server) {
     }
 
 
-    tagsServer = socketIoIfy(tagsInit, "tags");
+    setTagsServer(socketIoIfy(tagsInit, "tags"))
        
     io.on("connection", (socket) => {
 
@@ -72,12 +85,10 @@ export default function injectSocketIO(server) {
         {
             if(Array.isArray(obj)) 
             {
-                let items = obj;
                 for (let i = 0; i < obj.length; i++) 
                 {
-                    registerUpdateEvents(items[i], `${topic}[${i}]`);
+                    registerUpdateEvents(obj[i], `${topic}[${i}]`);
                 }
-                return items;
             } 
             else if(typeof obj === 'object')
             {
@@ -94,6 +105,7 @@ export default function injectSocketIO(server) {
                         socket.broadcast.emit(`${topic}.${key}:update`, value);
                         console.log(`${topic}.${key}:update`, value);
                         obj[key] = value;
+                        console.log(obj[key]);
                     });
                 }
             }
@@ -106,8 +118,8 @@ export default function injectSocketIO(server) {
 
 
 
-function logger() 
+function logger()
 {
     //tagsServer.aprt01.data.value = !tagsServer.aprt01.data.value;
-    //console.log(tagsServer.attx01.data.value);
+    console.log(tagsServer.attx01.data.value);
 }

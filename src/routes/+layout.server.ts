@@ -1,6 +1,11 @@
-import { tagsServerRef } from "../../server/socketIoHandler";
+import { getTagsServer } from "../../server/socketIoHandler";
 import { tagsInit } from "$lib/tag/tags";
 
+
 export function load() {
-	return { tags: tagsInit };
+	// TODO AUTH
+	//console.log("+layout.server.ts getTagsServer()", getTagsServer());
+	return {
+		tags: getTagsServer()
+	};
 }

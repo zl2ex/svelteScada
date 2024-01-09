@@ -1,6 +1,7 @@
 import { setContext, getContext } from 'svelte';
 import { io } from 'socket.io-client';
 import type { Tags } from '$lib/tag/tags';
+import { browser } from '$app/environment';
 
 
 const KEY = "Tags";
@@ -20,6 +21,13 @@ export function getTagsContext(): Tags {
 // pass object to be shared across client and server
 export function socketIoTagsClient(initalState: Tags)
 {
+
+    if(browser == false) 
+    {
+        setTagsContext(initalState);
+        return;
+    }
+    
     console.log("createSocket on Client");
     const socket = io();
 
