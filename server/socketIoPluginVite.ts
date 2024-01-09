@@ -1,9 +1,9 @@
 import type { ViteDevServer } from 'vite';
-import { injectSocketIO } from './socketIoHandler.js';
+import { server } from './socketIoHandler';
 
 export const webSocketServer = {
     name: 'webSocketServer',
-    configureServer(server: ViteDevServer) {
-        injectSocketIO(server.httpServer);
+    configureServer(viteServer: ViteDevServer) {
+        server.injectSocketIO(viteServer.httpServer);
     }
 };
