@@ -1,16 +1,36 @@
 <script lang="ts">
   
-    import { onDestroy } from 'svelte';
-    import { type Writable } from 'svelte/store';
-
-    import type { BaseTag } from '$lib/tag/baseTag.js';
     import DigitalInRound from '$lib/componets/scada/DigitalInRound.svelte';
     import NumberDisplay from '$lib/componets/scada/NumberDisplay.svelte';
-    import { getTagsContext } from '$lib/tag/tagStore.svelte';
+    import { tagStoreInit, tagsRef } from '$lib/tag/tagStoreSSE.svelte';
 
     import TagViewer from '$lib/componets/TagViewer.svelte';
+    import { onMount } from 'svelte';
 
-    let tags = getTagsContext();
+
+	let { data } = $props();
+
+    let tags = data.tagsSSE;
+/*
+    onMount(() => {
+        tagStoreInit(data.tagsSSE);
+        tags = tagsRef();
+    });
+*/
+
+    function subscribe() {
+        console.log("subscribe");
+		const sse = new EventSource('/sse');
+		sse.onmessage = () => {console.log("client event")}
+		return () => sse.close();
+	}
+
+	onMount(subscribe);
+
+    
+    
+
+    console.log(tags);
 
       // WIP  ////////////////////////////////
     function onClick()

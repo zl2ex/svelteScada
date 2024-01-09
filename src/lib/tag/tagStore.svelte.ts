@@ -1,18 +1,20 @@
+import { setContext, getContext } from 'svelte';
 import { io } from 'socket.io-client';
 import type { Tags } from '$lib/tag/tags';
 
-let _tags= $state<Tags>();
 
-// call this function in any component or page to get tags reference
-export function tagsRef():Tags {
-    /*
-    return {
-        get value() { return _tags },
-        set value(v) { _tags = v }
-    }*/
-    if(_tags) return _tags;
-    else console.error("Please call socketIoTagsClient() and pass inital value for tags");
+const KEY = "Tags";
+
+function setTagsContext(init: Tags): Tags {
+	const tags = $state<Tags>(init);
+	setContext(KEY, tags);
+	return tags;
 }
+
+export function getTagsContext(): Tags {
+	return getContext(KEY);
+}
+
 
 
 // pass object to be shared across client and server
@@ -21,8 +23,6 @@ export function socketIoTagsClient(initalState: Tags)
     console.log("createSocket on Client");
     const socket = io();
 
-    _tags = socketIoIfy(initalState, "tags");
-
     socket.on("connect", () => {
         console.log("socket connected");
     });
@@ -30,6 +30,8 @@ export function socketIoTagsClient(initalState: Tags)
     socket.on("disconnect", () => {
         console.log("socket disconnected");
     });
+
+    setTagsContext(socketIoIfy(initalState, "tags"));
 
 
     // TODO FIX ARRAY's 
@@ -45,7 +47,7 @@ export function socketIoTagsClient(initalState: Tags)
                 socketIoIfy(items[i], `${topic}[${i}]`);
             }
             return items;
-        } 
+        }
         else if(typeof obj === 'object') 
         {
             let rune = $state(obj);
