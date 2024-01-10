@@ -2,6 +2,7 @@ import { setContext, getContext } from 'svelte';
 import { io } from 'socket.io-client';
 import type { Tags } from '$lib/tag/tags';
 import { browser } from '$app/environment';
+import { getSetIfy } from './getSetIfy';
 
 
 const KEY = "Tags";
@@ -41,22 +42,33 @@ export function socketIoTagsClient(initalState: Tags)
 
     setTagsContext(socketIoIfy(initalState, "tags"));
 
+/*
+    setTagsContext(getSetIfy(initalState, "tags",
+        (path: string, value: any) => {
+            return value;
+        },
+        (path: string, value: any, newValue: any) => {
+            console.log('setting', path, newValue);
+            value = newValue;
+            socket.emit(`${path}:update`, value);
+            return value;
+        },
+        (path: string, value: any) => {
+            // register socket on update event to get updates from client
+            socket.on(`${path}:update`, (newValue) => {
+                console.log(`${path}:update`, newValue);
+                value = newValue;
+            });
+        },
+    ));
+*/
 
     // TODO FIX ARRAY's 
     //let test = socketIoIfy([{test: 1, demo: 2, is:false}, {boo: false}])
 
-    function socketIoIfy(obj: any, topic: string) 
+    function socketIoIfy(obj: any, topic: string): any
     {
-        if(Array.isArray(obj)) 
-        {
-            let items;
-            for (let i = 0; i < obj.length; i++) 
-            {
-                socketIoIfy(items[i], `${topic}[${i}]`);
-            }
-            return items;
-        }
-        else if(typeof obj === 'object') 
+        if(typeof obj === 'object') 
         {
             let rune = $state(obj);
             let output = {};
@@ -66,18 +78,18 @@ export function socketIoTagsClient(initalState: Tags)
                 {
                     obj[key] = socketIoIfy(obj[key], `${topic}.${key}`);
                 }
+                console.log(`define properties ${topic}.${key}`);
                 Object.defineProperty(output, key, {
                     get() { return rune[key]; },
                     set(val)
-                    { 
-                        console.log('setting', key, val);
+                    {
+                        console.log(`${topic}.${key}:update`, val);
                         socket.emit(`${topic}.${key}:update`, val);
                         rune[key] = val;
                     },
                     enumerable: true
                 });
 
-                // register socket on update event to get updates
                 socket.on(`${topic}.${key}:update`, (value) => {
                     console.log(`${topic}.${key}:update`, value);
                     rune[key] = value;
@@ -85,6 +97,10 @@ export function socketIoTagsClient(initalState: Tags)
             }
             return output;
         } 
-        else return obj;
+        else
+        {
+            console.error("please provide an object    this is not an object :", obj);
+            return obj;
+        }
     }
 }

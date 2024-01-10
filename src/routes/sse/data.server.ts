@@ -14,7 +14,9 @@ export let tagsSSE: Tags = getSetIfy(tagsInit, "tags",
 		//sse.emit(`${path}:update`, value);
 		sse.emit('tag');
 		return value;
-	});
+	},
+	() => {}
+	);
 
 
 	console.log("tagsSEE", tagsSSE);

@@ -19,3 +19,7 @@ type AnalogIn = {
 type Num = {
     value: number;
 };
+
+type NumArr = {
+    value: number[];
+}

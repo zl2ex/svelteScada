@@ -60,6 +60,12 @@
                     <td><input type="checkbox" bind:checked={tag.data[key]}></td>
                 {:else if typeof value === "number"}
                     <td><input type="number" bind:value={tag.data[key]}></td>
+                {:else if typeof value === "string"}
+                    <td><input type="text" bind:value={tag.data[key]}></td>
+                {:else if typeof value === "object"}
+                    {#each Object.entries(tag.data[key]) as [k], index(k)}
+                        <td><input type="number" bind:value={tag.data[key][k]}></td>
+                    {/each}
                 {:else if typeof value === "object"}
                     <td>object</td>
                     <!--{#each Object.entries(tag.data) as [key, value], index(key) }

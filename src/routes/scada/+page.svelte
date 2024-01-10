@@ -38,6 +38,8 @@
 <TagViewer bind:tag={tags.aprt01}></TagViewer>
 <TagViewer bind:tag={tags.aprt02}></TagViewer>
 <TagViewer bind:tag={tags.attx01}></TagViewer>
+<TagViewer bind:tag={tags.tagArray}></TagViewer>
+<TagViewer bind:tag={tags.tagArray}></TagViewer>
 
 <!--<NumberDisplay tag={tag.tagStoreDemo} style="" faultFlash></NumberDisplay>
 -->

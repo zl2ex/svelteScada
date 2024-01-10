@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import { tagsInit, type Tags } from '../src/lib/tag/tags';
+import { getSetIfy } from '../src/lib/tag/getSetIfy';
 
 function log()
 {
@@ -7,7 +8,7 @@ function log()
 }
 
 console.log("set Inertvil");
-setInterval(log, 1000);
+//setInterval(log, 1000);
 
 export var server = {
     _tags: tagsInit as Tags,
@@ -16,56 +17,27 @@ export var server = {
 
 
     injectSocketIO: function (server) {
-        let io;
-        if(io) return;
-        io = new Server(server, {
+    
+        const io = new Server(server, {
             cors: {
                 origin: "http://localhost"
             }
         });
     
-        
     
-        function socketIoIfy(obj: any, topic: string)
-        {
-            if(Array.isArray(obj)) 
-            {
-                let items = [];
-                for (let i = 0; i < obj.length; i++) 
-                {
-                    items[i] = socketIoIfy(obj[i], `${topic}[${i}]`);
-                }
-                return items;
-            } 
-            else if(typeof obj === 'object')
-            {
-                let output = {};
-                for(let key in obj)
-                {
-                    if(typeof obj[key] === 'object') 
-                    {
-                        obj[key] = socketIoIfy(obj[key], `${topic}.${key}`);
-                    }
-                    //console.log(`define properties ${topic}.${key}`);
-                    Object.defineProperty(output, key, {
-                        get() { return obj[key]; },
-                        set(val)
-                        {
-                            console.log('setting', key, val);
-                            io.emit(`${topic}.${key}:update`, val);
-                            obj[key] = val;
-                        },
-                        enumerable: true
-                    });
-                }
-                return output;
-            } 
-            else return obj;
-        }
-    
-    
-        this._tags = socketIoIfy(tagsInit, "tags");
-           
+        this._tags = getSetIfy(tagsInit, "tags",
+            (path: string, value: any) => {
+                return value;
+            },
+            (path: string, value: any, newValue: any) => {
+                console.log('setting', path, newValue);
+                value = newValue;
+                io.emit(`${path}:update`, value);
+                return value;
+            },
+            () => {}
+        );
+
         io.on("connection", (socket) => {
     
             console.log("socket connected  id " + socket.id);
@@ -73,37 +45,17 @@ export var server = {
             socket.on("disconnect", () => {
                 console.log("socket disconnected  id " + socket.id);
             });
-    
-            registerUpdateEvents(this._tags, "tags");
-    
-            function registerUpdateEvents(obj: any, topic: string) 
-            {
-                if(Array.isArray(obj)) 
-                {
-                    for (let i = 0; i < obj.length; i++) 
-                    {
-                        registerUpdateEvents(obj[i], `${topic}[${i}]`);
-                    }
-                } 
-                else if(typeof obj === 'object')
-                {
-                    for(let key in obj)
-                    {
-                        if(typeof obj[key] === 'object') 
-                        {
-                            registerUpdateEvents(obj[key], `${topic}.${key}`);
-                        }
-    
-                        //console.log(`register update events ${topic}.${key}`);
-                        // register socket on update event to get updates
-                        socket.on(`${topic}.${key}:update`, (value) => {
-                            socket.broadcast.emit(`${topic}.${key}:update`, value);
-                            console.log(`${topic}.${key}:update`, value);
-                            obj[key] = value;
-                        });
-                    }
-                }
-            }
+
+            getSetIfy(this._tags, "tags",
+                () => {},
+                () => {},
+                (path: string, value: any) => {
+                    socket.on(`${path}:update`, (newValue) => {
+                        socket.broadcast.emit(`${path}:update`, newValue);
+                        console.log(`${path}:update`, newValue);
+                        value = newValue;
+                    });
+            });
         });
         
         console.log('SocketIO Tag server running  Tags\n', this._tags);

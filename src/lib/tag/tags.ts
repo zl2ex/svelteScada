@@ -72,18 +72,11 @@ export let tagsInit = {
 		enabled: true
 	} as BaseTag<AnalogIn>,
 
-	tagStoreDemo: {
-		name: "tagStoreDemo",
+	tagArray: {
+		name: "tagArray",
 		data: {
-			value: 1001,
-			fault: false,
-			scaling: {
-				inMin: 0,
-				inMax: 1023,
-				outMin: 0,
-				outMax: 100
-			}
+			value: [1, 2, 3, 4, 5]
 		},
 		enabled: true
-	} as BaseTag<AnalogIn>,
+	} as BaseTag<NumArr>,
 };
