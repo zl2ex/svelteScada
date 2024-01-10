@@ -28,16 +28,7 @@ export var server = {
     
         function socketIoIfy(obj: any, topic: string)
         {
-            if(Array.isArray(obj)) 
-            {
-                let items = [];
-                for (let i = 0; i < obj.length; i++) 
-                {
-                    items[i] = socketIoIfy(obj[i], `${topic}[${i}]`);
-                }
-                return items;
-            } 
-            else if(typeof obj === 'object')
+            if(typeof obj === 'object')
             {
                 let output = {};
                 for(let key in obj)
@@ -78,14 +69,7 @@ export var server = {
     
             function registerUpdateEvents(obj: any, topic: string) 
             {
-                if(Array.isArray(obj)) 
-                {
-                    for (let i = 0; i < obj.length; i++) 
-                    {
-                        registerUpdateEvents(obj[i], `${topic}[${i}]`);
-                    }
-                } 
-                else if(typeof obj === 'object')
+                if(typeof obj === 'object')
                 {
                     for(let key in obj)
                     {

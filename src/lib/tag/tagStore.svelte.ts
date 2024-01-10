@@ -47,16 +47,7 @@ export function socketIoTagsClient(initalState: Tags)
 
     function socketIoIfy(obj: any, topic: string) 
     {
-        if(Array.isArray(obj)) 
-        {
-            let items;
-            for (let i = 0; i < obj.length; i++) 
-            {
-                socketIoIfy(items[i], `${topic}[${i}]`);
-            }
-            return items;
-        }
-        else if(typeof obj === 'object') 
+        if(typeof obj === 'object') 
         {
             let rune = $state(obj);
             let output = {};
