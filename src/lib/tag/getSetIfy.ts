@@ -1,47 +1,35 @@
 
-type getSetIfyProps = {
-	obj: any;
-	path: string;
-	getCb?: Function;
-	setCb?: Function;
-	initCb?: Function;
-}
-
-
-
 // pass any object or array and specify events to run when properties are accessed
-export function getSetIfy(p: getSetIfyProps): any
+export function getSetIfy(obj: any, path: string, getCb: Function, setCb: Function, initCb: Function): any
 {
-	if(typeof p.obj === 'object')
+	if(typeof obj === 'object')
 	{
 		let output = {};
-		for(let key in p.obj) 
+		for(let key in obj) 
 		{
-			let path_key = `${p.path}.${key}`;
-			if(typeof p.obj[key] === 'object') 
+			let path_key = `${path}.${key}`;
+			if(typeof obj[key] === 'object') 
 			{
-				p.obj[key] = getSetIfy({obj: p.obj[key], path: path_key, setCb: p.getCb, getCb: p.setCb, initCb: p.initCb});
+				obj[key] = getSetIfy(obj[key], path_key, getCb, setCb, initCb);
 			}
 			console.log(`define properties ${path_key}`);
-			if(p.initCb) p.initCb(path_key, p.obj[key]);
-			if(p.getCb && p.setCb)
-			{
-				Object.defineProperty(output, key, {
-					get() { return p.getCb(path_key, p.obj[key]); },
-					set(newVal)
-					{
-						p.obj[key] = p.setCb(path_key, p.obj[key], newVal);
-					},
-					enumerable: true
-				});
-			}
+			Object.defineProperty(output, key, {
+				get() { return getCb(path_key, obj[key]); },
+				set(newVal)
+				{
+                    obj[key] = setCb(path_key, obj[key], newVal);
+				},
+				enumerable: true
+			});
+
+			initCb(path_key, obj[key]);
 		}
 		return output;
 	} 
 	else
 	{
 		console.error("please provide an object    this is not an object :", obj);
-		return p.obj;
+		return obj;
 	}
 }
 

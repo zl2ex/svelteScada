@@ -1,9 +1,4 @@
 <script lang="ts">
-  
-    import { onDestroy } from 'svelte';
-    import { type Writable } from 'svelte/store';
-
-    import type { BaseTag } from '$lib/tag/baseTag.js';
     import DigitalInRound from '$lib/componets/scada/DigitalInRound.svelte';
     import NumberDisplay from '$lib/componets/scada/NumberDisplay.svelte';
     import { getTagsContext } from '$lib/tag/tagStore.svelte';
