@@ -113,6 +113,11 @@ a
 	font-family: inherit;
 }
 
+input 
+{
+    color: inherit;
+}
+
 input:hover, 
 button:hover,
 a:hover,

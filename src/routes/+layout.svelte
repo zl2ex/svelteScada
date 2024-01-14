@@ -10,12 +10,17 @@
 	//console.log("+layout.svelte data.tags", data.tags);
 
 	socketIoTagsClient(data.tags);
-
-	// create socketIo conection for tags store
 	
+	function handleAllAnchorClicks(event: Event) 
+	{
+		//close the menu if a user clicks a link in navigation
+		if (event.target.tagName === 'A') 
+		{
+			menuOpen = false;
+		}
+	}
+
 	
-
-
 
 	let menuOpen = $state(false);
 
@@ -49,7 +54,7 @@
 
 
 	<section>
-		<nav class={menuOpen ? "closed" : ""}>
+		<nav on:click={handleAllAnchorClicks} class={menuOpen ? "" : "closed"}>
 			<a href="/">Home</a>
 			<a href="/about">About</a>
 			<a href="/login">Login</a>
@@ -63,9 +68,10 @@
 	</section>
 	
 
-	<footer>
+	<!--<footer>
 		<p>visit <a href="https://kit.svelte.dev">kit.svelte.dev</a> to learn SvelteKit</p>
 	</footer>
+	-->
 </div>
 
 <style>
