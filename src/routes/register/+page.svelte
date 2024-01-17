@@ -2,7 +2,11 @@
     import type { ActionData, PageData } from './$types';
     import { enhance } from '$app/forms';
 
-    export let form: ActionData;
+    type props = {
+        form: ActionData;
+    }
+
+    let { form } = $props<props>();
 
 </script>
 

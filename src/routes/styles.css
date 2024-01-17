@@ -116,6 +116,8 @@ a
 input 
 {
     color: inherit;
+    background-color: var(--app-color-neutral-200);
+    border: none;
 }
 
 input:hover, 

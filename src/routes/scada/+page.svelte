@@ -5,6 +5,12 @@
 
     import TagViewer from '$lib/componets/TagViewer.svelte';
 
+    import { enhance } from '$app/forms';
+
+    let { data } = $props();
+
+    let number = $state(data.data);
+
     let tags = getTagsContext();
 
       // WIP  ////////////////////////////////
@@ -24,6 +30,19 @@
 ///////////////////////////////////////
 
 </script>
+
+<form method="POST" action="?/update" use:enhance={() => {
+    return async ({ update }) => {
+        update({ reset: false });
+    };
+}}>
+<input type="number" name="number" bind:value={number}/>
+
+<button>submit</button>
+</form>
+
+
+<div>data.data = {number}</div>
 
 <DigitalInRound tag={tags.aprt01} on:click={onClick} style="width: 20px" faultFlash/>
 <DigitalInRound tag={tags.aprt02} on:click={onClick1} style="width: 20px" faultFlash/>

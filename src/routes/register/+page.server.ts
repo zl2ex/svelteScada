@@ -1,5 +1,5 @@
-import { ActionFailure } from '@sveltejs/kit';
 import type { ActionData, PageServerLoad, RequestEvent } from './$types';
+import { UserModel } from '$lib/mongoose/user/user';
 
 // not working for some reason
 function validateEmail(email: string):boolean
@@ -12,9 +12,12 @@ function validateEmail(email: string):boolean
     return false;
 }
 
-export const load = (async () => {
-    return {};
-}) satisfies PageServerLoad;
+export async function load() 
+{
+    return {
+
+    };
+}
 
 export const actions = {
     register: async ({ cookies, request }: RequestEvent) => {
