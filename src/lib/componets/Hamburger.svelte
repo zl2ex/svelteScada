@@ -4,7 +4,7 @@
         active: boolean;
     }
 
-	let { active } = $props<props>();
+	let { active = $bindable() } : props = $props();
 
     function toggleActive()
     {
@@ -14,7 +14,7 @@
 </script>
 
 <div class="Hamburger">
-    <button on:click={toggleActive} class="hamburger" aria-label="Open Menu">
+    <button onclick={toggleActive} class="hamburger" aria-label="Open Menu">
         <svg viewBox="0 0 60 40" class={active ? ' hamburgerAnimation active' : 'hamburgerAnimation'} >
             <g stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
                 <line class="top" x1="15%" y1="15%" x2="85%" y2="15%"></line>

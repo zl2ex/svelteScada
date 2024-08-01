@@ -1,10 +1,7 @@
-import { server } from "../../server/socketIoHandler";
 
-export async function load() 
+export async function load({cookies, locals})
 {
-	// TODO AUTH
-	//console.log("+layout.server.ts getTagsServer()", getTagsServer());
-	return {
-		tags: server.tags
-	};
+    return {
+        user: locals.user
+    }
 }

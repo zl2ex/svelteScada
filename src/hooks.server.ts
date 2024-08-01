@@ -1,63 +1,24 @@
-import type { Handle } from "@sveltejs/kit";
-import { parse } from "cookie";
-import jwt from 'jsonwebtoken';
-import { dataBaseConnect } from "./lib/mongoose/db";
-import { UserModel } from "$lib/mongoose/user/user";
-import { PRIVATE_KEY } from "$env/static/private";
+import { redirect, error, type Handle } from "@sveltejs/kit";
+import { authenticateUser } from "$lib/auth/auth";
 
 
-type SessionUser = {
-    id: string;
-    username: string;
-};
-
-await dataBaseConnect();
 
 export const handle: Handle = async ({ event, resolve }) => {
+
     console.log("handleHook");
-    const { headers } = event.request;
-    const cookies = parse(headers.get("cookie") ?? "");
-   
-    if (cookies.AuthorizationToken)
-    {
-        // Remove Bearer prefix
-        const token = cookies.AuthorizationToken.split(" ")[1];
-    
-        try 
-        {
-            const jwtUser = jwt.verify(token, PRIVATE_KEY);
-            if (typeof jwtUser === "string") 
-            {
-                throw new Error("Something went wrong");
-            }
 
-            console.log("jwtUser", jwtUser);
-   
-            const user = await UserModel.findOne({_id: jwtUser._id });
-    
-            if (!user) 
-            {
-                throw new Error("User not found");
-            }
-    
-            const sessionUser: SessionUser = {
-                id: user.id,
-                username: user.username,
-            };
-            
-            console.log('sessionUser', sessionUser);
-            event.locals.user = sessionUser;
+    event.locals.user = await authenticateUser(event);
 
-        } 
-        catch (error)
-        {
-            console.error(error);
-        }
-    }
-    else 
+    console.log(event.locals.user);
+
+    // only the login page is unprotected uunless logged in
+    if(event.locals.user || event.url.pathname.startsWith('/login') || event.url.pathname.startsWith('/register'))
     {
-        console.log("no cookie provided");
+        return await resolve(event);
     }
-   
-    return await resolve(event);
+
+    else
+    {
+        redirect(303, "/login");
+    }
   };

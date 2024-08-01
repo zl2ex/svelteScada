@@ -1,54 +1,39 @@
 <script lang="ts">
 	import './styles.css';
-	import { socketIoTagsClient } from '$lib/tag/tagStore.svelte';
+	import Hamburger from '$lib/componets/Hamburger.svelte';
+	import { enhance } from '$app/forms';
 
-	import github from '$lib/images/github.svg';
-    import Hamburger from '$lib/componets/Hamburger.svelte';
-	
 	const { data } = $props();
 
-	//console.log("+layout.svelte data.tags", data.tags);
-
-	socketIoTagsClient(data.tags);
+	let menuOpen = $state(false);
 	
 	function handleAllAnchorClicks(event: Event) 
 	{
 		//close the menu if a user clicks a link in navigation
-		if (event.target.tagName === 'A') 
+		if (event.target && event.target.tagName === 'A') 
 		{
 			menuOpen = false;
 		}
 	}
-
-	
-
-	let menuOpen = $state(false);
-
 </script>
 
 <div class="app">
 	
 	<header>
 		<div class="corner">
-			<!--
-			<input type="checkbox" id="hamburger"/>
-			<label for="hamburger">
-				<svg viewBox="0 0 60 40" class="hamburgerAnimation">
-					<g stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
-						<line class="top" x1="15%" y1="15%" x2="85%" y2="15%"></line>
-						<line class="middle" x1="15%" y1="50%" x2="85%" y2="50%"></line>
-						<line class="bottom" x1="15%" y1="85%" x2="85%" y2="85%"></line>
-					</g>
-				</svg>
-			</label>
-			-->
 			<Hamburger bind:active={menuOpen}/>
 		</div>
-
+		<h2>27b Willis</h2>
 		<div class="corner">
-			<a href="https://github.com/sveltejs/kit">
-				<img src={github} alt="GitHub" />
-			</a>
+			{#if data.user}
+				<span>{data.user.email}</span>
+				<form id="logout"
+					action="?/logout"
+					method="POST"
+					use:enhance>
+					<button type="submit">logout</button>
+				</form>
+			{/if}
 		</div>
 	</header>
 
@@ -56,21 +41,11 @@
 	<section>
 		<nav on:click={handleAllAnchorClicks} class={menuOpen ? "" : "closed"}>
 			<a href="/">Home</a>
-			<a href="/login">Login</a>
-			<a href="/register">Register</a>
-			<a href="/scada">Scada</a>
-			<a href="/trending">Trending</a>
 		</nav>
 		<main>
 			<slot/>
 		</main>
 	</section>
-	
-
-	<!--<footer>
-		<p>visit <a href="https://kit.svelte.dev">kit.svelte.dev</a> to learn SvelteKit</p>
-	</footer>
-	-->
 </div>
 
 <style>
@@ -80,16 +55,19 @@
 		display: flex;
 		justify-content: space-between;
 		align-items: center;
-		background-color: var(--app-color-neutral-400);
-		
+		background-color: var(--app-color-neutral-300);
+	}
+
+	header h2 
+	{
+		margin: 0;
 	}
 	
 	header .corner
 	{
-			display: flex;
-			align-items: center;
-			
-			
+		display: flex;
+		align-items: center;
+		flex-direction: column;
 	}
 
 	header .corner img
@@ -99,10 +77,9 @@
 		object-fit: contain;
 	}
 
-	.Hamburger
+	.corner .Hamburger
 	{
-		display: flex;
-
+		display: none;
 	}
 
 
@@ -115,12 +92,14 @@
 
 	main
 	{
-		flex: 1;
+		/*flex: 1;
 		flex-wrap: wrap;
 		display: flex;
-		flex-direction: row;
-		align-items: start;
-		justify-content: center;
+		flex-direction: column;
+		align-items: center;
+		justify-content: start;*/
+		width: 100%;
+		min-height: 100%;
 	}
 
 	nav
@@ -170,6 +149,11 @@
 		section nav.closed 
 		{
 			display: none;
+		}
+
+		.corner .Hamburger 
+		{
+			display: block;
 		}
 	}
 

@@ -5,7 +5,7 @@
         tag: BaseTag<any>;
     }
 
-	let { tag } = $props<props>();
+	let { tag = $bindable()} : props = $props();
 
     /* WIP Works for displaying but no binding
     function tableContent(obj:object):string
