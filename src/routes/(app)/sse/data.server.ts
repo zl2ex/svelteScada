@@ -3,6 +3,8 @@ import { tagsInit, type Tags } from '$lib/tag/tags';
 import { type BaseTag } from '$lib/tag/baseTag';
 import { getSetIfy } from '$lib/tag/getSetIfy';
 
+const sse = new EventEmitter();
+
 export let tagsSSE: Tags = getSetIfy(tagsInit, "tags", 
 	(path: string, value: any) => {
 		return value;
@@ -10,9 +12,8 @@ export let tagsSSE: Tags = getSetIfy(tagsInit, "tags",
 	(path: string, value: any, newValue: any) => {
 		console.log('setting', path, newValue);
 		value = newValue;
-		const sse = new EventEmitter();
-		//sse.emit(`${path}:update`, value);
-		sse.emit('tag');
+		sse.emit(`${path}:update`, value);
+		//sse.emit('tag');
 		return value;
 	},
 	() => {}
@@ -31,7 +32,8 @@ export let tagsSSE: Tags = getSetIfy(tagsInit, "tags",
 	setInterval(log, 1000);
 	function log()
 	{
-		tagsSSE.aprt01.data.value = !tagsSSE.aprt01.data.value;
+		//tagsSSE.aprt01.data.value = !tagsSSE.aprt01.data.value;
+		sse.emit(`:update`);
 	}
 /*
 function objectSSE(obj: any, topic: string)

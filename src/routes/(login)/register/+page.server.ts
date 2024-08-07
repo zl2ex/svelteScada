@@ -1,7 +1,6 @@
-import type { PageServerLoad, RequestEvent } from './$types';
-import { users } from '$lib/mongodb/user';
+import type { RequestEvent } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { loginUser } from '$lib/auth/auth';
+import { registerUser } from '$lib/auth/auth';
 
 
 export async function load(event: RequestEvent) 
@@ -13,8 +12,8 @@ export async function load(event: RequestEvent)
 };
 
 export const actions = {
-    login: async (event: RequestEvent) => {
+    register: async (event: RequestEvent) => {
 
-        return loginUser(event);
+        return registerUser(event);
     }
 }

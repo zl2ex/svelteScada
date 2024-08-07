@@ -83,11 +83,10 @@ export async function authenticateUser(event: RequestEvent): Promise<User | null
             console.log("jwtUser", jwtUser);
             const user = await users.findOne({email: jwtUser.email }, {projection: {_id: false}});
             return user;
-        } 
+        }
         catch (err)
         {
             console.error(err);
-            error(500, { message: 'Internal Error' });
         }
     }
 

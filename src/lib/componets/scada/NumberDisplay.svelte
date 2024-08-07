@@ -1,31 +1,26 @@
 <script lang="ts">
     import type { BaseTag } from '$lib/tag/baseTag.ts';
     import { flash } from '$lib/ui/flash.svelte';
+    import type { MouseEventHandler } from 'svelte/elements';
 
     type props = {
         tag: BaseTag<AnalogIn>;
         style?: string;
+        onclick?: MouseEventHandler<any>;
         faultFlash?: boolean;
     };
 
-    let { tag, style = "", faultFlash = false } = $props<props>();
+    let { tag, style = "", onclick, faultFlash = false } : props = $props();
 
     let c = $state("fault"); // default state
     
     $effect(() => {
         c = "";
-        if(tag?.data.value) c = "on"
-        if(tag?.data.fault) c = "fault";
-
-        if(faultFlash) 
-        {
-            // flash on fault
-            if(tag?.data.fault && flash.isOn) c = "";
-        }
+        if(tag.data.fault && faultFlash && flash.isOn) c = "fault";
     });
 
 </script>
-<div class={c} style={style} on:click>
+<div class={c} style={style} onclick={onclick} role="button" tabindex="0">
     <p class="label">{tag.name}</p>
     <p class="value">{tag.data.value}</p>
 </div>

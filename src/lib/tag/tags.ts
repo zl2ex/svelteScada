@@ -41,6 +41,7 @@ export let tagsInit = {
 export let tagsInit = {
 	aprt01: {
 		name: "aprt01",
+		path: "EIP/PLC/{name}",
 		data: {
 			value: false,
 			fault: false

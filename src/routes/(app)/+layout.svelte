@@ -1,11 +1,17 @@
 <script lang="ts">
-	import './styles.css';
+	import '../styles.css';
 	import Hamburger from '$lib/componets/Hamburger.svelte';
 	import { enhance } from '$app/forms';
+    import { socketIoTagsClient } from '$lib/tag/tagStore.svelte';
+    import { setTagState, TagState } from '$lib/tag/ui/tagState.svelte';
 
 	const { data } = $props();
 
 	let menuOpen = $state(false);
+
+	setTagState(new TagState());
+
+	socketIoTagsClient(data.tags);
 	
 	function handleAllAnchorClicks(event: Event) 
 	{
@@ -39,7 +45,7 @@
 
 
 	<section>
-		<nav on:click={handleAllAnchorClicks} class={menuOpen ? "" : "closed"}>
+		<nav onclick={handleAllAnchorClicks} class={menuOpen ? "" : "closed"}>
 			<a href="/">Home</a>
 		</nav>
 		<main>

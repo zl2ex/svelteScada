@@ -7,3 +7,4 @@ export class User
 }
 
 export const users = db.collection<User>('users');
+await users.createIndex({ email: 1 }, { unique: true });

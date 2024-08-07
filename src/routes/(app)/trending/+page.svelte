@@ -181,7 +181,7 @@
         <canvas id="trend"></canvas>
     </div>
     
-    <button class="primary" on:click={update}>UPDATE</button>
+    <button class="primary" onclick={update}>UPDATE</button>
     
 </div>
 
