@@ -1,8 +1,15 @@
 <script lang="ts">
     
     import { enhance } from '$app/forms';
+    import { SvelteURL } from 'svelte/reactivity';
 
     let { form } = $props();
+
+    //WIP Not working  
+    const redirect = new SvelteURL("http://localhost:5173/login").search; //searchParams.get('redirect');
+
+    
+    console.log("redirect", redirect);
 
 </script>
 
@@ -13,7 +20,7 @@
             };
         }}
         method="POST"
-        action="?/login">
+        action="?/login&{redirect}">
 
         <h2>Login</h2>
         <div class="form-item">

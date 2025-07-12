@@ -1,14 +1,15 @@
 <script lang="ts">
+    import { browser } from '$app/environment';
     import { Chart } from 'chart.js/auto';
     import 'chartjs-adapter-date-fns';
     import { de } from 'date-fns/locale';
     import { onMount } from 'svelte';
-    import zoomPlugin from 'chartjs-plugin-zoom';
+    //import zoomPlugin from 'chartjs-plugin-zoom';
 
 
     const { data } = $props();
 
-    Chart.register(zoomPlugin);
+    //if(browser) Chart.register(zoomPlugin);
 
     
 

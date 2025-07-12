@@ -1,19 +1,43 @@
 <script lang="ts">
 	import '../styles.css';
 	import Hamburger from '$lib/componets/Hamburger.svelte';
-	import { enhance } from '$app/forms';
-    import { socketIoTagsClient } from '$lib/tag/tagStore.svelte';
-    import { setTagState, TagState } from '$lib/tag/ui/tagState.svelte';
+    //import { setTagState } from '$lib/tag/ui/tagState.svelte';
+	import { onMount } from "svelte";
+	import { io, type Socket } from "socket.io-client";
 
-	const { data } = $props();
+	const { children, data } = $props();
 
 	let menuOpen = $state(false);
 
-	setTagState(new TagState());
+	//setTagState();
 
-	socketIoTagsClient(data.tags);
+	let socket: Socket | undefined;
+	onMount(() => {
+		socket = io();
+		socket.on("tag:update", ( {nodeId, value }) => {
+		//tags.update(t => ({ ...t, [tag.name]: tag.value });
+			console.log("tag:update " + nodeId + " = " + value);
+		});
+		socket.on("connect", () => {
+			console.log("socketIO Connected");
+			socket.emit("tag:write", {nodeId: "Status", value: 25.4});
+		});
+	});
+
+	function writeTag(name: string) {
+			const newVal = prompt(`Enter new value for ${name}`);
+			if (newVal !== null) {
+			socket?.emit("tag:write", { name, value: JSON.parse(newVal) });
+		}
+	}
+
 	
-	function handleAllAnchorClicks(event: Event) 
+
+	//socketIoTagsClient(data.tags);
+
+	
+	
+	function globalClickHandler(event: Event) 
 	{
 		//close the menu if a user clicks a link in navigation
 		if (event.target && event.target.tagName === 'A') 
@@ -21,23 +45,25 @@
 			menuOpen = false;
 		}
 	}
+
 </script>
 
-<div class="app">
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="app" onclick={globalClickHandler}>
 	
 	<header>
 		<div class="corner">
 			<Hamburger bind:active={menuOpen}/>
 		</div>
-		<h2>27b Willis</h2>
+		<h2>Title</h2>
 		<div class="corner">
 			{#if data.user}
 				<span>{data.user.email}</span>
 				<form id="logout"
-					action="?/logout"
-					method="POST"
-					use:enhance>
-					<button type="submit">logout</button>
+					action="/api/logout?/logout"
+					method="POST">
+					<button type="submit" class="secondary">logout</button>
 				</form>
 			{/if}
 		</div>
@@ -45,11 +71,13 @@
 
 
 	<section>
-		<nav onclick={handleAllAnchorClicks} class={menuOpen ? "" : "closed"}>
+		<nav class={menuOpen ? "" : "closed"}>
 			<a href="/">Home</a>
+			<a href="/scada">Scada</a>
+			<a href="/scada/tags">Tags</a>
 		</nav>
 		<main>
-			<slot/>
+			{@render children()}
 		</main>
 	</section>
 </div>

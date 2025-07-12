@@ -1,10 +1,10 @@
 <script lang="ts">
-    import type { BaseTag } from '$lib/tag/baseTag.ts';
+    import type { BaseTagServer } from '$lib/tag/server/baseTag';
     import { flash } from '$lib/ui/flash.svelte';
     import type { MouseEventHandler } from 'svelte/elements';
 
     type props = {
-        tag: BaseTag<DigitalIn>;
+        tag: BaseTagServer<DigitalIn>;
         style?: string;
         onclick?: MouseEventHandler<SVGSVGElement>;
         faultFlash?: boolean;
@@ -25,7 +25,7 @@
 
 </script>
 
-<p>{tag.name}</p>
+<span>{tag.name}</span>
 <svg viewBox="0 0 60 60" class={c} style={style} onclick={onclick} role="button" tabindex="0">
     <g stroke-width="5%">
         <text>T</text>

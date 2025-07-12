@@ -1,6 +1,6 @@
 import type { RequestEvent } from './$types';
 import { redirect } from '@sveltejs/kit';
-import { registerUser } from '$lib/auth/auth';
+import { registerUser } from '$lib/server/auth/auth';
 
 
 export async function load(event: RequestEvent) 

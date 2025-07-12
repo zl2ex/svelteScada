@@ -1,4 +1,4 @@
-import type { RequestEvent } from './$types';
+import type { RequestEvent } from '@sveltejs/kit';
 
 let data = 22;
 
@@ -11,7 +11,7 @@ export async function load()
 
 
 export const actions = {
-    update: async ({ cookies, request }: RequestEvent) => {
+    update: async ({ request }: RequestEvent) => {
         const formData = await request.formData();
         data = Number(formData.get('number'));
         console.log(data);

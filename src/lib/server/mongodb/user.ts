@@ -1,4 +1,4 @@
-import db from '$lib/mongodb/db';
+import db from '$lib/server/mongodb/db';
 
 export class User
 {

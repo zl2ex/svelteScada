@@ -1,5 +1,4 @@
 import type { RequestEvent } from './$types';
-import { TrendModel } from '$lib/mongoose/trend/trend';
 
 export const ssr = false;
 

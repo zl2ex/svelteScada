@@ -1,10 +1,10 @@
 <script lang="ts">
-    import type { BaseTag } from '$lib/tag/baseTag.ts';
+    import type { BaseTagServer } from '$lib/tag/server/baseTag';
     import { flash } from '$lib/ui/flash.svelte';
     import type { MouseEventHandler } from 'svelte/elements';
 
     type props = {
-        tag: BaseTag<AnalogIn>;
+        tag: BaseTagServer<AnalogIn>;
         style?: string;
         onclick?: MouseEventHandler<any>;
         faultFlash?: boolean;
@@ -21,8 +21,8 @@
 
 </script>
 <div class={c} style={style} onclick={onclick} role="button" tabindex="0">
-    <p class="label">{tag.name}</p>
-    <p class="value">{tag.data.value}</p>
+    <span class="label">{tag.name}</span>
+    <span class="value">{tag.data.value}</span>
 </div>
 
 <style>

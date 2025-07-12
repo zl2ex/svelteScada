@@ -1,8 +1,8 @@
 <script lang="ts">
-    import type { BaseTag } from "$lib/tag/baseTag";
+    import type { BaseTagServer } from "$lib/tag/server/baseTag";
 
     type props = {
-        tag: BaseTag<any>;
+        tag: BaseTagServer<any>;
     }
 
 	let { tag = $bindable()} : props = $props();

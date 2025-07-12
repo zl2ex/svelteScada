@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import type { RequestEvent } from "../../routes/$types";
+import type { RequestEvent } from '@sveltejs/kit';
 import { PRIVATE_KEY, JWT_EXPERATION_TIME } from '$env/static/private';
-import { users, type User } from '$lib/mongodb/user';
-import { redirect, error } from '@sveltejs/kit';
+import { users, type User } from '$lib/server/mongodb/user';
+import { redirect } from '@sveltejs/kit';
 import { parse } from "cookie";
 
 
@@ -17,10 +17,7 @@ export async function registerUser(event: RequestEvent)
     //if(validateEmail(email)) return { sucsess: false, message: "Email Not Valid" };
     if(!password) return { sucsess: false, message: "No Password Provided" };
 
-    console.log(email, password, "form submit");
-
-
-    const user = users.findOne({email});
+    const user = await users.findOne({email});
     if(user) return { sucsess: false, message: "User with that email already exists" };
 
     const salt = await bcrypt.genSalt(10);
@@ -28,7 +25,7 @@ export async function registerUser(event: RequestEvent)
 
     await users.insertOne({ email, password: hashedPassword });
 
-    return { sucsess: true, data: "JWT" };
+    return { sucsess: true};
 }
 
 
@@ -61,11 +58,14 @@ export async function loginUser(event: RequestEvent)
         maxAge: 60 * 60 * 24 * 360 // 1 Year
     });
 
-    redirect(302, '/');
+    console.log("searchParams", event.url.searchParams.get('redirect'));
+
+    return redirect(302, event.url.searchParams.get("redirect") || "/");
 }
 
 export function logoutUser(event: RequestEvent) {
     event.cookies.delete('token', { path: '/' });
+    return redirect(303, "/login");
 }
 
 export async function authenticateUser(event: RequestEvent): Promise<User | null>

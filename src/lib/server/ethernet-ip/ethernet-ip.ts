@@ -1,4 +1,4 @@
-import { Controller, Tag } from 'ethernet-ip';
+import { Controller, Tag } from 'st-ethernet-ip';
  
 const PLC = new Controller();
  
