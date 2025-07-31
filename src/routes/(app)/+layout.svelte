@@ -5,12 +5,14 @@
 	import { onMount } from "svelte";
 	import { io, type Socket } from "socket.io-client";
 
+	import { ClientTag } from '$lib/tag/ui/tagState.svelte';
+
 	const { children, data } = $props();
 
 	let menuOpen = $state(false);
 
 	//setTagState();
-
+/*
 	let socket: Socket | undefined;
 	onMount(() => {
 		socket = io();
@@ -20,17 +22,19 @@
 		});
 		socket.on("connect", () => {
 			console.log("socketIO Connected");
-			socket.emit("tag:write", {nodeId: "Status", value: 25.4});
+			//subscribe(["ns=1;s=Local.Status"]);
+			writeTag("ns=1;s=Local.Status", 25.4)
 		});
 	});
 
-	function writeTag(name: string) {
-			const newVal = prompt(`Enter new value for ${name}`);
-			if (newVal !== null) {
-			socket?.emit("tag:write", { name, value: JSON.parse(newVal) });
-		}
+	function writeTag(nodeId: string, value: any) {
+		socket.emit("tag:write", { nodeId, value });
 	}
 
+	function subscribe(nodeIds: string[]) {
+		socket.emit("tag:subscribe", nodeIds);
+	}
+*/
 	
 
 	//socketIoTagsClient(data.tags);
@@ -66,6 +70,7 @@
 					<button type="submit" class="secondary">logout</button>
 				</form>
 			{/if}
+			
 		</div>
 	</header>
 

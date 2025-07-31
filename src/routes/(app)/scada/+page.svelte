@@ -52,10 +52,11 @@
 
 
 <div>data.data = {number}</div>
+<NumberDisplay nodeId="ns=1;s=Local.Status" faultFlash></NumberDisplay>
 <!--
 <DigitalInRound tag={ts.tags.aprt01} onclick={onClick} style="width: 20px" faultFlash/>
 <DigitalInRound tag={ts.tags.aprt02} onclick={onClick1} style="width: 20px" faultFlash/>
-<NumberDisplay tag={ts.tags.attx01} faultFlash></NumberDisplay>
+
 
 
 <TagViewer bind:tag={ts.tags.aprt01}></TagViewer>

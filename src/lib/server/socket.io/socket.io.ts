@@ -8,10 +8,10 @@ let io: SocketIOServer;
 
 const socketClientSubscriptions = new Map<string, Set<string>>();
 
-export function emitToSubscribers(tagName: string, value: any) {
+export function emitToSubscribers(nodeId: string, value: any) {
   for (const [socketId, subs] of socketClientSubscriptions.entries()) {
-    if (subs.has(tagName)) {
-      io.to(socketId).emit("tag:update", { name: tagName, value });
+    if (subs.has(nodeId)) {
+        io.to(socketId).emit("tag:update", { nodeId, value });
     }
   }
 }
@@ -23,24 +23,28 @@ export function creatSocketIoServer(httpServer: Server): SocketIOServer {
         }});
 
     io.on("connection", (socket) => {
-        logger.info("socket io client connected with id of " + socket.id);
+        logger.info("socket.io client connected with id of " + socket.id);
 
         socketClientSubscriptions.set(socket.id, new Set());
 
-        socket.on("subscribe", (tagNames: string[]) => {
+        socket.on("tag:subscribe", (nodeIds: string[]) => {
             const subs = socketClientSubscriptions.get(socket.id);
             if (subs) {
-            subs.clear();
-            tagNames.forEach(name => subs.add(name));
-            logger.info(socket.id +  "subscribed to: " + tagNames);
+                subs.clear();
+                nodeIds.forEach((id) => {
+                    subs.add(id);
+                    tags[id].triggerEmit(); // sends a tag:update message to browser as soon as they subscribe so they get the value
+                });
+                logger.info("socket io client " + socket.id +  " subscribed to: " + nodeIds);
             }
+            
         });
 
-        socket.on("unsubscribe", (tagNames: string[]) => {
+        socket.on("tag:unsubscribe", (nodeIds: string[]) => {
             const subs = socketClientSubscriptions.get(socket.id);
-            if (subs) {
-            tagNames.forEach(name => subs.delete(name));
-            logger.info(socket.id +  "unsubscribed from: " + tagNames);
+                if (subs) {
+                nodeIds.forEach(name => subs.delete(name));
+                logger.info("socket io client " + socket.id +  " unsubscribed from: " + nodeIds);
             }
         });
 

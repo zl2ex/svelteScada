@@ -1,10 +1,77 @@
 import { getContext, setContext } from "svelte";
 import { io } from "socket.io-client";
-import { socketIoEvents } from "$lib/server/socket.io/socket.io";
-import { isBaseTagServer } from "../server/baseTag";
-import { tagsInit } from "../server/tags";
-import { browser } from "$app/environment";
+//import { type DataType } from "node-opcua";
+import { type Socket } from "socket.io-client";
+import type { NodeIdLiteral } from "$lib/server/opcua/opcuaServer";
 
+export type ClientTagOptions = {
+    name?: string;
+    nodeId: NodeIdLiteral;
+    initialValue?: any;
+}
+export class ClientTag {
+    static socket: Socket = io();
+    name: string;
+    nodeId: string;
+    dataType: string;
+    value: any;
+
+    constructor(opts: ClientTagOptions) {
+        this.name = opts.name ?? "";
+        this.nodeId = opts.nodeId;
+        this.dataType = "";
+        this.value = $state(opts.initialValue ?? null);
+
+        ClientTag.socket.on("tag:update", ( { nodeId, value }) => {
+            console.log(value);
+            if(nodeId != this.nodeId || value.nodeId != this.nodeId) throw Error("error  tag:update  nodeId does not match");
+            //this.name = value.name;
+            //this.dataType = value.dataType;
+            //this.value = value.value;
+            Object.assign(this, value);
+        });
+    }
+
+    static {
+
+        ClientTag.socket.on("connect", () => {
+            console.log("socket.io client connected to server");
+        });
+    }
+
+    write(value: any) {
+        ClientTag.socket.emit("tag:write", { nodeId: this.nodeId, value });
+    }
+
+    subscribe() {
+        ClientTag.socket.emit("tag:subscribe", [this.nodeId]);
+    }
+
+    unsubscribe() {
+        ClientTag.socket.emit("tag:unsubscribe", [this.nodeId]);
+    }
+}
+
+
+/*
+let socket: Socket | undefined;
+    socket = io();
+    socket.on("tag:update", ( {nodeId, value }) => {
+    //tags.update(t => ({ ...t, [tag.name]: tag.value });
+        console.log("tag:update " + nodeId + " = " + value);
+    });
+    socket.on("connect", () => {
+        console.log("socketIO Connected");
+        socket.emit("tag:write", {nodeId: "Status", value: 25.4});
+    });
+
+
+function writeTag(name: string) {
+        const newVal = prompt(`Enter new value for ${name}`);
+        if (newVal !== null) {
+        socket?.emit("tag:write", { name, value: JSON.parse(newVal) });
+    }
+}
 /*
 class BaseTagClient<T> {
     name: string;

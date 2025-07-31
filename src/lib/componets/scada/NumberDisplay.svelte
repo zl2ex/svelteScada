@@ -1,28 +1,43 @@
 <script lang="ts">
-    import type { BaseTagServer } from '$lib/tag/server/baseTag';
+  import type { NodeIdLiteral } from '$lib/server/opcua/opcuaServer';
+  import { ClientTag } from '$lib/tag/ui/tagState.svelte';
     import { flash } from '$lib/ui/flash.svelte';
+  import { onMount } from 'svelte';
     import type { MouseEventHandler } from 'svelte/elements';
 
     type props = {
-        tag: BaseTagServer<AnalogIn>;
+        nodeId: NodeIdLiteral
         style?: string;
         onclick?: MouseEventHandler<any>;
         faultFlash?: boolean;
     };
 
-    let { tag, style = "", onclick, faultFlash = false } : props = $props();
+    let { nodeId, style = "", onclick, faultFlash = false } : props = $props();
 
-    let c = $state("fault"); // default state
-    
+    onclick = () => {
+        tag.write(--tag.value[0]);
+    }
+
+
+    let tag = new ClientTag({nodeId}); // setup client tag
+    let clazz = $state("fault"); // default state
+
     $effect(() => {
-        c = "";
-        if(tag.data.fault && faultFlash && flash.isOn) c = "fault";
+        clazz = "";
+        if(tag.value.fault && faultFlash && flash.isOn) clazz = "fault";
+    });
+
+    onMount(() => {
+        tag.subscribe();
+        return () => {
+            tag.unsubscribe(); // unsibscribe when unmounted
+        };
     });
 
 </script>
-<div class={c} style={style} onclick={onclick} role="button" tabindex="0">
+<div class={clazz} style={style} onclick={onclick} role="button" tabindex="0">
     <span class="label">{tag.name}</span>
-    <span class="value">{tag.data.value}</span>
+    <span class="value">{tag.value}</span>
 </div>
 
 <style>
