@@ -2,7 +2,7 @@ import type { Socket } from "socket.io";
 import type { BaseTagServerInit } from "../baseTag";
 import { server } from "../../../../server/socketIoHandler";
 
-import { OpcuaClient } from "$lib/server/opcua/opcuaClient";
+import { OpcuaClient } from "$lib/server/drivers/opcua/opcuaClient";
 import type { ClientSubscription } from "node-opcua";
 import { AttributeIds, TimestampsToReturn } from "node-opcua-client";
 

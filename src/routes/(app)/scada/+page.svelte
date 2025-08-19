@@ -1,15 +1,15 @@
 <script lang="ts">
-    import DigitalInRound from '$lib/componets/scada/DigitalInRound.svelte';
-    import NumberDisplay from '$lib/componets/scada/NumberDisplay.svelte';
-    import TagViewer from '$lib/componets/scada/TagViewer.svelte';
+  import DigitalInRound from "$lib/componets/scada/DigitalInRound.svelte";
+  import NumberDisplay from "$lib/componets/scada/NumberDisplay.svelte";
+  import TagViewer from "$lib/componets/scada/TagViewer.svelte";
 
-    import { enhance } from '$app/forms';
-    //import { getTagState } from '$lib/tag/ui/tagState.svelte.js';
+  import { enhance } from "$app/forms";
+  //import { getTagState } from '$lib/tag/ui/tagState.svelte.js';
 
-    let { data } = $props();
+  let { data } = $props();
 
-    let number = $state(data.data);
-/*
+  let number = $state(data.data);
+  /*
     let ts = getTagState();
 
     console.log(ts);
@@ -19,8 +19,8 @@
     ts.subscribe("attx01");
     ts.subscribe("tagArray");
 */
-      // WIP  ////////////////////////////////
-      /*
+  // WIP  ////////////////////////////////
+  /*
     function onClick()
     {
         ts.tags.aprt01.data.fault = !ts.tags.aprt01.data.fault;
@@ -36,23 +36,12 @@
         console.log("click1");
     }
 */
-///////////////////////////////////////
-
+  ///////////////////////////////////////
 </script>
 
-<form method="POST" action="?/update" use:enhance={() => {
-    return async ({ update }) => {
-        update({ reset: false });
-    };
-}}>
-<input type="number" name="number" bind:value={number}/>
+<NumberDisplay path="/demo/test" faultFlash></NumberDisplay>
 
-<button>submit</button>
-</form>
-
-
-<div>data.data = {number}</div>
-<NumberDisplay nodeId="ns=1;s=Local.Status" faultFlash></NumberDisplay>
+<NumberDisplay path="/testTag" faultFlash></NumberDisplay>
 <!--
 <DigitalInRound tag={ts.tags.aprt01} onclick={onClick} style="width: 20px" faultFlash/>
 <DigitalInRound tag={ts.tags.aprt02} onclick={onClick1} style="width: 20px" faultFlash/>
@@ -65,4 +54,3 @@
 -->
 <!--<NumberDisplay tag={tag.tagStoreDemo} style="" faultFlash></NumberDisplay>
 -->
-

@@ -2,56 +2,81 @@ import { getContext, setContext } from "svelte";
 import { io } from "socket.io-client";
 //import { type DataType } from "node-opcua";
 import { type Socket } from "socket.io-client";
-import type { NodeIdLiteral } from "$lib/server/opcua/opcuaServer";
+import type {
+  EmitPayload,
+  WritePayload,
+} from "$lib/server/socket.io/socket.io";
+import type {
+  ResolveType,
+  TagPaths,
+  BaseTypeStrings,
+} from "$lib/server/tag/tag";
+import { keyof } from "zod";
 
 export type ClientTagOptions = {
-    name?: string;
-    nodeId: NodeIdLiteral;
-    initialValue?: any;
+  path: TagPaths;
+  name?: string;
+  initialValue?: any;
+};
+export class ClientTag<DataTypeString extends BaseTypeStrings> {
+  static socket: Socket = io();
+  name: string;
+  path: TagPaths;
+  dataType: DataTypeString;
+  value: ResolveType<DataTypeString>;
+
+  constructor(dataType: DataTypeString, opts: ClientTagOptions) {
+    this.name = opts.name ?? "";
+    this.path = opts.path;
+    this.dataType = dataType;
+    this.value = $state(opts.initialValue ?? null);
+
+    console.log(`[ClientTag] created tag ${this.path}`);
+
+    ClientTag.socket.on(
+      `tag:update/${this.path}`,
+      ({ path, value }: EmitPayload) => {
+        console.log(value);
+        if (path != this.path || value.path != this.path)
+          throw new Error(
+            `[Client Tag]  tag:update  path ${value.path} does not match requested path ${this.path}`
+          );
+
+        // TD WIP Validate datatype of tag vs datatype of clientTag
+        if (this.dataType !== value.dataType)
+          throw new Error(
+            `[Client Tag] tag:update   dataType ${value.dataType} is not assignable to ${this.dataType}`
+          );
+        this.name = value.name;
+        this.dataType = value.dataType;
+        this.value = value.value;
+        //Object.assign(this, value);
+      }
+    );
+  }
+
+  static {
+    ClientTag.socket.on("connect", () => {
+      console.log("socket.io client connected to server");
+    });
+  }
+
+  write(value: any) {
+    ClientTag.socket.emit("tag:write", {
+      path: this.path,
+      value,
+    } satisfies WritePayload);
+  }
+
+  subscribe() {
+    console.log(`[ClientTag] subscribe tag ${this.path}`);
+    ClientTag.socket.emit("tag:subscribe", this.path);
+  }
+
+  unsubscribe() {
+    ClientTag.socket.emit("tag:unsubscribe", this.path);
+  }
 }
-export class ClientTag {
-    static socket: Socket = io();
-    name: string;
-    nodeId: string;
-    dataType: string;
-    value: any;
-
-    constructor(opts: ClientTagOptions) {
-        this.name = opts.name ?? "";
-        this.nodeId = opts.nodeId;
-        this.dataType = "";
-        this.value = $state(opts.initialValue ?? null);
-
-        ClientTag.socket.on("tag:update", ( { nodeId, value }) => {
-            console.log(value);
-            if(nodeId != this.nodeId || value.nodeId != this.nodeId) throw Error("error  tag:update  nodeId does not match");
-            //this.name = value.name;
-            //this.dataType = value.dataType;
-            //this.value = value.value;
-            Object.assign(this, value);
-        });
-    }
-
-    static {
-
-        ClientTag.socket.on("connect", () => {
-            console.log("socket.io client connected to server");
-        });
-    }
-
-    write(value: any) {
-        ClientTag.socket.emit("tag:write", { nodeId: this.nodeId, value });
-    }
-
-    subscribe() {
-        ClientTag.socket.emit("tag:subscribe", [this.nodeId]);
-    }
-
-    unsubscribe() {
-        ClientTag.socket.emit("tag:unsubscribe", [this.nodeId]);
-    }
-}
-
 
 /*
 let socket: Socket | undefined;

@@ -1,6 +1,8 @@
-import { users } from "$lib/server/mongodb/user";
+import { users } from "./user";
+import { tags } from "./tag";
 
 
 export const collections = {
-	users: users
+	users: users,
+	tags: tags
 }

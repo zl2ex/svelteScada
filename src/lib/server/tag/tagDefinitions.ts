@@ -8,7 +8,14 @@ export const tagDefinitions = {
     Status: {
       nodeId: "ns=1;s=Local.Status",
       dataType: "Double[10]"
-    }
+    },
+    /*udtTest: {
+      nodeId: "ns=1;s=Local.Status",
+      dataType: "Scaling",
+      parameters: {
+        path: "ns=1;s=PLC1"
+      }
+    }*/
   },
   Settings: {
     User: {

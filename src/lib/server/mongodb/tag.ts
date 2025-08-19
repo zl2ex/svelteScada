@@ -1,8 +1,6 @@
 import db from "./db";
-import { server } from "../../../server/socketIoHandler";
-import type { ClientSubscription } from "node-opcua";
-import { AttributeIds, TimestampsToReturn } from "node-opcua-client";
-
+import { type TagOptions } from "../tag/tag";
+/*
 export class Tag<T>
 {
     name: string;
@@ -67,7 +65,16 @@ export class Tag<T>
             });
         });
     }
-}
+}*/
 
-export const tags = db.collection<Tag<Object>>('tags');
-await tags.createIndex({ name: 1 }, { unique: true });
+
+export const tags = db.collection<TagOptions>('tags');
+await tags.createIndex({ path: 1 }, { unique: true });
+
+/*tags.insertOne({
+        name: "test",
+        path: "/demo/test",
+        dataType: "Double",
+        nodeId: "ns=1;s=[device]/fhr100",
+        initialValue: 10.1123
+    });*/

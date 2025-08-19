@@ -1,4 +1,4 @@
-import { ModbusTcpDevice } from "../../server/modbus/modbus";
+import { ModbusTcpDevice } from "../../server/drivers/modbus/modbusTcp";
 
 export let Devices = {
     DemoPLC: new ModbusTcpDevice({

@@ -1,19 +1,18 @@
 import {
-    OPCUAClient,
-    OPCUAServer,
-    AttributeIds,
-    DataType,
-    Variant,
-    type UAObject,
-    type Namespace
+  OPCUAClient,
+  OPCUAServer,
+  AttributeIds,
+  DataType,
+  Variant,
+  type UAObject,
+  type Namespace,
 } from "node-opcua";
-import { Tag, type TagOptions } from "../tag/tag";
-import { tagDefinitions } from "../tag/tagDefinitions";
-import jsonUdt from "../tag/udt.json";
-import { logger } from "../../../lib/pino/logger";
-import { emitToSubscribers } from "../socket.io/socket.io";
-import { UdtTag, type UdtDefinitionOptions, type UdtTagOptions } from "../tag/udt";
-
+import { Tag, type TagOptions } from "../../tag/tag";
+import { tagDefinitions } from "../../tag/tagDefinitions";
+import { udtDefinitions } from "../../tag/udtDefinitions";
+import { logger } from "../../../pino/logger";
+import { emitToSubscribers } from "../../socket.io/socket.io";
+import { UdtTag } from "../../tag/udt";
 
 /*type AllTagNodes = Tags[keyof Tags];
 type NodeIdLiteral =
@@ -27,31 +26,33 @@ type NodeIdLiteral =
       ? { [K in keyof T]: ExtractNodeIds<T[K]> }[keyof T]
       : never;
 */
-type ExtractNodeIds<T> =
-  T extends { nodeId: infer N extends string } ? N :
-  T extends object ? { [K in keyof T]: ExtractNodeIds<T[K]> }[keyof T] :
-  never;
-
-
-export type NodeIdLiteral = ExtractNodeIds<typeof tagDefinitions>;
-
-export const tags: Record<NodeIdLiteral, Tag> = {}; // Global tag registry
 
 const EXTERNAL_ENDPOINT = "opc.tcp://localhost:4840";
 
-function createPrimitiveTag(name: string, tagOptions: TagOptions, ns: Namespace, root: UAObject) {
+function createPrimitiveTag(
+  name: string,
+  tagOptions: TagOptions,
+  server: OPCUAServer,
+  ns: Namespace,
+  root: UAObject
+) {
   logger.debug("create tag " + name);
-  return new Tag({
-    name: name,
-    nodeId: tagOptions.nodeId,
-    dataType: tagOptions.dataType,
-    initialValue: tagOptions.initialValue,
-    emit: (event, payload) => {
-      if (event === "tag:update") {
-        emitToSubscribers(payload.nodeId, payload.value);
-      }
-    }
-  }, ns, root);
+  return new Tag(
+    {
+      name: name,
+      nodeId: tagOptions.nodeId,
+      dataType: tagOptions.dataType,
+      server: server,
+      initialValue: tagOptions.initialValue,
+      emit: (event, payload) => {
+        if (event === "tag:update") {
+          emitToSubscribers(payload.nodeId, payload.value);
+        }
+      },
+    },
+    ns,
+    root
+  );
 }
 
 function createUdtTag(name: string, udtTagOptions: UdtTagOptions) {
@@ -66,23 +67,23 @@ function createUdtTag(name: string, udtTagOptions: UdtTagOptions) {
       if (event === "tag:update") {
         emitToSubscribers(payload.nodeId, payload.value);
       }
-    }
+    },
   });
 }
-
-function isTag(tag: Tag | Object): tag is Tag {
-  return (tag as Tag).nodeId !== undefined;
-}
-
-function loadTagsFromJson(ns: Namespace, root: UAObject, json: typeof tagDefinitions) {
-
-  for (const [name, value] of Object.entries(json)) {
+/*
+function loadTags(
+  server: OPCUAServer,
+  ns: Namespace,
+  root: UAObject,
+  definiton: object
+) {
+  for (const [name, value] of Object.entries(definiton)) {
     if (isTag(value)) {
       // Is it a primitive datatype eg Bool or Double
       //if(Object.values(DataType).some(type => String(type).startsWith(value.dataType))) {
       //if(value.dataType.includes(Object.values(DataType)))
-        const tag = createPrimitiveTag(name, value, ns, root);
-        tags[value.nodeId as unknown as NodeIdLiteral] = tag;
+      const tag = createPrimitiveTag(name, value, server, ns, root);
+      tags[value.nodeId as unknown as NodeIdLiteral] = tag;
       /*}
       // is a Udt Datatype defined in udt.json
       else if(Object.keys(jsonUdt).includes(value.dataType)) {
@@ -93,15 +94,15 @@ function loadTagsFromJson(ns: Namespace, root: UAObject, json: typeof tagDefinit
       else {
         logger.debug(Object.values(DataType));
         logger.error("dataType " + value.dataType + " Does not exist in udt.json");
-      }*/
-    } 
-    else {
+      }
+    } else {
       logger.debug("create folder " + name);
       const folder = ns.addObject({ organizedBy: root, browseName: name });
-      loadTagsFromJson(ns, folder, value);
+      loadTags(server, ns, folder, value);
     }
   }
 }
+*/
 /*
 function createTags<T extends Record<string, string>>(defs: T): {
   [K in keyof T]: Tag<T[K]>;
@@ -118,7 +119,11 @@ export async function createOPCUAServer(): Promise<OPCUAServer> {
   const server = new OPCUAServer({
     port: 4840,
     resourcePath: "/UA/InternalServer",
-    buildInfo: { productName: "InternalBridge", buildNumber: "1", buildDate: new Date() }
+    buildInfo: {
+      productName: "InternalBridge",
+      buildNumber: "1",
+      buildDate: new Date(),
+    },
   });
   await server.initialize();
   const ns = server.engine.addressSpace!.getOwnNamespace();
@@ -145,25 +150,12 @@ export async function createOPCUAServer(): Promise<OPCUAServer> {
   }
   */
 
-  const rootFolder = ns.addObject({
-    organizedBy: server.engine.addressSpace!.rootFolder.objects,
-    browseName: "RootTags"
-  });
-
-  loadTagsFromJson(ns, rootFolder, tagDefinitions);
   await server.start();
-  logger.info("Internal OPC UA Server at " + server.endpoints[0].endpointDescriptions()[0].endpointUrl);
-
-  // TD Testing
-  poll();
+  logger.info(
+    `[OPCUAServer] Internal OPC UA Server at ${server.endpoints[0].endpointDescriptions()[0].endpointUrl}`
+  );
 
   return server;
-}
-
-function poll() {
-    logger.debug("poll");
-    tags["ns=1;s=Local.Status"].update([tags["ns=1;s=Local.Status"].value[0] + 1, tags["ns=1;s=Local.Status"].value[1], 0, 0, 0, 0, 0, 0, 0, 0]);
-    setTimeout(poll, 1000);
 }
 
 export async function startOPCUAClient(): Promise<OPCUAClient> {
@@ -180,5 +172,5 @@ export async function startOPCUAClient(): Promise<OPCUAClient> {
     }
   }, 1000);
   */
- return client;
+  return client;
 }
