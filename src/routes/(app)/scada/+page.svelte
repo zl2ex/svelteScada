@@ -40,8 +40,9 @@
 </script>
 
 <NumberDisplay path="/demo/test" faultFlash></NumberDisplay>
-
+<NumberDisplay path="/demo/test1" faultFlash></NumberDisplay>
 <NumberDisplay path="/testTag" faultFlash></NumberDisplay>
+
 <!--
 <DigitalInRound tag={ts.tags.aprt01} onclick={onClick} style="width: 20px" faultFlash/>
 <DigitalInRound tag={ts.tags.aprt02} onclick={onClick1} style="width: 20px" faultFlash/>

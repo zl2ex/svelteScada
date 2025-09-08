@@ -32,20 +32,42 @@ import { emitToSubscribers, type EmitPayload } from "../socket.io/socket.io";
 import { deviceManager } from "../../../server";
 import z from "zod";
 
-export type TagOptions = {
+// Base schemas for primitives
+export const Z_BaseTypes = {
+  Double: z.number(),
+  Int16: z.number().int().max(65535),
+  Int32: z.number().int().max(4294967295), // TD WIP max and min
+  Boolean: z.boolean(),
+  String: z.string(),
+} as const;
+
+export const Z_TagOptions = z.object({
+  name: z.string(),
+  path: z.string(), // TD WIP Tighten type ?
+  nodeId: z.string(),
+  dataType: z.string(), // TD WIP Tighten type ?
+  writable: z.boolean().optional().default(true),
+  initialValue: z.any().optional(),
+  parameters: z.object().optional(),
+  exposeOverOpcua: z.boolean().optional().default(false),
+  //onUpdate: z.function(),
+});
+
+export type TagOptions<T> = z.input<typeof Z_TagOptions>;
+/*
+export type TagOptions<DataTypeString extends BaseTypeStringsWithArrays> = {
   name: string;
-  path: TagPaths | (string & {});
+  path: TagPaths; //  | (string & {}); // TD WIP
   nodeId: string;
-  dataType: BaseTypeStrings;
+  dataType: DataTypeString;
   writable?: boolean;
-  initialValue?: any;
+  initialValue?: ResolveType<DataTypeString>;
   parameters?: object;
   exposeOverOpcua?: boolean;
   onUpdate?: (value: any) => void;
-  emit?: (event: string, payload: EmitPayload) => void;
 };
-
-export function isTagOptions(options: TagOptions | unknown) {
+*/
+export function isTagOptions(options: TagOptions<any> | unknown) {
   return (
     "name" in options &&
     "path" in options &&
@@ -84,25 +106,19 @@ type OpcuaDataTypeMapping = {
   // Add more user-defined types as needed
 };
 
-// Base schemas for primitives and UDTs
-export const baseZodSchemas = {
-  Double: z.number(),
-  Int32: z.number().int(),
-  Boolean: z.boolean(),
-  String: z.string(),
-  SensorUDT: z.object({
-    faulted: z.boolean(),
-    value: z.number(),
-  }),
-  // You can add more UDTs here
-} as const;
-
 // TypeScript mapping inferred from Zod
 export type BaseTypeMap = {
-  [K in keyof typeof baseZodSchemas]: z.infer<(typeof baseZodSchemas)[K]>;
+  [K in keyof typeof Z_BaseTypes]: z.infer<(typeof Z_BaseTypes)[K]>;
 };
 
+// just the base types
 export type BaseTypeStrings = keyof BaseTypeMap;
+
+// base type or array of base type
+export type BaseTypeStringsWithArrays =
+  | keyof BaseTypeMap
+  | `${keyof BaseTypeMap}[]`
+  | `${keyof BaseTypeMap}[${number}]`;
 
 // Parse "Double[3]" or "SensorUDT[]" into base + length
 type ParseArray<DataTypeString extends string> =
@@ -133,14 +149,14 @@ export type ResolveType<DataType extends string> =
 export function getSchema<DataType extends string>(
   dataType: DataType
 ): z.ZodTypeAny {
-  const parsed = dataType.match(/^(?<base>[A-Za-z]+)(?:\[(?<len>\d*?)\])?$/);
+  const parsed = dataType.match(/^(?<base>[A-Za-z0-9]+)(?:\[(?<len>\d*?)\])?$/);
   if (!parsed?.groups) throw new Error(`Invalid dataType: ${dataType}`);
 
   const base = parsed.groups.base;
   const len = parsed.groups.len;
 
-  const baseSchema = (baseZodSchemas as any)[base];
-  if (!baseSchema) throw new Error(`Unknown base type: ${base}`);
+  const baseSchema = (Z_BaseTypes as any)[base];
+  if (!baseSchema) throw new Error(`[Tag] Unknown base type: ${base}`);
 
   if (len === undefined) return baseSchema; // scalar
   if (len === "") return z.array(baseSchema); // dynamic array
@@ -201,7 +217,9 @@ export function resolveOpcuaPath(path: string): ResolvedOpcuaPath {
 // TD WIP Make this auto generated from mongodb data
 export type TagTypeMapDefinition = {
   "/demo/test": "Double";
-  "/testTag": "Double";
+  "/demo/testInt32": "Int32";
+  "/demo/testInt16": "Int16";
+  "/demo/testBool": "Boolean";
 };
 
 export type TagTypeMap = {
@@ -210,7 +228,7 @@ export type TagTypeMap = {
 
 export type TagPaths = keyof TagTypeMapDefinition;
 
-export class Tag<DataTypeString extends BaseTypeStrings> {
+export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   static tags: TagTypeMap = Object();
   static opcuaServer: OPCUAServer;
   name: string;
@@ -224,10 +242,15 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
   value: ResolveType<DataTypeString>;
   schema: z.ZodType;
   exposeOverOpcua: boolean;
-  variable?: UAVariable;
+  variable?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
+  opcuaVarible: UAVariable; // varible that nodeId points at
+  children: Tag<any>[] | undefined; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
   onUpdate?: (value: Tag<DataTypeString>) => void;
 
-  constructor(dataType: DataTypeString, opts: Omit<TagOptions, "dataType">) {
+  constructor(
+    dataType: DataTypeString,
+    opts: Omit<TagOptions<DataTypeString>, "dataType">
+  ) {
     this.name = opts.name;
     this.path = opts.path; // TD WIP
     this.nodeId = opts.nodeId ?? `ns=1;s=${opts.name}`;
@@ -249,10 +272,12 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
     const baseDataType = arrayMatch
       ? arrayMatch[1]
       : dataType.replace("[]", "");
+
     // is a opcua primative datatype
     if (Object.values(DataType).includes(baseDataType as unknown as DataType)) {
       this.opcuaDataType = baseDataType as unknown as DataType;
     }
+
     // is a user defined datatype and therfore a opcua ExtentionObject
     else if (Object.hasOwn(udtDefinitions, dataType)) {
       this.opcuaDataType = DataType.ExtensionObject;
@@ -274,30 +299,38 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
       }
     } else {
       throw new Error(
-        `[Tag] error while creating tag ${this.path} dataType ${opts.dataType} does not exist in udtDefinitions`
+        `[Tag] error while creating tag ${this.path} dataType ${dataType} does not exist in udtDefinitions`
       );
     }
 
-    // fill array with values based on length if not provided in inital value
-    if (
-      this.isArray &&
-      this.arrayLength &&
-      !Array.isArray(opts?.initialValue)
-    ) {
-      this.value = Array(this.arrayLength).fill(0);
-    }
-    // check if the correct length array was supplied in the initalValue
-    else if (this.isArray && opts.initialValue?.length == this.arrayLength) {
-      this.value = opts.initialValue;
-    } else if (opts.initialValue) {
-      this.value = opts.initialValue;
+    // no inital value given so generate defaults
+    if (!opts.initialValue) {
+      if (
+        dataType === "Double" ||
+        dataType === "Int32" ||
+        dataType === "Boolean"
+      ) {
+        if (this.isArray) {
+          this.value = Array<ResolveType<DataTypeString>>(
+            this.arrayLength
+          ).fill(0);
+        } else {
+          this.value = 0;
+        }
+      } else if (dataType === "String") {
+        if (this.isArray) {
+          this.value = Array<ResolveType<DataTypeString>>(
+            this.arrayLength
+          ).fill("");
+        } else {
+          this.value = "";
+        }
+      }
     } else {
-      throw new Error(
-        `[Tag] Inital value Error ${opts.initialValue} was not provided or is the wrong type for tag ${this.path} expected type ${this.dataType}`
-      );
+      this.value = this.validate(opts.initialValue);
     }
 
-    this.subscribeByPath(Tag.opcuaServer, this.nodeId);
+    this.opcuaVarible = this.subscribeByPath(Tag.opcuaServer, this.nodeId);
 
     if (this.exposeOverOpcua) {
       const namespace = Tag.opcuaServer.engine.addressSpace!.getOwnNamespace();
@@ -317,16 +350,24 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
               value: this.value,
             }),
           set: (variant: Variant) => {
-            if (this.isArray && variant.value.length !== this.arrayLength) {
+            /*if (this.isArray && variant.value.length !== this.arrayLength) {
               return { statusCode: StatusCodes.BadOutOfRange };
+            }*/
+            try {
+              this.value = this.validate(variant.value);
+              this.triggerEmit();
+              return { statusCode: StatusCodes.Good };
+            } catch (error) {
+              logger.error(
+                `[Tag] set value failed with error ${error?.message}`
+              );
+              return { statusCode: StatusCodes.BadTypeMismatch };
             }
-            this.value = variant.value;
-            this.triggerEmit();
-            return { statusCode: StatusCodes.Good };
           },
         },
       });
 
+      /*
       this.variable.on("value_changed", (dataValue) => {
         if (this.isArray) {
           this.value = Array.from(dataValue.value.value);
@@ -334,16 +375,19 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
           this.value = dataValue.value.value;
         }
         this.triggerEmit();
-      });
+      });*/
     }
 
     // push instance to tags map referenced by path
     // TD WIP typescript
     Tag.tags[this.path] = this;
+
+    logger.info(`[Tag] created new tag ${this.path}`);
   }
 
+  // will throw ZodError if it fails
   private validate(value: unknown): ResolveType<DataTypeString> {
-    return this.schema.parse(value);
+    return this.schema.parse(value) as ResolveType<DataTypeString>;
   }
 
   static async loadAllTagsFromDB() {
@@ -357,12 +401,19 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
       // Is it a primitive datatype eg Bool or Double
       //if(Object.values(DataType).some(type => String(type).startsWith(value.dataType))) {
       //if(value.dataType.includes(Object.values(DataType)))
-      const tag = new Tag(tagConfig.dataType, {
-        name: tagConfig.name,
-        path: tagConfig.path,
-        nodeId: tagConfig.nodeId,
-        initialValue: tagConfig.initialValue,
-      });
+
+      try {
+        const tag = new Tag(tagConfig.dataType, {
+          name: tagConfig.name,
+          path: tagConfig.path,
+          nodeId: tagConfig.nodeId,
+          initialValue: tagConfig.initialValue,
+        });
+      } catch (error) {
+        logger.error(
+          `[Tag] failed to load tag ${tagConfig.path} error ${error?.message}`
+        );
+      }
 
       //tags[value.nodeId as unknown as NodeIdLiteral] = tag;
 
@@ -419,13 +470,31 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
 */
     // listen to value changes
     variable.on("value_changed", (newValue) => {
-      logger.debug(`Value changed for ${path}:`, newValue.value.value);
+      console.log(`Value changed for ${path}:`);
+      console.log(newValue.value.value);
+      // TD WIP Datatype check
+      /*if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
+        logger.error(
+          `[Tag] new value for tag ${this.path} type ${newValue.value.dataType as DataType} is not assignable to ${this.opcuaDataType}`
+        );
+        return;
+      }*/
+
+      try {
+        this.value = this.validate(newValue.value.value);
+        this.triggerEmit();
+      } catch (error) {
+        logger.error(error);
+      }
     });
+
+    return variable;
   }
 
   update(value: ResolveType<DataTypeString>) {
-    const newValue = this.validate(value);
+    logger.debug(`[Tag] update() ${this.path} = ${value}`);
 
+    const newValue = this.validate(value);
     if (this.isArray !== Array.isArray(newValue))
       throw new TypeError(
         `[Tag] Array Type Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}`
@@ -436,6 +505,14 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
       );
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
     this.value = newValue;
+    this.opcuaVarible.setValueFromSource({
+      dataType: this.opcuaDataType,
+      arrayType: this.isArray ? VariantArrayType.Array : undefined,
+      dimensions:
+        this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
+      value: newValue,
+    });
+
     if (this.exposeOverOpcua) {
       this.variable?.setValueFromSource({
         dataType: this.opcuaDataType,
@@ -452,3 +529,84 @@ export class Tag<DataTypeString extends BaseTypeStrings> {
     emitToSubscribers({ path: this.path, value: this });
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////////////
+
+/*
+type FieldDef = { dataType: string };
+
+export class UdtTag<
+  DataTypeString extends BaseTypeStrings,
+> extends Tag<DataTypeString> {
+  declare dataType: string;
+
+  readonly fields: { [K in keyof DataTypeString]: Tag<DataTypeString> };
+
+  constructor(
+    dataType: string,
+    opts: TagOptions,
+    defs: Record<keyof T, FieldDef>,
+    initial?: Partial<T>
+  ) {
+    super(dataType, opts);
+    this.path = path;
+    this.fields = {} as any;
+
+    for (const key in defs) {
+      const def = defs[key];
+      const schema = dataTypeToZod[def.dataType];
+      if (!schema) throw new Error(`Unknown dataType ${def.dataType}`);
+
+      this.fields[key] = new Tag<T[typeof key]>(
+        `${path}/${String(key)}`,
+        schema,
+        initial?.[key] ?? schema.parse(undefined) // default
+      );
+    }
+  }
+
+  get value(): T {
+    return Object.fromEntries(
+      Object.entries(this.fields).map(([k, tag]) => [k, tag.value])
+    ) as T;
+  }
+
+  set value(newVal: T) {
+    for (const [k, v] of Object.entries(newVal)) {
+      if (this.fields[k as keyof T]) {
+        this.fields[k as keyof T].set(v);
+      }
+    }
+  }
+}
+
+const sensorTypeDef = {
+  _id: "SensorType",
+  fields: {
+    Min: { dataType: "Double" },
+    Max: { dataType: "Double" },
+    Fault: { dataType: "Boolean" },
+  },
+} as const;
+
+type SensorType = typeof sensorTypeDef.fields;
+
+const sensor = new UdtTag<SensorType>(
+  "SensorUDT",
+  {
+    Min: { dataType: "Double" },
+    Max: { dataType: "Double" },
+    Fault: { dataType: "Boolean" },
+  },
+  { Min: 0, Max: 100, Fault: false }
+);
+
+console.log(sensor.value);
+// { Min: 0, Max: 100, Fault: false }
+
+sensor.fields.Min.set(12.5);
+console.log(sensor.value.Min); // 12.5
+
+sensor.value = { Min: 5, Max: 20, Fault: true };
+console.log(sensor.fields.Max.value); // 20
+*/

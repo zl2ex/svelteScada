@@ -14,11 +14,11 @@
   let { path, style = "", onclick, faultFlash = false }: props = $props();
 
   // setup client tag of expected type Double
-  let tag = new ClientTag("Double", { path });
+  let tag = new ClientTag("number", { path });
   let clazz = $state("fault"); // default state
 
   onclick = () => {
-    tag.write(--tag.value);
+    tag.write(tag.value - 1);
   };
 
   $effect(() => {
@@ -40,6 +40,10 @@
     <span class="label">{tag.name}</span>
     <span class="value">{tag.value}</span>
   </div>
+
+  {#if tag.errorMessage}
+    <p style="background-color: red;">{tag.errorMessage}</p>
+  {/if}
 
   {#snippet failed(error)}
     <p>{error.message}</p>

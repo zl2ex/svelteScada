@@ -41,12 +41,11 @@ export const Z_DeviceOptions = z.discriminatedUnion("driverName", [
   }),
 ]);
 
-export type DeviceOptions = z.infer<typeof Z_DeviceOptions>;
-
+export type DeviceOptions = z.input<typeof Z_DeviceOptions>;
 export class Device {
   name: string;
   enabled: boolean;
-  driver?: ModbusTCPDriver;
+  driver: ModbusTCPDriver;
 
   constructor(opcuaServer: OPCUAServer, opts: DeviceOptions) {
     const config = Z_DeviceOptions.parse(opts);
@@ -61,6 +60,8 @@ export class Device {
     } else {
       throw new Error(`[Device] invalid driver name`);
     }
+
+    if (this.enabled) this.driver.connect();
   }
 
   tagSubscribed(path: string) {

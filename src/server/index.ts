@@ -27,9 +27,10 @@ import {
   createOPCUAServer,
   startOPCUAClient,
 } from "../lib/server/drivers/opcua/opcuaServer";
-import { Tag } from "../lib/server/tag/tag";
+import { Tag, type TagOptions, Z_TagOptions } from "../lib/server/tag/tag";
 import { logger } from "../lib/pino/logger";
 import { DeviceManager, Device } from "../lib/server/drivers/driver";
+import { resolveInstanceProps } from "../lib/server/tag/udt";
 
 const app = express();
 const httpServer = createServer(app);
@@ -48,29 +49,64 @@ export async function main(httpServer: Server) {
     driverName: "ModbusTCPDriver",
     options: {
       ip: "127.0.0.1",
+      startAddress: 1,
+      endian: "BigEndian",
+      swapWords: true,
     },
+    enabled: true,
   });
 
   deviceManager.addDevice(plc1);
 
-  const testTag = new Tag("Double", {
-    name: "testTag",
-    path: "/testTag",
-    nodeId: "ns=1;s=/[plc1]/fhr200",
-    initialValue: 10.1,
-  });
+  /*
+  try {
+    const testTag = new Tag("Double", {
+      name: "testTag",
+      path: "/testTag",
+      nodeId: "ns=1;s=/[plc1]/<Double>hr1",
+      initialValue: 5.123,
+    });
+  } catch (error) {
+    logger.error(error?.message);
+  }*/
 
   await Tag.loadAllTagsFromDB();
   startOPCUAClient();
 
+  /*const udtProps = {
+    folder: { type: "string", default: "Motors" },
+    name: { type: "string", default: "M1" },
+    baseAddr: { type: "number", default: 100 },
+    enabled: { type: "boolean", default: true },
+  };
+
+  const instanceProps = {
+    name: "Pump1",
+    path: "/${folder}/${name}",
+    addr: "${baseAddr + 5}",
+    folderr: "${folder}/test",
+  };
+*/
+  const udtProps = { folder: "Motors", baseAddr: 100 };
+
+  const instanceProps = {
+    path: "/${folder}/${name}",
+    name: "${nodeId}/Pump1",
+    nodeId: "${10 + baseAddr}",
+    dataType: "Double",
+    exposeOverOpcua: "${baseAddr - 100}",
+    //parameters: { folder: "TEST" },
+  } satisfies TagOptions<"F">;
+
+  console.debug(resolveInstanceProps(udtProps, instanceProps, Z_TagOptions));
+
   //httpServer.listen(3000);
-  poll();
+  //poll();
 }
 
 //main(httpServer);
 
 function poll() {
-  logger.debug(Tag.tags["/demo/test"]?.value);
   Tag.tags["/demo/test"]?.update(Tag.tags["/demo/test"]?.value + 1);
   Tag.tags["/testTag"].update(Tag.tags["/testTag"].value + 1);
   setTimeout(poll, 1000);

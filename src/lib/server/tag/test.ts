@@ -255,6 +255,11 @@ const t6 = new Tag({
   ],
 });
 
+const tags = new Map();
+
+tags.set("/demo/test", t6);
+
+tags.get("/demo/test").update();
 // ❌ Compile-time error: wrong number of elements
 // t6.update([{ faulted: false, value: 1 }]);
 

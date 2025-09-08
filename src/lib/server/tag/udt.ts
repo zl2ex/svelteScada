@@ -1,9 +1,8 @@
-
 import { type Namespace, type UAObject, DataType } from "node-opcua";
 import { logger } from "../../../lib/pino/logger";
 import { Tag, type TagOptions } from "./tag";
 import { udtDefinitions } from "./udtDefinitions";
-
+import vm from "node:vm";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -42,7 +41,6 @@ export type ValidDataTypeString =
   | `${ValidBaseDataType}[]`
   | `${ValidBaseDataType}[${number}]`;
 
-
 type ValidBaseType = keyof typeof dataTypeMap;
 
 /*type FieldDef = {
@@ -50,31 +48,31 @@ type ValidBaseType = keyof typeof dataTypeMap;
   initalValue: BaseTypeMap[.dataType]
 };*/
 
-type BuildTuple<T, N extends number, R extends T[] = []> =
-  R['length'] extends N ? R : BuildTuple<T, N, [...R, T]>;
+type BuildTuple<T, N extends number, R extends T[] = []> = R["length"] extends N
+  ? R
+  : BuildTuple<T, N, [...R, T]>;
 
-type ParseDataType<T extends string> =
-  T extends `${infer Base}[${infer N}]`
-    ? Base extends keyof BaseDataTypeMap
-      ? N extends `${infer Num extends number}`
-        ? BuildTuple<BaseDataTypeMap[Base], Num>
-        : BaseDataTypeMap[Base][]
-      : never
-    : T extends keyof BaseDataTypeMap
-      ? BaseDataTypeMap[T]
-      : never;
+type ParseDataType<T extends string> = T extends `${infer Base}[${infer N}]`
+  ? Base extends keyof BaseDataTypeMap
+    ? N extends `${infer Num extends number}`
+      ? BuildTuple<BaseDataTypeMap[Base], Num>
+      : BaseDataTypeMap[Base][]
+    : never
+  : T extends keyof BaseDataTypeMap
+    ? BaseDataTypeMap[T]
+    : never;
 
-type AllDataTypeStrings = 
-  keyof BaseDataTypeMap | 
-  `${keyof BaseDataTypeMap}[${number}]` |
-  `${keyof BaseDataTypeMap}[]`;
+type AllDataTypeStrings =
+  | keyof BaseDataTypeMap
+  | `${keyof BaseDataTypeMap}[${number}]`
+  | `${keyof BaseDataTypeMap}[]`;
 
 type FieldDefinition = {
   [K in AllDataTypeStrings]: {
     nodeId: string;
     dataType: K;
     initialValue: ParseDataType<K>;
-  }
+  };
 }[AllDataTypeStrings];
 
 type UdtDefinition = {
@@ -82,7 +80,7 @@ type UdtDefinition = {
   fields: Record<string, FieldDefinition>;
 };
 
-let test: UdtDefinition["Double[20]"]
+let test: UdtDefinition["Double[20]"];
 
 export type UdtTypes = Record<string, UdtDefinition>;
 
@@ -94,10 +92,13 @@ type ParsedField = {
 };
 
 // 2. Helper to build fixed-length arrays
-export type FixedLengthArray<T, N extends number, A extends T[] = []> =
-  A['length'] extends N ? A : FixedLengthArray<T, N, [...A, T]>;
+export type FixedLengthArray<
+  T,
+  N extends number,
+  A extends T[] = [],
+> = A["length"] extends N ? A : FixedLengthArray<T, N, [...A, T]>;
 
-  // 3. Parse types like "Double[2]" or "Position[]" into structured data
+// 3. Parse types like "Double[2]" or "Position[]" into structured data
 /*export type ParseDataType<T extends string> =
   T extends `${infer Base}[${infer Len}]`
     ? Len extends '' // "Position[]" case
@@ -205,16 +206,16 @@ type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
         UdtClassMap<Udts>
       >;
   };
-};*/
+};
 
-export interface UdtDefinitionOptions {
-  nodeId: string;
+export type UdtOptions = {
+  name: string;
   feilds: TagOptions[];
   namespace: Namespace;
   parent: UAObject;
-
   parameters?: object;
-};
+};*/
+
 /*
 export class UdtDefinition {
   nodeId: string;
@@ -280,6 +281,7 @@ function buildFields(path: string, schema: any, initial: any): Tag[] {
   return fields;
 }
 */
+/*
 export class UdtTag {
 
   name: string;
@@ -395,3 +397,249 @@ export function registerCustomDataTypes(addressSpace: AddressSpace, schemas: Rec
 
   addressSpace.registerDataTypeFactory("urn:custom-namespace", factory);
 }
+
+
+
+
+
+*/
+import { z, ZodType, ZodObject, ZodBoolean, ZodNumber, ZodString } from "zod";
+
+export type UdtParam =
+  | { type: "number"; default: number }
+  | { type: "string"; default: string }
+  | { type: "boolean"; default: boolean };
+
+type UdtParamTypes = UdtParam["type"];
+
+export type UdtParams = Record<string, UdtParam>;
+
+export type UdtOptions = {
+  name: string;
+  props: UdtParam[];
+  children: TagOptions<any>[]; // TD WIP
+};
+/*
+export interface TagInstanceDoc {
+  _id: string;
+  udt: string;
+  props: Record<string, string | number | boolean>;
+}*/
+
+// Build Zod schema from UDT
+function buildPropsSchema(udtProps: UdtParams) {
+  const shape: Record<UdtParamTypes, z.ZodType> = {
+    number: z.number(),
+    string: z.string(),
+    boolean: z.boolean(),
+  };
+
+  let schema: Record<string, z.ZodType> = {};
+  for (const [key, def] of Object.entries(udtProps)) {
+    schema[key] = shape[def.type].default(def.default);
+  }
+  return z.object(schema);
+}
+
+/*
+// === Expression Evaluator ===
+function resolveExpression(expr: string, context: Record<string, any>): any {
+  // Replace props like ${baseAddr + 1}
+  return expr.replace(/\$\{([^}]+)\}/g, (_, code) => {
+    try {
+      // Only allow access to context keys + math
+      const fn = new Function(...Object.keys(context), `return (${code});`);
+      return fn(...Object.values(context));
+    } catch (err) {
+      throw new Error(`Invalid expression: ${expr} -> ${err}`);
+    }
+  });
+}
+
+// === Main Resolver ===
+export function resolveUdtProps(
+  udtProps: UdtProps,
+  instanceProps: Record<string, any>
+) {
+  const schema = buildPropsSchema(udtProps);
+  // Context for resolving expressions = all UDT defaults + instance overrides
+  const context = Object.fromEntries(
+    Object.entries(udtProps).map(([k, v]) => [k, instanceProps[k] ?? v.default])
+  );
+
+  // Resolve only instance props
+  const resolved: Record<string, any> = {};
+  for (const [key, val] of Object.entries(instanceProps)) {
+    if (typeof val === "string" && val.includes("${")) {
+      resolved[key] = resolveExpression(val, context);
+    } else {
+      resolved[key] = val;
+    }
+  }
+  // Final validation
+  return schema.parse(resolved);
+}*/
+
+function validateExpression(expr: string): void {
+  // Only allow safe characters and patterns
+  const safeExprRegex =
+    /^[0-9+\-*/%().\s]*([A-Za-z_][A-Za-z0-9_]*|Math\.[A-Za-z_][A-Za-z0-9_]*)*[0-9+\-*/%().\s]*$/;
+
+  if (!safeExprRegex.test(expr)) {
+    throw new Error(`Unsafe expression: ${expr}`);
+  }
+}
+
+function resolveTemplate(str: string, context: Record<string, any>): string {
+  return str.replace(/\$\{([^}]+)\}/g, (_, expr) => {
+    try {
+      const sandbox = { ...context };
+      const script = new vm.Script(expr); // run in vm to prevent code injection
+      const result = String(script.runInNewContext(sandbox));
+      return result;
+    } catch (e) {
+      throw new Error(`[Udt] Failed to evaluate expression: ${expr}`);
+    }
+  });
+}
+
+function isExpression(expr: string | number | boolean): boolean {
+  return typeof expr === "string" && expr.includes("${") && expr.includes("}");
+}
+
+export function resolveInstanceProps(
+  udtParams: Record<string, boolean | number | string>,
+  instanceProps: TagOptions<any>,
+  zodSchema: ZodObject
+): Record<string, unknown> {
+  const resolved: Record<string, boolean | number | string> = {};
+  const inProgress = new Set<string>();
+
+  function resolveKey(key: string, props: TagOptions<any>) {
+    //if (!isExpression(resolved[key])) return; // if it doesnt need to be evaluated
+    if (
+      inProgress.has(key) &&
+      typeof resolved[key] === "string" &&
+      resolved[key].includes(key)
+    ) {
+      throw new Error(
+        `[Udt] Circular reference detected while resolving "${key}"`
+      );
+    }
+    inProgress.add(key);
+
+    const raw = props[key as keyof TagOptions<any>];
+    if (isExpression(raw)) {
+      // Pass udtProps + already resolved instance props into context
+      const res = resolveTemplate(raw, {
+        ...udtParams,
+        ...resolved,
+        ...props,
+      });
+
+      if (!zodSchema.shape[key]) {
+        throw new Error(`[Udt] unexpected property ${key} in tagOptions`);
+      }
+
+      // if it expects a number
+      if (zodSchema.shape[key].safeParse(0).success) {
+        resolved[key] = Number(res);
+      }
+      // if it expects a boolean
+      else if (zodSchema.shape[key].safeParse(true).success) {
+        resolved[key] = Boolean(res);
+      }
+      // if it expects a string
+      else {
+        resolved[key] = res; // already a string from resolveTempalte
+      }
+    } else {
+      resolved[key] = raw;
+    }
+
+    if (!isExpression(resolved[key])) inProgress.delete(key);
+  }
+
+  for (const key of Object.keys(instanceProps)) {
+    resolveKey(key, instanceProps);
+  }
+
+  console.log(resolved);
+
+  for (const key of inProgress) {
+    console.log(key);
+    resolveKey(key, resolved);
+  }
+
+  console.log(resolved);
+
+  return resolved;
+}
+
+/*
+import { z, ZodType, ZodObject, ZodBoolean, ZodNumber, ZodString } from "zod";
+import Mexp from "math-expression-evaluator";
+import { constants } from "node:buffer";
+
+type UdtParams = Record<string, number | boolean | string>;
+
+function resolveTemplate(str: string, udtParams: UdtParams): string {
+  const expr = new Mexp();
+
+  return str.replace(/\$\{([^}]+)\}/g, (_, expression) => {
+    try {
+      console.log(expression);
+      const result = expr.eval(expression.trim(), udtParams, constants);
+      return String(result);
+    } catch (e) {
+      logger.error(e);
+      return `\${${expression}}`; // fallback: leave as-is
+    }
+  });
+}
+
+export function resolveExpressions<
+  T extends ZodObject<any>, // require object schema
+>(udtParams: UdtParams, instanceProps: unknown, schema: T): z.infer<T> {
+  const expr = new Mexp();
+  const shape = schema.shape; // schema field types
+
+  const resolved = Object.fromEntries(
+    Object.entries(instanceProps as Record<string, unknown>).map(
+      ([key, value]) => {
+        console.log(key, value);
+        if (typeof value === "string") {
+          let resolved = resolveTemplate(value, udtParams);
+          console.log(resolved);
+          // look at the expected Zod type
+          const expected = shape[key] as ZodType | undefined;
+
+          if (expected instanceof ZodBoolean) {
+            // coerce truthy/falsy to boolean
+            if (typeof resolved === "number") {
+              resolved = resolved !== 0;
+            } else {
+              resolved = Boolean(resolved);
+            }
+          } else if (expected instanceof ZodNumber) {
+            // coerce to number if possible
+            if (typeof resolved !== "number") {
+              const num = Number(resolved);
+              if (!Number.isNaN(num)) {
+                resolved = num;
+              }
+            }
+          } else if (expected instanceof ZodString) {
+            resolved = String(resolved);
+          }
+          // else: leave result as is (supports nested objects, arrays, etc.)
+          return [key, resolved];
+        }
+        return [key, value];
+      }
+    )
+  );
+
+  return schema.parse(resolved); // validate & coerce final result
+}
+*/

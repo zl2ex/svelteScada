@@ -4,32 +4,42 @@ import { io } from "socket.io-client";
 import { type Socket } from "socket.io-client";
 import type {
   EmitPayload,
+  SocketIOClientToServerEvents,
+  SocketIOServerToClientEvents,
   WritePayload,
 } from "$lib/server/socket.io/socket.io";
 import type {
   ResolveType,
   TagPaths,
-  BaseTypeStrings,
+  BaseTypeStringsWithArrays,
 } from "$lib/server/tag/tag";
-import { keyof } from "zod";
 
 export type ClientTagOptions = {
   path: TagPaths;
   name?: string;
   initialValue?: any;
 };
-export class ClientTag<DataTypeString extends BaseTypeStrings> {
-  static socket: Socket = io();
+
+export type ClientDataTypeStrings = "number" | "boolean" | "string";
+
+//export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
+export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
+  static socket: Socket<
+    SocketIOServerToClientEvents,
+    SocketIOClientToServerEvents
+  > = io();
   name: string;
   path: TagPaths;
   dataType: DataTypeString;
-  value: ResolveType<DataTypeString>;
+  private _value: ResolveType<DataTypeString>;
+  errorMessage: string | undefined;
 
   constructor(dataType: DataTypeString, opts: ClientTagOptions) {
     this.name = opts.name ?? "";
     this.path = opts.path;
     this.dataType = dataType;
-    this.value = $state(opts.initialValue ?? null);
+    this._value = $state(opts.initialValue ?? null);
+    this.errorMessage = $state(undefined);
 
     console.log(`[ClientTag] created tag ${this.path}`);
 
@@ -43,16 +53,33 @@ export class ClientTag<DataTypeString extends BaseTypeStrings> {
           );
 
         // TD WIP Validate datatype of tag vs datatype of clientTag
-        if (this.dataType !== value.dataType)
+        /*if (this.dataType !== value.dataType)
           throw new Error(
             `[Client Tag] tag:update   dataType ${value.dataType} is not assignable to ${this.dataType}`
-          );
+          );*/
         this.name = value.name;
         this.dataType = value.dataType;
-        this.value = value.value;
+        this._value = value.value;
         //Object.assign(this, value);
       }
     );
+
+    /*ClientTag.socket.on("disconnect", () => {
+      this.errorMessage = "Connection to server lost";
+    });
+
+    ClientTag.socket.on("connect_error", () => {
+      this.errorMessage = "Connection to server lost";
+    });
+
+    ClientTag.socket.on("connect", () => {
+      this.errorMessage = undefined;
+    });*/
+    // TD WIP
+  }
+
+  get value() {
+    return this._value;
   }
 
   static {
@@ -61,11 +88,22 @@ export class ClientTag<DataTypeString extends BaseTypeStrings> {
     });
   }
 
-  write(value: any) {
-    ClientTag.socket.emit("tag:write", {
-      path: this.path,
-      value,
-    } satisfies WritePayload);
+  write(value: ResolveType<DataTypeString>) {
+    ClientTag.socket.emit(
+      "tag:write",
+      {
+        path: this.path,
+        value,
+      },
+      (error) => {
+        if (error?.message) {
+          console.error(error.message);
+          this.errorMessage = error.message;
+        } else {
+          this.errorMessage = undefined;
+        }
+      }
+    );
   }
 
   subscribe() {
