@@ -1,6 +1,12 @@
-import { type Namespace, type UAObject, DataType } from "node-opcua";
-import { logger } from "../../../lib/pino/logger";
-import { Tag, type TagOptions } from "./tag";
+import {
+  type Namespace,
+  type NodeIdLike,
+  type UAObject,
+  BaseNode,
+  DataType,
+} from "node-opcua";
+import { logger } from "../pino/logger";
+import { Tag, Z_TagOptions, type TagOptions } from "./tag";
 import { udtDefinitions } from "./udtDefinitions";
 import vm from "node:vm";
 
@@ -75,14 +81,13 @@ type FieldDefinition = {
   };
 }[AllDataTypeStrings];
 
-type UdtDefinition = {
+/*
+type UdtDefinitionOptions = {
   parameters?: object;
   fields: Record<string, FieldDefinition>;
-};
+};*/
 
-let test: UdtDefinition["Double[20]"];
-
-export type UdtTypes = Record<string, UdtDefinition>;
+export type UdtTypes = Record<string, UdtDefinitionOptions>;
 
 type ParsedField = {
   name: string;
@@ -197,7 +202,7 @@ function parseUdt(udt: UdtFile): Record<string, ParsedField[]> {
   return result;
 }
 
-/*
+
 type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
   [UdtName in keyof Udts]: {
     [FieldName in keyof Udts[UdtName]["fields"]]:
@@ -207,80 +212,75 @@ type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
       >;
   };
 };
+*/
 
-export type UdtOptions = {
+export type UdtDefinitionOptions = {
   name: string;
-  feilds: TagOptions[];
-  namespace: Namespace;
-  parent: UAObject;
-  parameters?: object;
-};*/
-
-/*
-export class UdtDefinition {
-  nodeId: string;
-  feilds: Tag[] = [];
-  namespace: Namespace;
-  parent: UAObject;
-
-  parameters?: object;
-
-  constructor(opts: UdtDefinitionOptions) {
-    this.nodeId = opts.nodeId;
-    this.namespace = opts.namespace;
-    this.parent = opts.parent;
-    //this.feilds = opts.feilds;
-    this.parameters = opts.parameters;
-    for (const tagOptions of opts.feilds) {
-      this.feilds.push(new Tag(tagOptions, this.namespace, this.parent));
-    }
-    //this.buildFields(this.nodeId, schema, opts.initialValue)
-  }
-
+  feilds: TagOptions<"F">[];
+  // namespace: Namespace;
+  // parent: UAObject;
+  parameters?: UdtParams;
 };
 
-// list of all the udt's loaded by their name
-export const udt: Record<string, UdtDefinition> = {};
+export class UdtDefinition {
+  static udts: Record<string, UdtDefinition> = {};
+  name: string;
+  feilds: TagOptions<"F">[];
+  // namespace: Namespace;
+  // parent: UAObject;
+  parameters?: UdtParams;
 
+  constructor(opts: UdtDefinitionOptions) {
+    this.name = opts.name;
+    // this.namespace = opts.namespace;
+    // this.parent = opts.parent;
+    this.parameters = opts.parameters;
+    this.feilds = opts.feilds;
 
-function buildFields(path: string, schema: any, initial: any): Tag[] {
-  const fields: Tag[] = [];
-
-  for (const [name, def] of Object.entries(schema.value)) {
-
-      //const isArray = def.endsWith("[]");
-      //const baseType = isArray ? def.slice(0, -2) : def;
-
-      // Match "Double", "Double[]", or "Double[3]"
-      const arrayMatch = def.dataType.match(/^(\w+)\[(\d*)\]$/);
-      const isArray = !!arrayMatch || def.dataType.endsWith("[]");
-      const baseType = arrayMatch ? arrayMatch[1] : def.type.replace("[]", "");
-      const arrayLength = arrayMatch ? parseInt(arrayMatch[2], 10) : undefined;
-
-      let resolvedInitial = def.initialValue;
-      if (isArray && arrayLength !== undefined && !Array.isArray(def.initialValue)) {
-        resolvedInitial = Array(arrayLength).fill(null); // or fill with default base type
-      }
-
-      fields.push(new Tag({
-        name: name,
-        nodeId: def.nodeId,
-        dataType: baseType,
-        isArray,
-        arrayLength,
-        writable: def.writable,
-        initialValue: def.inialValue
-      }));
-  
-    /*else {
-      // Nested object (struct or namespace)
-      fields.push(...buildFields(name, def));
-    }
+    UdtDefinition.udts[this.name] = this;
   }
 
-  return fields;
+  buildTagFeilds(
+    udtName: string,
+    instanceParameters?: UdtParams,
+    parent?: BaseNode | NodeIdLike
+  ): Record<string, Tag<any>>[] {
+    if (!UdtDefinition.udts[udtName]) {
+      throw new Error(
+        `[Udt] cannont build feilds because ${udtName} does not exist`
+      );
+    }
+
+    // instance parameters overide udt parameters
+    let parameters: UdtParams = {};
+    if (this.parameters) {
+      for (const [key, udtDefParameter] of Object.entries(this.parameters)) {
+        if (instanceParameters[key]) {
+          parameters[key] = instanceParameters[key];
+        } else {
+          parameters[key] = udtDefParameter;
+        }
+      }
+    }
+
+    const feilds: Record<string, Tag<any>>[] = [];
+    for (const tagOptions of UdtDefinition.udts[udtName].feilds) {
+      const resolvedTagOptions = resolveTagOptions(
+        parameters,
+        tagOptions,
+        Z_TagOptions
+      );
+
+      feilds[resolvedTagOptions.name] = new Tag(
+        resolvedTagOptions.dataType,
+        resolvedTagOptions,
+        parent
+      );
+    }
+    return feilds;
+  }
 }
-*/
+
 /*
 export class UdtTag {
 
@@ -403,7 +403,15 @@ export function registerCustomDataTypes(addressSpace: AddressSpace, schemas: Rec
 
 
 */
-import { z, ZodType, ZodObject, ZodBoolean, ZodNumber, ZodString } from "zod";
+import {
+  z,
+  ZodType,
+  ZodObject,
+  ZodBoolean,
+  ZodNumber,
+  ZodString,
+  object,
+} from "zod";
 
 export type UdtParam =
   | { type: "number"; default: number }
@@ -412,11 +420,13 @@ export type UdtParam =
 
 type UdtParamTypes = UdtParam["type"];
 
-export type UdtParams = Record<string, UdtParam>;
+//export type UdtParams = Record<string, UdtParam>;
+
+export type UdtParams = Record<string, number | boolean | string>;
 
 export type UdtOptions = {
   name: string;
-  props: UdtParam[];
+  props: UdtParams;
   children: TagOptions<any>[]; // TD WIP
 };
 /*
@@ -494,7 +504,7 @@ function resolveTemplate(str: string, context: Record<string, any>): string {
   return str.replace(/\$\{([^}]+)\}/g, (_, expr) => {
     try {
       const sandbox = { ...context };
-      const script = new vm.Script(expr); // run in vm to prevent code injection
+      const script = new vm.Script(expr); // run in vm to prevent code leaks
       const result = String(script.runInNewContext(sandbox));
       return result;
     } catch (e) {
@@ -507,8 +517,8 @@ function isExpression(expr: string | number | boolean): boolean {
   return typeof expr === "string" && expr.includes("${") && expr.includes("}");
 }
 
-export function resolveInstanceProps(
-  udtParams: Record<string, boolean | number | string>,
+export function resolveTagOptions(
+  udtParams: UdtParams | undefined,
   instanceProps: TagOptions<any>,
   zodSchema: ZodObject
 ): Record<string, unknown> {
@@ -564,15 +574,13 @@ export function resolveInstanceProps(
     resolveKey(key, instanceProps);
   }
 
-  console.log(resolved);
-
-  for (const key of inProgress) {
-    console.log(key);
-    resolveKey(key, resolved);
+  let tries = 5;
+  while (inProgress.keys.length > 0 && tries > 0) {
+    for (const key in inProgress) {
+      resolveKey(key, resolved);
+    }
+    tries--;
   }
-
-  console.log(resolved);
-
   return resolved;
 }
 
@@ -581,7 +589,7 @@ import { z, ZodType, ZodObject, ZodBoolean, ZodNumber, ZodString } from "zod";
 import Mexp from "math-expression-evaluator";
 import { constants } from "node:buffer";
 
-type UdtParams = Record<string, number | boolean | string>;
+
 
 function resolveTemplate(str: string, udtParams: UdtParams): string {
   const expr = new Mexp();

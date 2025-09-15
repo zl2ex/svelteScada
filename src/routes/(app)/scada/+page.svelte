@@ -1,14 +1,10 @@
 <script lang="ts">
-  import DigitalInRound from "$lib/componets/scada/DigitalInRound.svelte";
-  import NumberDisplay from "$lib/componets/scada/NumberDisplay.svelte";
-  import TagViewer from "$lib/componets/scada/TagViewer.svelte";
+  import NumberDisplay from "$lib/client/componets/scada/NumberDisplay.svelte";
 
   import { enhance } from "$app/forms";
   //import { getTagState } from '$lib/tag/ui/tagState.svelte.js';
 
   let { data } = $props();
-
-  let number = $state(data.data);
   /*
     let ts = getTagState();
 

@@ -1,4 +1,4 @@
-import type { OPCUAServer, UAVariable } from "node-opcua";
+import type { BaseNode, NodeIdLike, OPCUAServer, UAVariable } from "node-opcua";
 import {
   ModbusTCPDriver,
   Z_ModbusTCPDriverOptions,
@@ -6,7 +6,7 @@ import {
 } from "./modbus/modbusTcp";
 import { z } from "zod";
 import { Z_ModbusRTUDriverOptions } from "./modbus/modbusRtu";
-import { logger } from "../../../lib/pino/logger";
+import { logger } from "../pino/logger";
 
 export type AvalibleDriver = {
   id: string; // internal name must match class name
@@ -64,8 +64,8 @@ export class Device {
     if (this.enabled) this.driver.connect();
   }
 
-  tagSubscribed(path: string) {
-    return this.driver?.subscribeByPath(path);
+  tagSubscribed(path: string, parent?: BaseNode | NodeIdLike) {
+    return this.driver?.subscribeByPath(path, parent);
   }
 
   tagUnsubscribed(path: string) {

@@ -1,4 +1,4 @@
-import { logger } from "../../pino/logger";
+import { logger } from "../pino/logger";
 import {
   OPCUAServer,
   type UAVariable,
@@ -25,12 +25,14 @@ import {
   resolveNodeId,
   NodeId,
   NodeIdType,
+  BaseNode,
+  type NodeIdLike,
 } from "node-opcua";
-import { udtDefinitions } from "./udtDefinitions";
 import { collections } from "../mongodb/collections";
 import { emitToSubscribers, type EmitPayload } from "../socket.io/socket.io";
 import { deviceManager } from "../../../server";
 import z from "zod";
+import { UdtDefinition, type UdtParams } from "./udt";
 
 // Base schemas for primitives
 export const Z_BaseTypes = {
@@ -44,13 +46,12 @@ export const Z_BaseTypes = {
 export const Z_TagOptions = z.object({
   name: z.string(),
   path: z.string(), // TD WIP Tighten type ?
-  nodeId: z.string(),
   dataType: z.string(), // TD WIP Tighten type ?
-  writable: z.boolean().optional().default(true),
+  nodeId: z.string().optional(),
+  writeable: z.boolean().optional(),
   initialValue: z.any().optional(),
   parameters: z.object().optional(),
-  exposeOverOpcua: z.boolean().optional().default(false),
-  //onUpdate: z.function(),
+  exposeOverOpcua: z.boolean().optional(),
 });
 
 export type TagOptions<T> = z.input<typeof Z_TagOptions>;
@@ -68,12 +69,7 @@ export type TagOptions<DataTypeString extends BaseTypeStringsWithArrays> = {
 };
 */
 export function isTagOptions(options: TagOptions<any> | unknown) {
-  return (
-    "name" in options &&
-    "path" in options &&
-    "nodeId" in options &&
-    "dataType" in options
-  );
+  return "name" in options && "path" in options && "dataType" in options;
 }
 
 type OpcuaDataTypeMapping = {
@@ -146,16 +142,14 @@ export type ResolveType<DataType extends string> =
       : never
     : never;
 
-export function getSchema<DataType extends string>(
-  dataType: DataType
-): z.ZodTypeAny {
+export function getSchema<DataType extends string>(dataType: DataType) {
   const parsed = dataType.match(/^(?<base>[A-Za-z0-9]+)(?:\[(?<len>\d*?)\])?$/);
   if (!parsed?.groups) throw new Error(`Invalid dataType: ${dataType}`);
 
-  const base = parsed.groups.base;
+  const base = String(parsed.groups.base);
   const len = parsed.groups.len;
 
-  const baseSchema = (Z_BaseTypes as any)[base];
+  const baseSchema = Z_BaseTypes[base as keyof typeof Z_BaseTypes];
   if (!baseSchema) throw new Error(`[Tag] Unknown base type: ${base}`);
 
   if (len === undefined) return baseSchema; // scalar
@@ -220,6 +214,7 @@ export type TagTypeMapDefinition = {
   "/demo/testInt32": "Int32";
   "/demo/testInt16": "Int16";
   "/demo/testBool": "Boolean";
+  "/demo/digitalIn": "DigitalIn";
 };
 
 export type TagTypeMap = {
@@ -229,38 +224,50 @@ export type TagTypeMap = {
 export type TagPaths = keyof TagTypeMapDefinition;
 
 export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
-  static tags: TagTypeMap = Object();
+  static tags: TagTypeMap = [];
   static opcuaServer: OPCUAServer;
   name: string;
   path: keyof typeof Tag.tags; // path that tags are organised by internally
-  nodeId: string; // opcua node path that the tag references
+  nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
   dataType: DataTypeString;
   opcuaDataType: DataType;
   isArray: boolean;
   arrayLength: number | undefined;
-  writable: boolean;
+  writeable: boolean;
   value: ResolveType<DataTypeString>;
-  schema: z.ZodType;
+  schema:
+    | z.ZodNumber
+    | z.ZodString
+    | z.ZodBoolean
+    | z.ZodObject
+    | z.ZodArray<z.ZodNumber | z.ZodString | z.ZodBoolean | z.ZodObject>
+    | undefined;
   exposeOverOpcua: boolean;
   variable?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
-  opcuaVarible: UAVariable; // varible that nodeId points at
-  children: Tag<any>[] | undefined; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
-  onUpdate?: (value: Tag<DataTypeString>) => void;
+  opcuaVarible?: UAVariable; // varible that nodeId points at
+  children?: Record<string, Tag<any>>[]; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
+  parent?: BaseNode | NodeIdLike; // parent of Udt child if the tag is a UDT
+  parameters?: UdtParams; // parameters for building udt path's ect
 
   constructor(
     dataType: DataTypeString,
-    opts: Omit<TagOptions<DataTypeString>, "dataType">
+    opts: Omit<TagOptions<DataTypeString>, "dataType">,
+    parent?: BaseNode | NodeIdLike
   ) {
+    // TD WIP Parse with Zod
     this.name = opts.name;
     this.path = opts.path; // TD WIP
-    this.nodeId = opts.nodeId ?? `ns=1;s=${opts.name}`;
+    this.nodeId = opts.nodeId;
     this.dataType = dataType;
-    this.schema = getSchema(dataType);
 
-    this.writable = opts.writable ?? false;
+    this.writeable = opts.writeable ?? false;
     this.exposeOverOpcua = opts.exposeOverOpcua ?? false;
 
-    this.onUpdate = opts.onUpdate;
+    this.parent = parent;
+    //? parent
+    //: Tag.opcuaServer.engine.addressSpace?.rootFolder;
+
+    this.parameters = opts.parameters;
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
@@ -274,28 +281,25 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       : dataType.replace("[]", "");
 
     // is a opcua primative datatype
-    if (Object.values(DataType).includes(baseDataType as unknown as DataType)) {
+    if (baseDataType in DataType) {
       this.opcuaDataType = baseDataType as unknown as DataType;
+      this.schema = getSchema(dataType);
     }
 
     // is a user defined datatype and therfore a opcua ExtentionObject
-    else if (Object.hasOwn(udtDefinitions, dataType)) {
+    else if (UdtDefinition.udts[dataType]) {
       this.opcuaDataType = DataType.ExtensionObject;
       const udtDefinition =
-        udtDefinitions[dataType as keyof typeof udtDefinitions];
+        UdtDefinition.udts[dataType as keyof typeof UdtDefinition.udts];
 
-      for (let [key, tagOptions] of Object.entries(udtDefinition.values)) {
-        if (isTagOptions(tagOptions)) {
-          Object.assign(tagOptions, {
-            parameters: opts.parameters
-              ? opts.parameters
-              : udtDefinition.parameters,
-          });
-          for (const [key, value] of Object.entries(tagOptions.value)) {
-            console.log(key, value);
-          }
-          console.log(key, tagOptions);
-        }
+      this.children = udtDefinition.buildTagFeilds(
+        dataType,
+        this.parameters,
+        this.parent
+      );
+      this.schema = z.object();
+      for (const [key, childTag] of Object.entries(this.children)) {
+        this.schema = this.schema.extend({ [key]: childTag.schema });
       }
     } else {
       throw new Error(
@@ -304,6 +308,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     }
 
     // no inital value given so generate defaults
+    // TD WIP DataType
     if (!opts.initialValue) {
       if (
         dataType === "Double" ||
@@ -330,7 +335,10 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       this.value = this.validate(opts.initialValue);
     }
 
-    this.opcuaVarible = this.subscribeByPath(Tag.opcuaServer, this.nodeId);
+    // subscribe to value from driver if nodeId provided
+    if (this.nodeId) {
+      this.opcuaVarible = this.subscribeByPath(this.nodeId);
+    }
 
     if (this.exposeOverOpcua) {
       const namespace = Tag.opcuaServer.engine.addressSpace!.getOwnNamespace();
@@ -350,9 +358,6 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
               value: this.value,
             }),
           set: (variant: Variant) => {
-            /*if (this.isArray && variant.value.length !== this.arrayLength) {
-              return { statusCode: StatusCodes.BadOutOfRange };
-            }*/
             try {
               this.value = this.validate(variant.value);
               this.triggerEmit();
@@ -387,13 +392,13 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
   // will throw ZodError if it fails
   private validate(value: unknown): ResolveType<DataTypeString> {
-    return this.schema.parse(value) as ResolveType<DataTypeString>;
+    return this.schema?.parse(value) as ResolveType<DataTypeString>;
   }
 
   static async loadAllTagsFromDB() {
     // find all tags in the database
     const initTags = collections.tags.find();
-    let tagConfig = await initTags.next(); // get next tag from db cursor
+    let tagConfig: TagOptions<"F"> = await initTags.next(); // get next tag from db cursor
     while (tagConfig) {
       if (!isTagOptions(tagConfig))
         throw new Error("[Tag] Error loading tag from DB");
@@ -403,12 +408,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       //if(value.dataType.includes(Object.values(DataType)))
 
       try {
-        const tag = new Tag(tagConfig.dataType, {
-          name: tagConfig.name,
-          path: tagConfig.path,
-          nodeId: tagConfig.nodeId,
-          initialValue: tagConfig.initialValue,
-        });
+        const tag = new Tag(tagConfig.dataType, tagConfig);
       } catch (error) {
         logger.error(
           `[Tag] failed to load tag ${tagConfig.path} error ${error?.message}`
@@ -434,7 +434,22 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     }
   }
 
-  subscribeByPath(server: OPCUAServer, path: string) {
+  static async getAllTagPaths(): Promise<string[]> {
+    //return Object.keys(Tag.tags);
+
+    const paths = await collections.tags
+      .find({})
+      .project({ _id: 0, path: 1 })
+      .toArray();
+
+    let pathArray: string[] = [];
+    for (const path of paths) {
+      pathArray.push(path.path);
+    }
+    return pathArray;
+  }
+
+  subscribeByPath(path: string) {
     const resolvedPath = resolveOpcuaPath(path);
     if (!resolvedPath.deviceName) {
       throw new Error(
@@ -443,8 +458,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     }
 
     const device = deviceManager.getDeviceFromPath(resolvedPath.deviceName);
-
-    const variable = device.tagSubscribed(path);
+    const variable = device.tagSubscribed(path, this.parent);
 
     if (!variable)
       throw new Error(
@@ -470,8 +484,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 */
     // listen to value changes
     variable.on("value_changed", (newValue) => {
-      console.log(`Value changed for ${path}:`);
-      console.log(newValue.value.value);
+      logger.debug(`[Tag] Value changed for ${path}: ${newValue.value.value}`);
       // TD WIP Datatype check
       /*if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
         logger.error(
@@ -492,7 +505,12 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   }
 
   update(value: ResolveType<DataTypeString>) {
-    logger.debug(`[Tag] update() ${this.path} = ${value}`);
+    if (this.writeable == false) {
+      logger.warn(
+        `[Tag] update ${this.path} failed because writeable is set to false`
+      );
+      return;
+    }
 
     const newValue = this.validate(value);
     if (this.isArray !== Array.isArray(newValue))
@@ -501,19 +519,27 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       );
     if (this.isArray && this.arrayLength !== newValue?.length)
       throw new TypeError(
-        `Array Size Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`
+        `[Tag] Array Size Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`
       );
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
     this.value = newValue;
-    this.opcuaVarible.setValueFromSource({
-      dataType: this.opcuaDataType,
-      arrayType: this.isArray ? VariantArrayType.Array : undefined,
-      dimensions:
-        this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
-      value: newValue,
-    });
+
+    if (this.opcuaVarible) {
+      this.opcuaVarible.setValueFromSource({
+        dataType: this.opcuaDataType,
+        arrayType: this.isArray ? VariantArrayType.Array : undefined,
+        dimensions:
+          this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
+        value: newValue,
+      });
+    }
 
     if (this.exposeOverOpcua) {
+      if (!this.variable) {
+        throw new Error(
+          `[Tag] path: ${this.path} cannot update OPCUA varible as it is not initalised`
+        );
+      }
       this.variable?.setValueFromSource({
         dataType: this.opcuaDataType,
         arrayType: this.isArray ? VariantArrayType.Array : undefined,
@@ -522,11 +548,22 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       });
     }
     this.triggerEmit();
+
+    logger.debug(`[Tag] update ${this.path} = ${value}`);
   }
 
   triggerEmit() {
-    this.onUpdate?.(this);
-    emitToSubscribers({ path: this.path, value: this });
+    emitToSubscribers({
+      path: this.path,
+      value: {
+        name: this.name,
+        path: this.path,
+        nodeId: this.nodeId,
+        dataType: this.dataType,
+        value: this.value,
+        writeable: this.writeable,
+      },
+    });
   }
 }
 

@@ -1,6 +1,6 @@
 import { redirect, error, type Handle, type ServerInit } from "@sveltejs/kit";
 import { authenticateUser } from "$lib/server/auth/auth";
-import { logger } from "$lib/pino/logger";
+import { logger } from "$lib/server/pino/logger";
 import { connectToDatabase } from "$lib/server/mongodb/db";
 
 export const init: ServerInit = async () => {

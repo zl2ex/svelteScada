@@ -1,18 +1,9 @@
-import { getContext, setContext } from "svelte";
 import { io } from "socket.io-client";
 //import { type DataType } from "node-opcua";
 import { type Socket } from "socket.io-client";
-import type {
-  EmitPayload,
-  SocketIOClientToServerEvents,
-  SocketIOServerToClientEvents,
-  WritePayload,
-} from "$lib/server/socket.io/socket.io";
-import type {
-  ResolveType,
-  TagPaths,
-  BaseTypeStringsWithArrays,
-} from "$lib/server/tag/tag";
+import type { EmitPayload } from "$lib/server/socket.io/socket.io";
+import type { ResolveType, TagPaths } from "$lib/server/tag/tag";
+import { socketIoClientHandler } from "../socket.io/socket.io.svelte";
 
 export type ClientTagOptions = {
   path: TagPaths;
@@ -24,13 +15,12 @@ export type ClientDataTypeStrings = "number" | "boolean" | "string";
 
 //export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
 export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
-  static socket: Socket<
-    SocketIOServerToClientEvents,
-    SocketIOClientToServerEvents
-  > = io();
+  static tags: Record<TagPaths, ClientTag<any>> = [];
   name: string;
   path: TagPaths;
+  nodeId?: string;
   dataType: DataTypeString;
+  writeable: boolean;
   private _value: ResolveType<DataTypeString>;
   errorMessage: string | undefined;
 
@@ -38,81 +28,56 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this.name = opts.name ?? "";
     this.path = opts.path;
     this.dataType = dataType;
+    this.writeable = false;
     this._value = $state(opts.initialValue ?? null);
     this.errorMessage = $state(undefined);
 
+    ClientTag.tags[this.path] = this;
     console.log(`[ClientTag] created tag ${this.path}`);
+  }
 
-    ClientTag.socket.on(
-      `tag:update/${this.path}`,
-      ({ path, value }: EmitPayload) => {
-        console.log(value);
-        if (path != this.path || value.path != this.path)
-          throw new Error(
-            `[Client Tag]  tag:update  path ${value.path} does not match requested path ${this.path}`
-          );
+  [Symbol.dispose]() {
+    this.unsubscribe();
+    delete ClientTag.tags[this.path];
+  }
 
-        // TD WIP Validate datatype of tag vs datatype of clientTag
-        /*if (this.dataType !== value.dataType)
-          throw new Error(
-            `[Client Tag] tag:update   dataType ${value.dataType} is not assignable to ${this.dataType}`
-          );*/
-        this.name = value.name;
-        this.dataType = value.dataType;
-        this._value = value.value;
-        //Object.assign(this, value);
-      }
-    );
+  update({ path, value }: EmitPayload) {
+    console.log(value);
+    if (path != this.path || value.path != this.path)
+      throw new Error(
+        `[Client Tag]  tag:update  path ${value.path} does not match requested path ${this.path}`
+      );
 
-    /*ClientTag.socket.on("disconnect", () => {
-      this.errorMessage = "Connection to server lost";
-    });
-
-    ClientTag.socket.on("connect_error", () => {
-      this.errorMessage = "Connection to server lost";
-    });
-
-    ClientTag.socket.on("connect", () => {
-      this.errorMessage = undefined;
-    });*/
-    // TD WIP
+    // TD WIP Validate datatype of tag vs datatype of clientTag
+    /*if (this.dataType !== value.dataType)
+        throw new Error(
+          `[Client Tag] tag:update   dataType ${value.dataType} is not assignable to ${this.dataType}`
+        );*/
+    this.name = value.name;
+    this.path = value.path;
+    this.nodeId = value.nodeId;
+    this.dataType = value.dataType;
+    this._value = value.value;
+    this.writeable = value.writeable;
+    //Object.assign(this, value);
   }
 
   get value() {
     return this._value;
   }
 
-  static {
-    ClientTag.socket.on("connect", () => {
-      console.log("socket.io client connected to server");
-    });
-  }
-
   write(value: ResolveType<DataTypeString>) {
-    ClientTag.socket.emit(
-      "tag:write",
-      {
-        path: this.path,
-        value,
-      },
-      (error) => {
-        if (error?.message) {
-          console.error(error.message);
-          this.errorMessage = error.message;
-        } else {
-          this.errorMessage = undefined;
-        }
-      }
-    );
+    socketIoClientHandler.tagWrite({ path: this.path, value });
   }
 
   subscribe() {
     console.log(`[ClientTag] subscribe tag ${this.path}`);
-    ClientTag.socket.emit("tag:subscribe", this.path);
+    socketIoClientHandler.tagSubscribe(this.path);
   }
 
   unsubscribe() {
-    ClientTag.socket.emit("tag:unsubscribe", this.path);
+    console.log(`[ClientTag] un-subscribe tag ${this.path}`);
+    socketIoClientHandler.tagUnsubscribe(this.path);
   }
 }
 

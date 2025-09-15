@@ -1,5 +1,5 @@
 <script>
-  import NumberDisplay from "$lib/componets/scada/NumberDisplay.svelte";
+  import NumberDisplay from "$lib/client/componets/scada/NumberDisplay.svelte";
 </script>
 
 <h1>Home</h1>

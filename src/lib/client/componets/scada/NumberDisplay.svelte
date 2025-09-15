@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TagPaths } from "$lib/server/tag/tag";
-  import { ClientTag } from "$lib/tag/ui/tagState.svelte";
+  import { ClientTag } from "$lib/client/tag/tagState.svelte";
   import { flash } from "$lib/ui/flash.svelte";
   import type { MouseEventHandler } from "svelte/elements";
 
@@ -23,7 +23,7 @@
 
   $effect(() => {
     clazz = "";
-    if (tag.value.fault && faultFlash && flash.isOn) clazz = "fault";
+    //if (tag.value.fault && faultFlash && flash.isOn) clazz = "fault";
   });
 
   // for every instance of component subscribe to tag updates from the server

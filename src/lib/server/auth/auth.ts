@@ -5,7 +5,7 @@ import { PRIVATE_KEY, JWT_EXPERATION_TIME } from "$env/static/private";
 import { users, type User } from "$lib/server/mongodb/user";
 import { redirect } from "@sveltejs/kit";
 import { parse } from "cookie";
-import { logger } from "../../../lib/pino/logger";
+import { logger } from "../pino/logger";
 
 export async function registerUser(event: RequestEvent) {
   const data = await event.request.formData();

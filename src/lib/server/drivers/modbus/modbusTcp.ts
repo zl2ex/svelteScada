@@ -4,13 +4,15 @@ import {
   type UAVariable,
   type Namespace,
   type NodeIdLike,
+  type UAObject,
+  BaseNode,
 } from "node-opcua";
 
 import Modbus, { ModbusTCPClient } from "jsmodbus";
 import net from "net";
 import { z } from "zod";
 import { resolveOpcuaPath, type BaseTypeStrings } from "../../tag/tag";
-import { logger } from "../../../pino/logger";
+import { logger } from "../../pino/logger";
 import { ListIndexesCursor } from "mongodb";
 
 type ModbusRegisterType = "hr" | "ir" | "co" | "di";
@@ -138,13 +140,23 @@ export class ModbusTCPDriver {
     });
   }
 
-  subscribeByPath(path: string): UAVariable {
+  subscribeByPath(path: string, parent?: BaseNode | NodeIdLike): UAVariable {
     const resolvedPath = resolveOpcuaPath(path);
 
     if (!resolvedPath.tagPath)
       throw new Error(`[ModbusTCPDriver] empty tag path for path ${path}`);
     const parsed = this.parsePath(resolvedPath.tagPath);
     if (!parsed) throw new Error(`Invalid Modbus path: ${path}`);
+
+    let opcuaParent = parent
+      ? parent
+      : this.opcuaServer.engine.addressSpace?.rootFolder;
+
+    if (!opcuaParent) {
+      throw new Error(
+        `[ModbusTCPDriver] tag ${path} cannot subscribe because parent or root folder is not provided`
+      );
+    }
 
     // return varibleNode if multiple tags reference the same address
     if (this.tags[path]) {
@@ -160,10 +172,10 @@ export class ModbusTCPDriver {
       );
     }
 
-    let opcuaDataType = parsed.dataType as unknown as DataType;
+    const opcuaDataType = parsed.dataType as unknown as DataType;
 
     const variableNode = this.namespace.addVariable({
-      componentOf: this.opcuaServer.engine.addressSpace?.rootFolder,
+      componentOf: opcuaParent,
       nodeId: path,
       browseName: path,
       dataType: opcuaDataType,

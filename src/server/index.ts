@@ -28,9 +28,9 @@ import {
   startOPCUAClient,
 } from "../lib/server/drivers/opcua/opcuaServer";
 import { Tag, type TagOptions, Z_TagOptions } from "../lib/server/tag/tag";
-import { logger } from "../lib/pino/logger";
+import { logger } from "../lib/server/pino/logger";
 import { DeviceManager, Device } from "../lib/server/drivers/driver";
-import { resolveInstanceProps } from "../lib/server/tag/udt";
+import { resolveTagOptions, UdtDefinition } from "../lib/server/tag/udt";
 
 const app = express();
 const httpServer = createServer(app);
@@ -70,6 +70,25 @@ export async function main(httpServer: Server) {
     logger.error(error?.message);
   }*/
 
+  let test = new UdtDefinition({
+    name: "DigitalIn",
+    parameters: { device: "plc" },
+    feilds: [
+      {
+        name: "value",
+        dataType: "Boolean",
+        path: "${name}",
+        nodeId: "ns=1;s=/[${device}]/<Boolean>co0",
+      },
+      {
+        name: "faulted",
+        dataType: "Boolean",
+        path: "${name}",
+        nodeId: "ns=1;s=/[${device}]/<Boolean>co1",
+      },
+    ],
+  });
+
   await Tag.loadAllTagsFromDB();
   startOPCUAClient();
 
@@ -94,11 +113,10 @@ export async function main(httpServer: Server) {
     name: "${nodeId}/Pump1",
     nodeId: "${10 + baseAddr}",
     dataType: "Double",
-    exposeOverOpcua: "${baseAddr - 100}",
     //parameters: { folder: "TEST" },
   } satisfies TagOptions<"F">;
 
-  console.debug(resolveInstanceProps(udtProps, instanceProps, Z_TagOptions));
+  console.debug(resolveTagOptions(udtProps, instanceProps, Z_TagOptions));
 
   //httpServer.listen(3000);
   //poll();
@@ -106,8 +124,10 @@ export async function main(httpServer: Server) {
 
 //main(httpServer);
 
+let toggle = false;
+
 function poll() {
-  Tag.tags["/demo/test"]?.update(Tag.tags["/demo/test"]?.value + 1);
-  Tag.tags["/testTag"].update(Tag.tags["/testTag"].value + 1);
+  Tag.tags["/demo/digitalIn"]?.update({ value: toggle, faulted: toggle });
+  toggle = !toggle;
   setTimeout(poll, 1000);
 }

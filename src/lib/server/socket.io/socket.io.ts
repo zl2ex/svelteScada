@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from "socket.io";
 import { type Server } from "http";
-import { logger } from "../../pino/logger";
+import { logger } from "../pino/logger";
 import {
   Tag,
   type ResolveType,
@@ -14,7 +14,23 @@ import type { ZodError } from "zod";
 // emits the whole tag object
 export type EmitPayload<P extends keyof TagTypeMap = keyof TagTypeMap> = {
   path: P;
-  value: TagTypeMap[P];
+  value: Omit<
+    TagTypeMap[P],
+    | "opcuaDataType"
+    | "isArray"
+    | "arrayLength"
+    | "schema"
+    | "exposeOverOpcua"
+    | "variable"
+    | "opcuaVarible"
+    | "children"
+    | "parent"
+    | "parameters"
+    | "update"
+    | "subscribeByPath"
+    | "unsubscribeByPath"
+    | "triggerEmit"
+  >;
 };
 
 // write just to the value property of the tag
@@ -28,13 +44,13 @@ export type ErrorPayload = {
 };
 
 export interface SocketIOServerToClientEvents {
-  [key: `tag:update/${string}`]: (payload: EmitPayload) => void;
+  "tag:update": (payload: EmitPayload) => void;
   "tag:subscribe": (path: TagPaths) => void;
   "tag:unsubscribe": (path: TagPaths) => void;
 }
 
 export interface SocketIOClientToServerEvents {
-  [key: `tag:update/${string}`]: (payload: EmitPayload) => void;
+  "tag:update": (payload: EmitPayload) => void;
   "tag:write": (
     payload: WritePayload,
     callback: (error: ErrorPayload) => void
@@ -53,7 +69,7 @@ const socketClientSubscriptions = new Map<string, Set<string>>();
 export function emitToSubscribers(payload: EmitPayload) {
   for (const [socketId, subs] of socketClientSubscriptions.entries()) {
     if (subs.has(payload.path)) {
-      io.to(socketId).emit(`tag:update/${payload.path}`, payload);
+      io.to(socketId).emit("tag:update", payload);
     }
   }
 }

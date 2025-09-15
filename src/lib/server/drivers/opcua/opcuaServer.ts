@@ -10,7 +10,7 @@ import {
 import { Tag, type TagOptions } from "../../tag/tag";
 import { tagDefinitions } from "../../tag/tagDefinitions";
 import { udtDefinitions } from "../../tag/udtDefinitions";
-import { logger } from "../../../pino/logger";
+import { logger } from "../../pino/logger";
 import { emitToSubscribers } from "../../socket.io/socket.io";
 
 /*type AllTagNodes = Tags[keyof Tags];
