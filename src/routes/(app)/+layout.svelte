@@ -1,49 +1,26 @@
 <script lang="ts">
   import "../styles.css";
   import Hamburger from "$lib/client/componets/Hamburger.svelte";
+  import { io } from "socket.io-client";
+  import { ClientTag } from "$lib/client/tag/tagState.svelte";
+  import { onMount } from "svelte";
 
   const { children, data } = $props();
 
   let menuOpen = $state(false);
 
-  //setTagState();
-  /*
-	let socket: Socket | undefined;
-	onMount(() => {
-		socket = io();
-		socket.on("tag:update", ( {nodeId, value }) => {
-		//tags.update(t => ({ ...t, [tag.name]: tag.value });
-			console.log("tag:update " + nodeId + " = " + value);
-		});
-		socket.on("connect", () => {
-			console.log("socketIO Connected");
-			//subscribe(["ns=1;s=Local.Status"]);
-			writeTag("ns=1;s=Local.Status", 25.4)
-		});
-	});
+  const socket = io();
 
-	function writeTag(nodeId: string, value: any) {
-		socket.emit("tag:write", { nodeId, value });
-	}
+  socket.on("connect", () => {
+    console.log("socketIO Connected");
+  });
 
-	function subscribe(nodeIds: string[]) {
-		socket.emit("tag:subscribe", nodeIds);
-	}
-*/
-
-  //socketIoTagsClient(data.tags);
-
-  function globalClickHandler(event: Event) {
-    //close the menu if a user clicks a link in navigation
-    if (event.target && event.target.tagName === "A") {
-      menuOpen = false;
-    }
-  }
+  ClientTag.initSocketIo(socket);
 </script>
 
-`<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="app" onclick={globalClickHandler}>
+<div class="app">
   <header>
     <div class="corner">
       <Hamburger bind:active={menuOpen} />
@@ -59,25 +36,29 @@
     </div>
   </header>
 
-  <section>
+  <aside>
     <nav class={menuOpen ? "" : "closed"}>
       <a href="/">Home</a>
       <a href="/scada">Scada</a>
       <a href="/scada/tags">Tags</a>
     </nav>
-    <main>
-      {@render children()}
-    </main>
-  </section>
+  </aside>
+
+  <main>
+    {@render children()}
+  </main>
 </div>
-`
 
 <style>
   header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background-color: var(--app-color-neutral-300);
+    background-color: var(--app-color-neutral-400);
+    min-width: 100svw;
+    position: sticky;
+    top: 0;
+    z-index: 1;
   }
 
   header h2 {
@@ -90,34 +71,16 @@
     flex-direction: column;
   }
 
-  header .corner img {
-    width: 2rem;
-    height: 2rem;
-    object-fit: contain;
-  }
-
-  .corner .Hamburger {
-    display: none;
-  }
-
-  section {
-    display: flex;
-    flex: 1;
-    flex-direction: row;
-  }
-
   main {
-    /*flex: 1;
-		flex-wrap: wrap;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		justify-content: start;*/
-    width: 100%;
+    position: relative;
+    left: 4.3rem;
     min-height: 100%;
   }
 
-  nav {
+  aside {
+    position: fixed;
+    top: 2.75rem;
+    bottom: 0;
     display: flex;
     flex: 0;
     flex-direction: column;

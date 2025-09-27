@@ -1,14 +1,5 @@
-import {
-  type Namespace,
-  type NodeIdLike,
-  type UAObject,
-  BaseNode,
-  DataType,
-} from "node-opcua";
-import { logger } from "../pino/logger";
-import { Tag, Z_TagOptions, type TagOptions } from "./tag";
-import { udtDefinitions } from "./udtDefinitions";
-import vm from "node:vm";
+import { type NodeIdLike, DataType } from "node-opcua";
+import { resolveTagOptions, Tag, Z_TagOptions, type TagOptions } from "./tag";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -216,7 +207,8 @@ type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
 
 export type UdtDefinitionOptions = {
   name: string;
-  feilds: TagOptions<"F">[];
+  feilds: TagOptions<any>[];
+  initalValue: any;
   // namespace: Namespace;
   // parent: UAObject;
   parameters?: UdtParams;
@@ -225,7 +217,8 @@ export type UdtDefinitionOptions = {
 export class UdtDefinition {
   static udts: Record<string, UdtDefinition> = {};
   name: string;
-  feilds: TagOptions<"F">[];
+  feilds: TagOptions<any>[];
+  initalValue: any;
   // namespace: Namespace;
   // parent: UAObject;
   parameters?: UdtParams;
@@ -236,6 +229,7 @@ export class UdtDefinition {
     // this.parent = opts.parent;
     this.parameters = opts.parameters;
     this.feilds = opts.feilds;
+    this.initalValue = opts.initalValue;
 
     UdtDefinition.udts[this.name] = this;
   }
@@ -243,7 +237,7 @@ export class UdtDefinition {
   buildTagFeilds(
     udtName: string,
     instanceParameters?: UdtParams,
-    parent?: BaseNode | NodeIdLike
+    parent?: NodeIdLike
   ): Record<string, Tag<any>>[] {
     if (!UdtDefinition.udts[udtName]) {
       throw new Error(
@@ -489,100 +483,6 @@ export function resolveUdtProps(
   // Final validation
   return schema.parse(resolved);
 }*/
-
-function validateExpression(expr: string): void {
-  // Only allow safe characters and patterns
-  const safeExprRegex =
-    /^[0-9+\-*/%().\s]*([A-Za-z_][A-Za-z0-9_]*|Math\.[A-Za-z_][A-Za-z0-9_]*)*[0-9+\-*/%().\s]*$/;
-
-  if (!safeExprRegex.test(expr)) {
-    throw new Error(`Unsafe expression: ${expr}`);
-  }
-}
-
-function resolveTemplate(str: string, context: Record<string, any>): string {
-  return str.replace(/\$\{([^}]+)\}/g, (_, expr) => {
-    try {
-      const sandbox = { ...context };
-      const script = new vm.Script(expr); // run in vm to prevent code leaks
-      const result = String(script.runInNewContext(sandbox));
-      return result;
-    } catch (e) {
-      throw new Error(`[Udt] Failed to evaluate expression: ${expr}`);
-    }
-  });
-}
-
-function isExpression(expr: string | number | boolean): boolean {
-  return typeof expr === "string" && expr.includes("${") && expr.includes("}");
-}
-
-export function resolveTagOptions(
-  udtParams: UdtParams | undefined,
-  instanceProps: TagOptions<any>,
-  zodSchema: ZodObject
-): Record<string, unknown> {
-  const resolved: Record<string, boolean | number | string> = {};
-  const inProgress = new Set<string>();
-
-  function resolveKey(key: string, props: TagOptions<any>) {
-    //if (!isExpression(resolved[key])) return; // if it doesnt need to be evaluated
-    if (
-      inProgress.has(key) &&
-      typeof resolved[key] === "string" &&
-      resolved[key].includes(key)
-    ) {
-      throw new Error(
-        `[Udt] Circular reference detected while resolving "${key}"`
-      );
-    }
-    inProgress.add(key);
-
-    const raw = props[key as keyof TagOptions<any>];
-    if (isExpression(raw)) {
-      // Pass udtProps + already resolved instance props into context
-      const res = resolveTemplate(raw, {
-        ...udtParams,
-        ...resolved,
-        ...props,
-      });
-
-      if (!zodSchema.shape[key]) {
-        throw new Error(`[Udt] unexpected property ${key} in tagOptions`);
-      }
-
-      // if it expects a number
-      if (zodSchema.shape[key].safeParse(0).success) {
-        resolved[key] = Number(res);
-      }
-      // if it expects a boolean
-      else if (zodSchema.shape[key].safeParse(true).success) {
-        resolved[key] = Boolean(res);
-      }
-      // if it expects a string
-      else {
-        resolved[key] = res; // already a string from resolveTempalte
-      }
-    } else {
-      resolved[key] = raw;
-    }
-
-    if (!isExpression(resolved[key])) inProgress.delete(key);
-  }
-
-  for (const key of Object.keys(instanceProps)) {
-    resolveKey(key, instanceProps);
-  }
-
-  let tries = 5;
-  while (inProgress.keys.length > 0 && tries > 0) {
-    for (const key in inProgress) {
-      resolveKey(key, resolved);
-    }
-    tries--;
-  }
-  return resolved;
-}
 
 /*
 import { z, ZodType, ZodObject, ZodBoolean, ZodNumber, ZodString } from "zod";

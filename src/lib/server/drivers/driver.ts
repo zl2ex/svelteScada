@@ -1,4 +1,4 @@
-import type { BaseNode, NodeIdLike, OPCUAServer, UAVariable } from "node-opcua";
+import type { NodeIdLike, OPCUAServer } from "node-opcua";
 import {
   ModbusTCPDriver,
   Z_ModbusTCPDriverOptions,
@@ -64,7 +64,7 @@ export class Device {
     if (this.enabled) this.driver.connect();
   }
 
-  tagSubscribed(path: string, parent?: BaseNode | NodeIdLike) {
+  tagSubscribed(path: string, parent?: NodeIdLike) {
     return this.driver?.subscribeByPath(path, parent);
   }
 

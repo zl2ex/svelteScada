@@ -1,9 +1,10 @@
-import { io } from "socket.io-client";
-//import { type DataType } from "node-opcua";
-import { type Socket } from "socket.io-client";
-import type { EmitPayload } from "$lib/server/socket.io/socket.io";
+import type {
+  EmitPayload,
+  SocketIOClientToServerEvents,
+  SocketIOServerToClientEvents,
+} from "$lib/server/socket.io/socket.io";
 import type { ResolveType, TagPaths } from "$lib/server/tag/tag";
-import { socketIoClientHandler } from "../socket.io/socket.io.svelte";
+import type { Socket } from "socket.io-client";
 
 export type ClientTagOptions = {
   path: TagPaths;
@@ -13,22 +14,59 @@ export type ClientTagOptions = {
 
 export type ClientDataTypeStrings = "number" | "boolean" | "string";
 
+function waitForSocketResponse(socket: Socket, eventName: string) {
+  return new Promise((resolve) => {
+    socket.on(eventName, (data) => {
+      resolve(data);
+    });
+  });
+}
+
 //export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
 export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
+  private static socket?: Socket<
+    SocketIOServerToClientEvents,
+    SocketIOClientToServerEvents
+  >;
   static tags: Record<TagPaths, ClientTag<any>> = [];
-  name: string;
+  name?: string;
   path: TagPaths;
   nodeId?: string;
-  dataType: DataTypeString;
-  writeable: boolean;
+  dataType?: DataTypeString;
+  writeable?: boolean;
   private _value: ResolveType<DataTypeString>;
   errorMessage: string | undefined;
 
+  static initSocketIo(clientSocket: Socket) {
+    ClientTag.socket = clientSocket;
+    ClientTag.socket.on("tag:update", ({ path, value }) => {
+      ClientTag.tags[path]?.update({ path, value });
+    });
+  }
+
+  static async getTagPathsByPath(path: string): Promise<string[]> {
+    if (!ClientTag.socket) {
+      throw new Error(
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling subscribe()`
+      );
+    }
+    return new Promise((resolve) => {
+      ClientTag.socket?.emit("tag:getTagPathsByPath", path, (paths) => {
+        resolve(paths);
+      });
+    });
+  }
+
   constructor(dataType: DataTypeString, opts: ClientTagOptions) {
-    this.name = opts.name ?? "";
-    this.path = opts.path;
-    this.dataType = dataType;
-    this.writeable = false;
+    if (!ClientTag.socket) {
+      throw new Error(
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before creating any instances`
+      );
+    }
+    this.name = $state(opts.name ?? "");
+    this.path = $state(opts.path);
+    this.dataType = $state(dataType);
+    this.writeable = $state(false);
     this._value = $state(opts.initialValue ?? null);
     this.errorMessage = $state(undefined);
 
@@ -41,7 +79,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     delete ClientTag.tags[this.path];
   }
 
-  update({ path, value }: EmitPayload) {
+  private update({ path, value }: EmitPayload) {
     console.log(value);
     if (path != this.path || value.path != this.path)
       throw new Error(
@@ -67,17 +105,34 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   }
 
   write(value: ResolveType<DataTypeString>) {
-    socketIoClientHandler.tagWrite({ path: this.path, value });
+    if (!ClientTag.socket) {
+      throw new Error(
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling write()`
+      );
+    }
+    ClientTag.socket.emit("tag:write", { path: this.path, value }, (error) => {
+      this.errorMessage = error.message ?? undefined;
+    });
   }
 
   subscribe() {
+    if (!ClientTag.socket) {
+      throw new Error(
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling subscribe()`
+      );
+    }
     console.log(`[ClientTag] subscribe tag ${this.path}`);
-    socketIoClientHandler.tagSubscribe(this.path);
+    ClientTag.socket.emit("tag:subscribe", this.path);
   }
 
   unsubscribe() {
+    if (!ClientTag.socket) {
+      throw new Error(
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling unsubscribe()`
+      );
+    }
     console.log(`[ClientTag] un-subscribe tag ${this.path}`);
-    socketIoClientHandler.tagUnsubscribe(this.path);
+    ClientTag.socket.emit("tag:unsubscribe", this.path);
   }
 }
 

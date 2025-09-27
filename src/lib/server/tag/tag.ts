@@ -4,9 +4,7 @@ import {
   type UAVariable,
   DataType,
   Variant,
-  type Namespace,
   StatusCodes,
-  type UAObject,
   VariantArrayType,
   type DateTime,
   type Guid,
@@ -21,18 +19,16 @@ import {
   type UInt64,
   type Float,
   type ByteString,
-  makeBrowsePath,
   resolveNodeId,
   NodeId,
-  NodeIdType,
-  BaseNode,
   type NodeIdLike,
 } from "node-opcua";
 import { collections } from "../mongodb/collections";
-import { emitToSubscribers, type EmitPayload } from "../socket.io/socket.io";
+import { emitToSubscribers } from "../socket.io/socket.io";
 import { deviceManager } from "../../../server";
 import z from "zod";
 import { UdtDefinition, type UdtParams } from "./udt";
+import { attempt } from "../../../lib/util/attempt";
 
 // Base schemas for primitives
 export const Z_BaseTypes = {
@@ -114,7 +110,8 @@ export type BaseTypeStrings = keyof BaseTypeMap;
 export type BaseTypeStringsWithArrays =
   | keyof BaseTypeMap
   | `${keyof BaseTypeMap}[]`
-  | `${keyof BaseTypeMap}[${number}]`;
+  | `${keyof BaseTypeMap}[${number}]`
+  | (string & {});
 
 // Parse "Double[3]" or "SensorUDT[]" into base + length
 type ParseArray<DataTypeString extends string> =
@@ -157,28 +154,6 @@ export function getSchema<DataType extends string>(dataType: DataType) {
   return z.array(baseSchema).length(Number(len)); // fixed-length tuple
 }
 
-function decodeDataType(dataType: string) {
-  let opcuaDataType: DataType;
-  const arrayMatch = dataType.match(/^(\w+)\[(\d*)\]$/);
-  let isArray = !!arrayMatch || dataType.endsWith("[]"); // handles arrays of an unkown size
-  let arrayLength = arrayMatch ? parseInt(arrayMatch[2], 10) : undefined;
-
-  // type without array size or brackets
-  const baseDataType = arrayMatch ? arrayMatch[1] : dataType.replace("[]", "");
-  // is a opcua datatype
-  if (Object.values(DataType).includes(baseDataType as unknown as DataType)) {
-    opcuaDataType = baseDataType as unknown as DataType;
-  }
-  // is a user defined datatype and therfore a opcua ExtentionObject
-  else {
-    opcuaDataType = DataType.ExtensionObject;
-  }
-
-  if (isArray == false) {
-    return typeof Array.of(0);
-  }
-}
-
 export type ResolvedOpcuaPath = {
   nodeId: NodeId;
   deviceName: string | undefined;
@@ -208,6 +183,112 @@ export function resolveOpcuaPath(path: string): ResolvedOpcuaPath {
   };
 }
 
+function validateExpression(expr: string): void {
+  // Only allow safe characters and patterns
+  const safeExprRegex =
+    /^[0-9+\-*/%().\s]*([A-Za-z_][A-Za-z0-9_]*|Math\.[A-Za-z_][A-Za-z0-9_]*)*[0-9+\-*/%().\s]*$/;
+
+  if (!safeExprRegex.test(expr)) {
+    throw new Error(`Unsafe expression: ${expr}`);
+  }
+}
+
+function resolveTemplate(
+  key: string,
+  expression: string,
+  context: Record<string, any>
+): string {
+  logger.debug(key);
+  logger.debug(expression);
+  logger.debug(context);
+
+  return expression.replace(/\$\{([^}]+)\}/g, (_, expr) => {
+    try {
+      const sandbox = { ...context };
+      const script = new vm.Script(expr); // run in vm to prevent code leaks
+      const result = String(script.runInNewContext(sandbox));
+      return result;
+    } catch (e) {
+      throw new TagError(key, `[Tag] Failed to evaluate expression: ${expr}`);
+    }
+  });
+}
+
+function isExpression(expr: string | number | boolean): boolean {
+  return typeof expr === "string" && expr.includes("${") && expr.includes("}");
+}
+
+export function resolveTagOptions(
+  udtParams: UdtParams | undefined,
+  instanceProps: TagOptions<any>,
+  zodSchema: ZodObject
+): TagOptions<any> {
+  const resolved: TagOptions<any> = {};
+  const inProgress = new Set<string>();
+
+  function resolveKey(key: keyof TagOptions<any>, props: TagOptions<any>) {
+    //if (!isExpression(resolved[key])) return; // if it doesnt need to be evaluated
+    if (
+      inProgress.has(key) &&
+      typeof resolved[key] === "string" &&
+      resolved[key].includes(key)
+    ) {
+      throw new TagError(
+        key,
+        `[Tag] Circular reference detected while resolving "${key}"`
+      );
+    }
+    inProgress.add(key);
+
+    const raw = props[key as keyof TagOptions<any>];
+    if (isExpression(raw)) {
+      // Pass udtProps + already resolved instance props into context
+      const res = resolveTemplate(key, raw, {
+        ...udtParams,
+        ...resolved,
+        ...props,
+      });
+
+      if (!zodSchema.shape[key]) {
+        throw new TagError(
+          key,
+          `[Tag] unexpected property ${key} in tagOptions`
+        );
+      }
+
+      // if it expects a number
+      if (zodSchema.shape[key].safeParse(0).success) {
+        resolved[key] = Number(res);
+      }
+      // if it expects a boolean
+      else if (zodSchema.shape[key].safeParse(true).success) {
+        resolved[key] = Boolean(res);
+      }
+      // if it expects a string
+      else {
+        resolved[key] = res; // already a string from resolveTempalte
+      }
+    } else {
+      resolved[key] = raw;
+    }
+
+    if (!isExpression(resolved[key])) inProgress.delete(key);
+  }
+
+  for (const key of Object.keys(instanceProps)) {
+    resolveKey(key, instanceProps);
+  }
+
+  let tries = 5;
+  while (inProgress.keys.length > 0 && tries > 0) {
+    for (const key in inProgress) {
+      resolveKey(key, resolved);
+    }
+    tries--;
+  }
+  return resolved;
+}
+
 // TD WIP Make this auto generated from mongodb data
 export type TagTypeMapDefinition = {
   "/demo/test": "Double";
@@ -221,13 +302,27 @@ export type TagTypeMap = {
   [P in keyof TagTypeMapDefinition]: Tag<TagTypeMapDefinition[P]>;
 };
 
-export type TagPaths = keyof TagTypeMapDefinition;
+export type TagPaths = keyof TagTypeMapDefinition | (string & {});
+
+export type TagOptionsFeildNames = keyof TagOptions<"F"> | (string & {});
+class TagError extends Error {
+  feildName?: TagOptionsFeildNames;
+  constructor(
+    feildName: TagOptionsFeildNames,
+    message: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.feildName = feildName;
+  }
+}
 
 export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
-  static tags: TagTypeMap = [];
+  //static tags: TagTypeMap = [];
+  static tags: Map<string, Tag<any>> = new Map();
   static opcuaServer: OPCUAServer;
   name: string;
-  path: keyof typeof Tag.tags; // path that tags are organised by internally
+  path: TagPaths; // path that tags are organised by internally
   nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
   dataType: DataTypeString;
   opcuaDataType: DataType;
@@ -246,28 +341,50 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   variable?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
   opcuaVarible?: UAVariable; // varible that nodeId points at
   children?: Record<string, Tag<any>>[]; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
-  parent?: BaseNode | NodeIdLike; // parent of Udt child if the tag is a UDT
+  parent?: NodeIdLike; // parent of Udt child if the tag is a UDT
   parameters?: UdtParams; // parameters for building udt path's ect
+
+  error?: TagError; // if any errors exist with the tag
 
   constructor(
     dataType: DataTypeString,
-    opts: Omit<TagOptions<DataTypeString>, "dataType">,
-    parent?: BaseNode | NodeIdLike
+    options: Omit<TagOptions<DataTypeString>, "dataType">,
+    parent?: NodeIdLike
   ) {
-    // TD WIP Parse with Zod
-    this.name = opts.name;
-    this.path = opts.path; // TD WIP
-    this.nodeId = opts.nodeId;
+    this.path = options.path;
+
+    const opts = attempt(() =>
+      resolveTagOptions(
+        options.parameters,
+        { ...options, dataType },
+        Z_TagOptions
+      )
+    );
+
+    if ("error" in opts) {
+      if (opts.error instanceof TagError) {
+        this.error = opts.error;
+      } else if (opts.error instanceof Error) {
+        this.error = new TagError("", opts.error.message);
+      }
+      logger.error(this.error);
+      Tag.tags.set(this.path, this);
+      return;
+    }
+
+    this.name = opts.data.name;
+    this.path = opts.data.path;
+    this.nodeId = opts.data.nodeId;
     this.dataType = dataType;
 
-    this.writeable = opts.writeable ?? false;
-    this.exposeOverOpcua = opts.exposeOverOpcua ?? false;
+    this.writeable = opts.data.writeable ?? false;
+    this.exposeOverOpcua = opts.data.exposeOverOpcua ?? false;
 
     this.parent = parent;
     //? parent
     //: Tag.opcuaServer.engine.addressSpace?.rootFolder;
 
-    this.parameters = opts.parameters;
+    this.parameters = opts.data.parameters;
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
@@ -302,14 +419,19 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
         this.schema = this.schema.extend({ [key]: childTag.schema });
       }
     } else {
-      throw new Error(
+      const err = new TagError(
+        "dataType",
         `[Tag] error while creating tag ${this.path} dataType ${dataType} does not exist in udtDefinitions`
       );
+      this.error = err;
+      logger.error(err);
+      Tag.tags.set(this.path, this);
+      return;
     }
 
     // no inital value given so generate defaults
     // TD WIP DataType
-    if (!opts.initialValue) {
+    if (opts.data.initialValue == undefined) {
       if (
         dataType === "Double" ||
         dataType === "Int32" ||
@@ -332,12 +454,28 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
         }
       }
     } else {
-      this.value = this.validate(opts.initialValue);
+      this.value = this.validate(opts.data.initialValue);
     }
 
     // subscribe to value from driver if nodeId provided
     if (this.nodeId) {
-      this.opcuaVarible = this.subscribeByPath(this.nodeId);
+      const opcuaVarible = attempt(() => this.subscribeByPath(this.nodeId));
+      if ("error" in opcuaVarible) {
+        if (opcuaVarible.error instanceof TagError) {
+          this.error = opcuaVarible.error;
+        } else if (opcuaVarible.error instanceof Error) {
+          this.error = new TagError(
+            "",
+            opcuaVarible.error.message,
+            opcuaVarible.error
+          );
+        }
+        logger.error(opcuaVarible.error);
+        Tag.tags.set(this.path, this);
+        return;
+      }
+
+      this.opcuaVarible = opcuaVarible.data;
     }
 
     if (this.exposeOverOpcua) {
@@ -385,9 +523,24 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
     // push instance to tags map referenced by path
     // TD WIP typescript
-    Tag.tags[this.path] = this;
+    Tag.tags.set(this.path, this);
 
-    logger.info(`[Tag] created new tag ${this.path}`);
+    logger.info(`[Tag] created new tag ${this.path} = ${this.value}`);
+  }
+
+  // supports /folder/*  will get everything in folder
+  // /folder/tag**  will get everything in folder that starts with tag eg tag1 and tag2
+  static getTagPathsByPath(pattern: string) {
+    const regexPattern =
+      "^" +
+      pattern
+        .replace(/[.+?^${}()|[\]\\]/g, "\\$&") // escape regex specials
+        .replace(/\*\*/g, ".*") // ** = match multiple path parts
+        .replace(/\*/g, "[^/]+") + // * = match single path part
+      "$";
+
+    const regex = new RegExp(regexPattern);
+    return [...Tag.tags.keys()].filter((key) => regex.test(key));
   }
 
   // will throw ZodError if it fails
@@ -397,12 +550,13 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
   static async loadAllTagsFromDB() {
     // find all tags in the database
-    const initTags = collections.tags.find();
-    let tagConfig: TagOptions<"F"> = await initTags.next(); // get next tag from db cursor
-    while (tagConfig) {
-      if (!isTagOptions(tagConfig))
-        throw new Error("[Tag] Error loading tag from DB");
+    const initTags = collections.tags.find({});
+    let tagConfig: TagOptions<any> | null = await initTags.next(); // get next tag from db cursor
 
+    while (tagConfig) {
+      if (!isTagOptions(tagConfig)) {
+        throw new Error("[Tag] Error loading tag from DB");
+      }
       // Is it a primitive datatype eg Bool or Double
       //if(Object.values(DataType).some(type => String(type).startsWith(value.dataType))) {
       //if(value.dataType.includes(Object.values(DataType)))

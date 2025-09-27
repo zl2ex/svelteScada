@@ -8,14 +8,13 @@ import {
   type TagTypeMap,
   type TagPaths,
 } from "../tag/tag";
-import { E } from "../../../../build/server/chunks/index-DAgssKRH";
-import type { ZodError } from "zod";
+import { callback } from "chart.js/helpers";
 
 // emits the whole tag object
-export type EmitPayload<P extends keyof TagTypeMap = keyof TagTypeMap> = {
-  path: P;
+export type EmitPayload = {
+  path: TagPaths;
   value: Omit<
-    TagTypeMap[P],
+    Tag<any>,
     | "opcuaDataType"
     | "isArray"
     | "arrayLength"
@@ -34,9 +33,9 @@ export type EmitPayload<P extends keyof TagTypeMap = keyof TagTypeMap> = {
 };
 
 // write just to the value property of the tag
-export type WritePayload<P extends keyof TagTypeMap = keyof TagTypeMap> = {
-  path: P;
-  value: ResolveType<TagTypeMapDefinition[P]>;
+export type WritePayload = {
+  path: TagPaths;
+  value: any;
 };
 
 export type ErrorPayload = {
@@ -57,6 +56,10 @@ export interface SocketIOClientToServerEvents {
   ) => void;
   "tag:subscribe": (path: TagPaths) => void;
   "tag:unsubscribe": (path: TagPaths) => void;
+  "tag:getTagPathsByPath": (
+    path: string,
+    callback: (paths: string[]) => void
+  ) => void;
 }
 
 let io: SocketIOServer<
@@ -91,18 +94,19 @@ export function creatSocketIoServer(httpServer: Server) {
     socket.on("tag:subscribe", (path) => {
       const subs = socketClientSubscriptions.get(socket.id);
       if (subs) {
-        if (!Tag.tags[path]) {
-          logger.error(`[Socket.io] no tag exists at ${path}`);
+        if (!Tag.tags.has(path)) {
+          logger.error(`[Socket.io] subscribe failed no tag exists at ${path}`);
           return;
         }
 
         subs.add(path);
-        Tag.tags[path].triggerEmit(); // sends a tag:update message to browser as soon as they subscribe so they get the value
+        Tag.tags.get(path)?.triggerEmit(); // sends a tag:update message to browser as soon as they subscribe so they get the value
         logger.info(`[Socket.io] client ${socket.id} subscribed to: ${path}`);
       }
     });
 
     socket.on("tag:unsubscribe", (path) => {
+      logger.info(`[Socket.io] client ${socket.id} unsubscribed from: ${path}`);
       const subs = socketClientSubscriptions.get(socket.id);
       if (subs) {
         subs.delete(path);
@@ -116,13 +120,13 @@ export function creatSocketIoServer(httpServer: Server) {
     socket.on("tag:write", ({ path, value }, callback) => {
       let error: unknown | undefined = undefined;
       try {
-        if (!Tag.tags[path]) {
+        if (!Tag.tags.has(path)) {
           throw new Error(
             `[Socket.io] tag write failed, tag ${path} does not exist`
           );
         }
 
-        Tag.tags[path].update(value);
+        Tag.tags.get(path)?.update(value);
         logger.info(
           `[Socket.io] client ${socket.id} wrote to tag ${path} = ${value}`
         );
@@ -133,6 +137,13 @@ export function creatSocketIoServer(httpServer: Server) {
       callback({
         message: error?.message,
       });
+    });
+
+    socket.on("tag:getTagPathsByPath", (path, callback) => {
+      logger.debug(
+        `[Socket.io] client ${socket.id} requested tag:getTagPathsByPath ${path}`
+      );
+      callback(Tag.getTagPathsByPath(path));
     });
 
     socket.on("disconnect", () => {

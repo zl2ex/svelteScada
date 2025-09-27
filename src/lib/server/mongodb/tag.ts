@@ -67,8 +67,7 @@ export class Tag<T>
     }
 }*/
 
-
-export const tags = db.collection<TagOptions>('tags');
+export const tags = db.collection<TagOptions<any>>("tags");
 await tags.createIndex({ path: 1 }, { unique: true });
 
 /*tags.insertOne({

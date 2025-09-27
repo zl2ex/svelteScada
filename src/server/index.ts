@@ -30,7 +30,8 @@ import {
 import { Tag, type TagOptions, Z_TagOptions } from "../lib/server/tag/tag";
 import { logger } from "../lib/server/pino/logger";
 import { DeviceManager, Device } from "../lib/server/drivers/driver";
-import { resolveTagOptions, UdtDefinition } from "../lib/server/tag/udt";
+import { UdtDefinition } from "../lib/server/tag/udt";
+import z from "zod";
 
 const app = express();
 const httpServer = createServer(app);
@@ -77,16 +78,20 @@ export async function main(httpServer: Server) {
       {
         name: "value",
         dataType: "Boolean",
-        path: "${name}",
-        nodeId: "ns=1;s=/[${device}]/<Boolean>co0",
+        path: "value",
+        nodeId: "ns=1;s=/[plc1]/<Boolean>co0",
       },
       {
         name: "faulted",
         dataType: "Boolean",
-        path: "${name}",
-        nodeId: "ns=1;s=/[${device}]/<Boolean>co1",
+        path: "faulted",
+        nodeId: "ns=1;s=/[plc1]/<Boolean>co1",
       },
     ],
+    initalValue: {
+      value: false,
+      faulted: false,
+    },
   });
 
   await Tag.loadAllTagsFromDB();
@@ -106,17 +111,14 @@ export async function main(httpServer: Server) {
     folderr: "${folder}/test",
   };
 */
-  const udtProps = { folder: "Motors", baseAddr: 100 };
-
   const instanceProps = {
     path: "/${folder}/${name}",
-    name: "${nodeId}/Pump1",
+    name: "Pump1",
     nodeId: "${10 + baseAddr}",
     dataType: "Double",
-    //parameters: { folder: "TEST" },
+    writeable: "${true}",
+    parameters: { folder: "motor", baseAddr: 100 },
   } satisfies TagOptions<"F">;
-
-  console.debug(resolveTagOptions(udtProps, instanceProps, Z_TagOptions));
 
   //httpServer.listen(3000);
   //poll();
@@ -127,7 +129,7 @@ export async function main(httpServer: Server) {
 let toggle = false;
 
 function poll() {
-  Tag.tags["/demo/digitalIn"]?.update({ value: toggle, faulted: toggle });
+  Tag.tags.get("/demo/digitalIn")?.update({ value: toggle, faulted: toggle });
   toggle = !toggle;
   setTimeout(poll, 1000);
 }

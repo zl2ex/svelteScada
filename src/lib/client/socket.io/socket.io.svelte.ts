@@ -6,7 +6,6 @@ import type {
   SocketIOClientToServerEvents,
   SocketIOServerToClientEvents,
 } from "$lib/server/socket.io/socket.io";
-import { ClientTag } from "../tag/tagState.svelte";
 import type { TagTypeMapDefinition } from "$lib/server/tag/tag";
 
 //export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
@@ -19,10 +18,6 @@ export class SocketIoClientHandler {
   constructor() {
     this.socket.on("connect", () => {
       console.log("[Socket.ioClientHandler] connected to server");
-    });
-
-    this.socket.on("tag:update", ({ path, value }) => {
-      ClientTag.tags[path]?.update({ path, value });
     });
   }
 

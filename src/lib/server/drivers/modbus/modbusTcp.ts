@@ -4,8 +4,6 @@ import {
   type UAVariable,
   type Namespace,
   type NodeIdLike,
-  type UAObject,
-  BaseNode,
 } from "node-opcua";
 
 import Modbus, { ModbusTCPClient } from "jsmodbus";
@@ -13,7 +11,6 @@ import net from "net";
 import { z } from "zod";
 import { resolveOpcuaPath, type BaseTypeStrings } from "../../tag/tag";
 import { logger } from "../../pino/logger";
-import { ListIndexesCursor } from "mongodb";
 
 type ModbusRegisterType = "hr" | "ir" | "co" | "di";
 
@@ -140,7 +137,7 @@ export class ModbusTCPDriver {
     });
   }
 
-  subscribeByPath(path: string, parent?: BaseNode | NodeIdLike): UAVariable {
+  subscribeByPath(path: string, parent?: NodeIdLike): UAVariable {
     const resolvedPath = resolveOpcuaPath(path);
 
     if (!resolvedPath.tagPath)

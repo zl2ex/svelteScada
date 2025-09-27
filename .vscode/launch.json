@@ -21,12 +21,14 @@
       "outFiles": ["${workspaceFolder}/**/*.js"]
     },
     {
-      "type": "chrome", // or "msedge" for Microsoft Edge
+      "type": "chrome", // or "msedge" for Edge
       "request": "launch",
       "name": "Debug Vite App",
-      "url": "http://localhost:5173", // Adjust port if Vite uses a different one
-      "webRoot": "${workspaceFolder}/src", // Adjust if your source code is in a different directory
-      "sourceMaps": true
+      "url": "http://localhost:5173", // Adjust if your Vite server uses a different port
+      "preLaunchTask": "npm run build",
+      "webRoot": "${workspaceFolder}/src/server/index.ts", // Adjust if your source files are in a different directory
+      "sourceMaps": true,
+      "runtimeArgs": ["--remote-debugging-port=9222"]
     }
   ]
 }

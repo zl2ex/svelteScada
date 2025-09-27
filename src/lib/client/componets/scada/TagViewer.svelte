@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ClientTag } from "$lib/tag/ui/tagState.svelte";
+  import { ClientTag } from "$lib/client/tag/tagState.svelte";
 
   type props = {
     tagPath: string;
@@ -9,70 +9,98 @@
 
   let tag = new ClientTag("number", { path: tagPath });
 
-  /* WIP Works for displaying but no binding
-    function tableContent(obj:object):string
-    {
-        let output = "";
-        for(const [key, value] of Object.entries(obj))
-        {
-            output += `<tr><td>${key}</td>`;
-
-                if(typeof value === "boolean")
-                {
-                    output += `<td><input type="checkbox" bind:checked={tag.data[key]}/></td>`;
-                }
-                else if(typeof value === "number")
-                {
-                    output += `<td><input type="number" bind:value/></td>`;
-                }
-                else if(typeof value === "object")
-                {
-                    output += tableContent(value);
-                }
-                
-            output += `</tr>`;
-        }
-
-        return output;
-    }
-
-    */
+  $effect.root(() => {
+    tag.subscribe();
+    return () => {
+      tag.unsubscribe(); // unsibscribe when unmounted
+    };
+  });
 </script>
 
 <div>
-  <h3>{tag.name}</h3>
   <h2>{tag.path}</h2>
+  <h3>{tag.name}</h3>
   <table>
-    <thead>
-      <tr>
-        <td>key</td>
-        <td>value</td>
-      </tr>
-    </thead>
     <tbody>
       <!--{@html tableContent}-->
-
-      {#each Object.entries(tag.data) as [key, value], index (key)}
-        <tr>
-          <td>{key}</td>
-          {#if typeof value === "boolean"}
-            <td><input type="checkbox" bind:checked={tag.data[key]} /></td>
-          {:else if typeof value === "number"}
-            <td><input type="number" bind:value={tag.data[key]} /></td>
-          {:else if typeof value === "string"}
-            <td><input type="text" bind:value={tag.data[key]} /></td>
-          {:else if typeof value === "object"}
-            {#each Object.entries(tag.data[key]) as [k], index (k)}
-              <td><input type="number" bind:value={tag.data[key][k]} /></td>
-            {/each}
-          {:else if typeof value === "object"}
-            <td>object</td>
-            <!--{#each Object.entries(tag.data) as [key, value], index(key) }
-                        //WIP further nesting
-                    {/each}-->
-          {/if}
-        </tr>
-      {/each}
+      {#if typeof tag.value === "boolean"}
+        <tr
+          ><td
+            ><input
+              type="checkbox"
+              checked={tag.value}
+              oninput={(ev) => {
+                tag.write(Boolean(ev.target?.checked));
+              }}
+            /></td
+          ></tr
+        >
+      {:else if typeof tag.value === "number"}
+        <tr
+          ><td
+            ><input
+              type="number"
+              value={tag.value}
+              oninput={(ev) => {
+                tag.write(Number(ev.target?.value));
+              }}
+            /></td
+          ></tr
+        >
+      {:else if typeof tag.value === "string"}
+        <tr
+          ><td
+            ><input
+              type="text"
+              value={tag.value}
+              oninput={(ev) => {
+                tag.write(String(ev.target?.value));
+              }}
+            /></td
+          ></tr
+        >
+      {:else if typeof tag.value === "object" && tag.value}
+        {#each Object.entries(tag.value) as [key, value]}
+          <tr>
+            {#if typeof value === "boolean"}
+              <td>{key}</td>
+              <td
+                ><input
+                  type="checkbox"
+                  checked={value}
+                  oninput={(ev) => {
+                    tag.write(Boolean(ev.target?.checked));
+                  }}
+                /></td
+              >
+            {:else if typeof value === "number"}
+              <td>{key}</td>
+              <td
+                ><input
+                  type="number"
+                  {value}
+                  oninput={(ev) => {
+                    tag.write(Number(ev.target?.value));
+                  }}
+                /></td
+              >
+            {:else if typeof value === "string"}
+              <td>{key}</td>
+              <td
+                ><input
+                  type="text"
+                  {value}
+                  oninput={(ev) => {
+                    tag.write(String(ev.target?.value));
+                  }}
+                /></td
+              >
+            {/if}
+          </tr>
+        {/each}
+      {:else}
+        <td>unsupported type {typeof tag.value}</td>
+      {/if}
     </tbody>
   </table>
 </div>
