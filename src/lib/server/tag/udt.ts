@@ -1,5 +1,5 @@
-import { type NodeIdLike, DataType } from "node-opcua";
-import { resolveTagOptions, Tag, Z_TagOptions, type TagOptions } from "./tag";
+import { DataType } from "node-opcua";
+import { Tag, TagOptions, type TagOptionsInput } from "./tag";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -217,7 +217,7 @@ export type UdtDefinitionOptions = {
 export class UdtDefinition {
   static udts: Record<string, UdtDefinition> = {};
   name: string;
-  feilds: TagOptions<any>[];
+  feilds: TagOptionsInput<any>[];
   initalValue: any;
   // namespace: Namespace;
   // parent: UAObject;
@@ -236,8 +236,7 @@ export class UdtDefinition {
 
   buildTagFeilds(
     udtName: string,
-    instanceParameters?: UdtParams,
-    parent?: NodeIdLike
+    instanceParameters?: UdtParams
   ): Record<string, Tag<any>>[] {
     if (!UdtDefinition.udts[udtName]) {
       throw new Error(
@@ -259,17 +258,15 @@ export class UdtDefinition {
 
     const feilds: Record<string, Tag<any>>[] = [];
     for (const tagOptions of UdtDefinition.udts[udtName].feilds) {
+      const resolvedTagOptions = new TagOptions(tagOptions);
+      /*
       const resolvedTagOptions = resolveTagOptions(
         parameters,
         tagOptions,
         Z_TagOptions
       );
-
-      feilds[resolvedTagOptions.name] = new Tag(
-        resolvedTagOptions.dataType,
-        resolvedTagOptions,
-        parent
-      );
+*/
+      feilds[resolvedTagOptions.name] = new Tag(resolvedTagOptions); // TD WIP
     }
     return feilds;
   }

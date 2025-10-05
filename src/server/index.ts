@@ -1,24 +1,3 @@
-/*import http from 'http';
-import express from 'express';
-import { server } from './socketIoHandler';
-import { handler } from '../build/handler';
-
-
-const app = express();
-const httpServer = http.createServer(app);
-
-// Inject SocketIO
-server.injectSocketIO(httpServer);
-
-// SvelteKit handlers
-app.use(handler);
-
-httpServer.listen(3000, () => {
-    console.log('Running on http://localhost:3000');
-});
-
-*/
-
 import express from "express";
 import { createServer, Server } from "http";
 import { handler } from "../../build/handler";
@@ -27,11 +6,13 @@ import {
   createOPCUAServer,
   startOPCUAClient,
 } from "../lib/server/drivers/opcua/opcuaServer";
-import { Tag, type TagOptions, Z_TagOptions } from "../lib/server/tag/tag";
+import { Tag, TagOptions } from "../lib/server/tag/tag";
 import { logger } from "../lib/server/pino/logger";
 import { DeviceManager, Device } from "../lib/server/drivers/driver";
 import { UdtDefinition } from "../lib/server/tag/udt";
-import z from "zod";
+import { TagManager } from "../lib/server/tag/tagManager";
+import { TagFolder } from "../lib/server/tag/folder";
+import { collections } from "../lib/server/mongodb/collections";
 
 const app = express();
 const httpServer = createServer(app);
@@ -40,6 +21,7 @@ const httpServer = createServer(app);
 app.use(handler);
 
 export const deviceManager = new DeviceManager();
+export const tagManager = new TagManager();
 
 export async function main(httpServer: Server) {
   creatSocketIoServer(httpServer);
@@ -70,7 +52,17 @@ export async function main(httpServer: Server) {
   } catch (error) {
     logger.error(error?.message);
   }*/
-
+  /*
+  let root = new TagFolder({ name: "/", path: "/"});
+  let tagOpts = new TagOptions<"Double">({
+    name: "test",
+    path: "/demo/test",
+    dataType: "Double",
+    nodeId: "ns=1;s=[device]/fhr100",
+    initalValue: 10.1123,
+  });
+  collections.tags.insertOne(tagOpts);
+  /*
   let test = new UdtDefinition({
     name: "DigitalIn",
     parameters: { device: "plc" },
@@ -93,8 +85,11 @@ export async function main(httpServer: Server) {
       faulted: false,
     },
   });
+*/
+  await tagManager.loadFromDb();
 
-  await Tag.loadAllTagsFromDB();
+  console.debug(tagManager.getNode("/demo/test"));
+
   startOPCUAClient();
 
   /*const udtProps = {
@@ -111,15 +106,6 @@ export async function main(httpServer: Server) {
     folderr: "${folder}/test",
   };
 */
-  const instanceProps = {
-    path: "/${folder}/${name}",
-    name: "Pump1",
-    nodeId: "${10 + baseAddr}",
-    dataType: "Double",
-    writeable: "${true}",
-    parameters: { folder: "motor", baseAddr: 100 },
-  } satisfies TagOptions<"F">;
-
   //httpServer.listen(3000);
   //poll();
 }
@@ -129,7 +115,7 @@ export async function main(httpServer: Server) {
 let toggle = false;
 
 function poll() {
-  Tag.tags.get("/demo/digitalIn")?.update({ value: toggle, faulted: toggle });
+  Tag.tags.get("/demo/test")?.update(Tag.tags.get("/demo/test")?.value + 1);
   toggle = !toggle;
   setTimeout(poll, 1000);
 }

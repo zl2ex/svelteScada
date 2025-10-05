@@ -1,14 +1,10 @@
 import { Server as SocketIOServer } from "socket.io";
 import { type Server } from "http";
 import { logger } from "../pino/logger";
-import {
-  Tag,
-  type ResolveType,
-  type TagTypeMapDefinition,
-  type TagTypeMap,
-  type TagPaths,
-} from "../tag/tag";
-import { callback } from "chart.js/helpers";
+import { Tag, TagError, type TagPaths } from "../tag/tag";
+import { tagManager } from "../../../server";
+import type { Node } from "../../../lib/client/tag/tagState.svelte";
+import { attempt, type Result } from "../../../lib/util/attempt";
 
 // emits the whole tag object
 export type EmitPayload = {
@@ -23,12 +19,13 @@ export type EmitPayload = {
     | "variable"
     | "opcuaVarible"
     | "children"
-    | "parent"
+    | "opcuaParent"
     | "parameters"
     | "update"
     | "subscribeByPath"
     | "unsubscribeByPath"
     | "triggerEmit"
+    | "getEmitPayload"
   >;
 };
 
@@ -54,11 +51,14 @@ export interface SocketIOClientToServerEvents {
     payload: WritePayload,
     callback: (error: ErrorPayload) => void
   ) => void;
-  "tag:subscribe": (path: TagPaths) => void;
+  "tag:subscribe": (
+    path: TagPaths,
+    callback: (payload: Result<EmitPayload, Error | unknown>) => void
+  ) => void;
   "tag:unsubscribe": (path: TagPaths) => void;
-  "tag:getTagPathsByPath": (
+  "tag:getChildrenAsNode": (
     path: string,
-    callback: (paths: string[]) => void
+    callback: (items: Node[]) => void
   ) => void;
 }
 
@@ -91,18 +91,33 @@ export function creatSocketIoServer(httpServer: Server) {
 
     socketClientSubscriptions.set(socket.id, new Set());
 
-    socket.on("tag:subscribe", (path) => {
+    socket.on("tag:subscribe", (path, callback) => {
       const subs = socketClientSubscriptions.get(socket.id);
-      if (subs) {
-        if (!Tag.tags.has(path)) {
-          logger.error(`[Socket.io] subscribe failed no tag exists at ${path}`);
-          return;
-        }
+      let result = attempt(() => {
+        if (!subs) {
+          throw new TagError(
+            "",
+            `[Socket.io] subscribe() failed, no client found`
+          );
+        } else {
+          if (!tagManager.getTag(path)) {
+            throw new TagError(
+              "",
+              `[Socket.io] subscribe failed no tag exists at ${path}`
+            );
+          }
 
-        subs.add(path);
-        Tag.tags.get(path)?.triggerEmit(); // sends a tag:update message to browser as soon as they subscribe so they get the value
-        logger.info(`[Socket.io] client ${socket.id} subscribed to: ${path}`);
+          subs.add(path);
+          logger.info(`[Socket.io] client ${socket.id} subscribed to: ${path}`);
+          return tagManager.getTag(path)?.getEmitPayload();
+        }
+      });
+
+      if (result.error instanceof TagError) {
+        logger.error(result.error);
       }
+
+      callback(result);
     });
 
     socket.on("tag:unsubscribe", (path) => {
@@ -120,13 +135,13 @@ export function creatSocketIoServer(httpServer: Server) {
     socket.on("tag:write", ({ path, value }, callback) => {
       let error: unknown | undefined = undefined;
       try {
-        if (!Tag.tags.has(path)) {
+        if (!tagManager.getTag(path)) {
           throw new Error(
             `[Socket.io] tag write failed, tag ${path} does not exist`
           );
         }
 
-        Tag.tags.get(path)?.update(value);
+        tagManager.getTag(path)?.update(value);
         logger.info(
           `[Socket.io] client ${socket.id} wrote to tag ${path} = ${value}`
         );
@@ -139,11 +154,11 @@ export function creatSocketIoServer(httpServer: Server) {
       });
     });
 
-    socket.on("tag:getTagPathsByPath", (path, callback) => {
+    socket.on("tag:getChildrenAsNode", (path, callback) => {
       logger.debug(
-        `[Socket.io] client ${socket.id} requested tag:getTagPathsByPath ${path}`
+        `[Socket.io] client ${socket.id} requested tag:getChildrenAsNode ${path}`
       );
-      callback(Tag.getTagPathsByPath(path));
+      callback(tagManager.getChildrenAsNode(path));
     });
 
     socket.on("disconnect", () => {

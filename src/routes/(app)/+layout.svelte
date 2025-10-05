@@ -8,9 +8,11 @@
   const { children, data } = $props();
 
   let menuOpen = $state(false);
+  function closeMenu() {
+    menuOpen = false;
+  }
 
   const socket = io();
-
   socket.on("connect", () => {
     console.log("socketIO Connected");
   });
@@ -23,7 +25,7 @@
 <div class="app">
   <header>
     <div class="corner">
-      <Hamburger bind:active={menuOpen} />
+      <div class="hamburger"><Hamburger bind:active={menuOpen} /></div>
     </div>
     <h2>Title</h2>
     <div class="corner">
@@ -36,17 +38,17 @@
     </div>
   </header>
 
-  <aside>
+  <section>
     <nav class={menuOpen ? "" : "closed"}>
-      <a href="/">Home</a>
-      <a href="/scada">Scada</a>
-      <a href="/scada/tags">Tags</a>
+      <a href="/" onclick={closeMenu}>Home</a>
+      <a href="/scada" onclick={closeMenu}>Scada</a>
+      <a href="/scada/tags" onclick={closeMenu}>Tags</a>
     </nav>
-  </aside>
 
-  <main>
-    {@render children()}
-  </main>
+    <main>
+      {@render children()}
+    </main>
+  </section>
 </div>
 
 <style>
@@ -55,9 +57,8 @@
     justify-content: space-between;
     align-items: center;
     background-color: var(--app-color-neutral-400);
-    min-width: 100svw;
-    position: sticky;
-    top: 0;
+    width: 100svw;
+    height: var(--app-header-height);
     z-index: 1;
   }
 
@@ -71,18 +72,22 @@
     flex-direction: column;
   }
 
-  main {
-    position: relative;
-    left: 4.3rem;
-    min-height: 100%;
+  section {
+    display: flex;
+    flex-direction: row;
   }
 
-  aside {
-    position: fixed;
-    top: 2.75rem;
-    bottom: 0;
+  main {
+    height: var(
+      --app-main-content-height
+    ); /*space for the header  has to have a height for overflow-y: auto*/
+    flex-grow: 1;
+    overflow-y: auto;
+  }
+
+  nav {
     display: flex;
-    flex: 0;
+    flex-grow: 0;
     flex-direction: column;
     justify-content: start;
     background-color: brown;
@@ -100,29 +105,25 @@
     text-decoration: none;
   }
 
-  footer {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
+  .hamburger {
+    display: none;
   }
 
   /*on mobile show hamburger and have a closable side menu*/
   @media only screen and (max-aspect-ratio: 0.7) {
-    section nav {
+    nav {
       position: absolute;
-      padding-top: 4rem;
+      padding-top: 3rem; /*space for the header*/
       top: 0;
       left: 0;
       bottom: 0;
       box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.2);
     }
-
-    section nav.closed {
+    nav.closed {
       display: none;
     }
 
-    .corner .Hamburger {
+    .hamburger {
       display: block;
     }
   }

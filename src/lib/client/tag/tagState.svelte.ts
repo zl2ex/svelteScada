@@ -4,23 +4,36 @@ import type {
   SocketIOServerToClientEvents,
 } from "$lib/server/socket.io/socket.io";
 import type { ResolveType, TagPaths } from "$lib/server/tag/tag";
+import type { Result } from "$lib/util/attempt";
 import type { Socket } from "socket.io-client";
+
+export type NodeOptions = {
+  path: string;
+  name: string;
+  parentPath: string;
+  type: "Tag" | "Folder";
+};
+export class Node {
+  path: string;
+  name: string;
+  parentPath: string;
+  type: "Tag" | "Folder";
+  constructor(opts: NodeOptions) {
+    this.path = opts.path;
+    this.name = opts.name;
+    this.parentPath = opts.parentPath;
+    this.type = opts.type;
+  }
+}
 
 export type ClientTagOptions = {
   path: TagPaths;
   name?: string;
+  parentPath?: string;
   initialValue?: any;
 };
 
 export type ClientDataTypeStrings = "number" | "boolean" | "string";
-
-function waitForSocketResponse(socket: Socket, eventName: string) {
-  return new Promise((resolve) => {
-    socket.on(eventName, (data) => {
-      resolve(data);
-    });
-  });
-}
 
 //export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
 export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
@@ -31,11 +44,13 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   static tags: Record<TagPaths, ClientTag<any>> = [];
   name?: string;
   path: TagPaths;
+  parentPath: string;
   nodeId?: string;
   dataType?: DataTypeString;
   writeable?: boolean;
   private _value: ResolveType<DataTypeString>;
-  errorMessage: string | undefined;
+  errorMessage?: string;
+  error?: TagError;
 
   static initSocketIo(clientSocket: Socket) {
     ClientTag.socket = clientSocket;
@@ -44,15 +59,15 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     });
   }
 
-  static async getTagPathsByPath(path: string): Promise<string[]> {
+  static async getChildrenAsNode(path: string): Promise<Node[]> {
     if (!ClientTag.socket) {
       throw new Error(
         `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling subscribe()`
       );
     }
     return new Promise((resolve) => {
-      ClientTag.socket?.emit("tag:getTagPathsByPath", path, (paths) => {
-        resolve(paths);
+      ClientTag.socket?.emit("tag:getChildrenAsNode", path, (items) => {
+        resolve(items);
       });
     });
   }
@@ -65,10 +80,12 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     }
     this.name = $state(opts.name ?? "");
     this.path = $state(opts.path);
+    this.parentPath = $state(opts.parentPath ?? "");
     this.dataType = $state(dataType);
     this.writeable = $state(false);
     this._value = $state(opts.initialValue ?? null);
     this.errorMessage = $state(undefined);
+    this.error = $state(undefined);
 
     ClientTag.tags[this.path] = this;
     console.log(`[ClientTag] created tag ${this.path}`);
@@ -91,12 +108,15 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
         throw new Error(
           `[Client Tag] tag:update   dataType ${value.dataType} is not assignable to ${this.dataType}`
         );*/
+
     this.name = value.name;
     this.path = value.path;
+    this.parentPath = value.parentPath;
     this.nodeId = value.nodeId;
     this.dataType = value.dataType;
     this._value = value.value;
     this.writeable = value.writeable;
+    this.error = value.error;
     //Object.assign(this, value);
   }
 
@@ -115,14 +135,30 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     });
   }
 
-  subscribe() {
+  async subscribe(): Promise<Result<ClientTag<any>, Error>> {
     if (!ClientTag.socket) {
       throw new Error(
         `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling subscribe()`
       );
     }
-    console.log(`[ClientTag] subscribe tag ${this.path}`);
-    ClientTag.socket.emit("tag:subscribe", this.path);
+    //ClientTag.socket.emit("tag:subscribe", this.path);
+    console.log(`[ClientTag] attempt to subscribe tag ${this.path}`);
+
+    return new Promise((resolve, reject) => {
+      ClientTag.socket?.emit("tag:subscribe", this.path, (callback) => {
+        console.log(callback);
+        if ("error" in callback) {
+          console.error(callback.error.message);
+          this.errorMessage = callback.error.message;
+          reject({ data: undefined, error: callback.error });
+          return; // keep typescript happy
+        }
+
+        // populate the tag with all the data returned
+        this.update(callback.data);
+        resolve({ data: this, error: undefined });
+      });
+    });
   }
 
   unsubscribe() {
@@ -131,8 +167,8 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
         `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling unsubscribe()`
       );
     }
-    console.log(`[ClientTag] un-subscribe tag ${this.path}`);
     ClientTag.socket.emit("tag:unsubscribe", this.path);
+    console.log(`[ClientTag] un-subscribe tag ${this.path}`);
   }
 }
 

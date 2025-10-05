@@ -1,4 +1,4 @@
-import db from "./db";
+import { db } from "./db";
 import { type UdtOptions } from "../udt/udt";
 
 export const udts = db.collection<UdtOptions>("udts");
