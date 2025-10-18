@@ -20,7 +20,7 @@ export const Z_ModbusRTUDriverOptions = z.object({
   baudRate: z.number().int(),
   parity: z.enum(["none", "even", "odd"]),
   unitId: z.number().int().optional(),
-  spanGaps: z.boolean().optional(),
+  spanGaps: z.coerce.boolean<boolean>().default(false),
 });
 
 export type ModbusRTUDriverOptions = z.infer<typeof Z_ModbusRTUDriverOptions>;

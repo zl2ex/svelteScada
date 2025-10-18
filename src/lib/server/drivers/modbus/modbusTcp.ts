@@ -11,6 +11,7 @@ import net from "net";
 import { z } from "zod";
 import { resolveOpcuaPath, type BaseTypeStrings } from "../../tag/tag";
 import { logger } from "../../pino/logger";
+import type { off } from "process";
 
 type ModbusRegisterType = "hr" | "ir" | "co" | "di";
 
@@ -40,11 +41,11 @@ export const Z_ModbusTCPDriverOptions = z.object({
   port: z.number().int().min(1).max(65535).optional().default(502),
   unitId: z.number().int().min(1).optional().default(1),
   pollingIntervalMs: z.number().int().min(500).optional().default(1000),
-  spanGaps: z.boolean().optional().default(false),
+  spanGaps: z.coerce.boolean<boolean>().default(false),
   reconnectInervalMs: z.number().min(500).optional().default(5000),
   startAddress: z.number().min(0).max(1).optional().default(0),
   endian: Z_Endian.optional().default("LittleEndian"),
-  swapWords: z.boolean().optional().default(false),
+  swapWords: z.coerce.boolean<boolean>().default(false),
 });
 
 export type ModbusTCPDriverOptions = z.input<typeof Z_ModbusTCPDriverOptions>;
@@ -55,17 +56,18 @@ export class ModbusTCPDriver {
   private namespace: Namespace;
   private tags: Record<string, TagSubscription> = {};
   private pollTimer?: NodeJS.Timeout;
-  private reconnectAttempt: boolean = true;
-  private pollingIntervalMs: number;
-  private spanGaps: boolean;
-  private ip: string;
-  private port: number;
-  private unitId: number;
-  private reconnectInervalMs: number;
-  private startAddress: number;
-  private endian: Endian;
-  private swapWords: boolean;
+  private reconnectTimer?: NodeJS.Timeout;
 
+  reconnectAttempt: boolean = true;
+  pollingIntervalMs: number;
+  spanGaps: boolean;
+  ip: string;
+  port: number;
+  unitId: number;
+  reconnectInervalMs: number;
+  startAddress: number;
+  endian: Endian;
+  swapWords: boolean;
   connected: boolean = false;
 
   constructor(opcuaServer: OPCUAServer, opts: ModbusTCPDriverOptions) {
@@ -113,6 +115,25 @@ export class ModbusTCPDriver {
     //TD WIP More events for connection status  ??
   }
 
+  dispose() {
+    this.disconnect();
+    this.stopPolling();
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    this.socket.removeAllListeners();
+    // If still connected, end gracefully
+    if (!this.socket.destroyed) {
+      this.socket.end(); // Tries to close cleanly (sends FIN)
+    }
+    this.socket.destroy();
+    this.socket = undefined;
+    for (const tag of Object.values(this.tags)) {
+      tag.variableNode.removeAllListeners();
+      this.opcuaServer.engine.addressSpace?.deleteNode(tag.variableNode);
+    }
+    this.tags = undefined;
+  }
+
   private reconnect() {
     // already waiting to try again
     if (this.reconnectAttempt === false) return;
@@ -120,7 +141,7 @@ export class ModbusTCPDriver {
       `[ModbusTCPDriver] failed to connect to device at ${this.ip}:${this.port} retry in ${this.reconnectInervalMs} ms`
     );
     this.reconnectAttempt = false;
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
       this.connect();
       this.reconnectAttempt = true;
     }, this.reconnectInervalMs);
@@ -135,6 +156,12 @@ export class ModbusTCPDriver {
       this.connected = true;
       this.startPolling();
     });
+  }
+
+  disconnect() {
+    this.connected = false;
+    this.stopPolling();
+    this.socket.destroy();
   }
 
   subscribeByPath(path: string, parent?: NodeIdLike): UAVariable {

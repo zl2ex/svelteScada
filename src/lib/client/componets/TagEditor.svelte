@@ -25,4 +25,12 @@
   {:catch error}
     <p>Error: {error.message}</p>
   {/await}
+
+  {#snippet pending()}
+    <p>loading...</p>
+  {/snippet}
+  {#snippet failed(error, reset)}
+    <p>{error}</p>
+    <button onclick={reset} class="primary">oops! try again</button>
+  {/snippet}
 </svelte:boundary>

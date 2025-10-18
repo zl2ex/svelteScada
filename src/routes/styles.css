@@ -1,10 +1,12 @@
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 :root {
   --app-font-size-desktop: 16px;
-  --app-font-size-mobile: 12px;
+  --app-font-size-mobile: 18px;
 
   font-size: var(--app-font-size-desktop);
   font-family: sans-serif;
@@ -23,7 +25,7 @@
   --app-color-neutral-800: #c0c0c0;
   --app-color-neutral-900: #ffffff;
 
-  --app-color-state-off: var(--app-color-neutral-300);
+  --app-color-state-off: var(--app-color-neutral-400);
   --app-color-state-on: #00ff00;
   --app-color-state-warn: #ffd900;
   --app-color-state-fault: #ff0000;
@@ -60,9 +62,8 @@
 
   /* hover active focus state varibles */
 
-  --app-hover-brightness: 0.9;
-  --app-active-brightness: 0.8;
-  --app-focus-brightness: 0.9;
+  --app-hover-opacity: 0.9;
+  --app-active-opacity: 0.8;
 
 
   --app-header-height: 3rem;
@@ -84,19 +85,24 @@ body {
 
 a {
   text-decoration: none;
+  color: inherit;
 }
 
 input,
 button,
-a {
-  font-size: inherit;
-  font-family: inherit;
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background-color: var(--app-color-neutral-200);
+  accent-color: var(--app-color-primary-400);
 }
 
 input {
-  color: inherit;
-  background-color: var(--app-color-neutral-200);
   border: none;
+  border-radius: 0.2rem;
+  padding: 0.2rem 0;
+  min-width: 0;
 }
 
 input:hover,
@@ -105,7 +111,7 @@ a:hover,
 .btn:hover,
 select:hover,
 summary:hover {
-  opacity: 0.85;
+  opacity: var(--app-hover-opacity);
 }
 
 input:active,
@@ -114,7 +120,7 @@ a:active,
 .btn:active,
 select:active,
 summary:active {
-  opacity: 0.75;
+  opacity: var(--app-active-opacity);
 }
 
 input:focus:not(:active),
@@ -139,6 +145,22 @@ button {
   width: fit-content;
 }
 
+form .issue {
+  color: var(--app-color-state-error);
+}
+
+.form-item {
+  display: grid;
+}
+
+.form-item-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+}
+
 .primary {
   background-color: var(--app-color-primary-400);
 }
@@ -158,6 +180,31 @@ button {
 
 ::-webkit-scrollbar-thumb {
   border-radius: 0.1rem;
-  background-color: var(--app-color-secondary-300);
+  background-color: var(--app-color-neutral-500);
 }
 
+
+@keyframes blink-animation {
+  0% {
+    opacity: 1;
+    /* Fully visible */
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+    /* Fully transparent (hidden) */
+  }
+
+  70% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 1;
+    /* Back to fully visible */
+  }
+}

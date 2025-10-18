@@ -20,14 +20,24 @@ const httpServer = createServer(app);
 // SvelteKit handlers
 app.use(handler);
 
-export const deviceManager = new DeviceManager();
-export const tagManager = new TagManager();
+// global this to work with sveltekit in dev mode
+export const deviceManager: DeviceManager =
+  globalThis.__deviceManager ?? new DeviceManager();
+if (!globalThis.__deviceManager) globalThis.__deviceManager = deviceManager;
+
+// global this to work with sveltekit in dev mode
+export const tagManager: TagManager =
+  globalThis.__tagManager ?? new TagManager();
+if (!globalThis.__tagManager) globalThis.__tagManager = tagManager;
 
 export async function main(httpServer: Server) {
   creatSocketIoServer(httpServer);
-  Tag.opcuaServer = await createOPCUAServer();
+  const opcuaServer = await createOPCUAServer();
+  Tag.initOpcuaServer(opcuaServer); // TD WIP move to tag manager
+  deviceManager.initOpcuaServer(opcuaServer);
 
-  let plc1 = new Device(Tag.opcuaServer, {
+  /*
+  let plc1 = new Device(deviceManager.opcuaServer, {
     name: "plc1",
     driverName: "ModbusTCPDriver",
     options: {
@@ -39,7 +49,9 @@ export async function main(httpServer: Server) {
     enabled: true,
   });
 
-  deviceManager.addDevice(plc1);
+  deviceManager.addDevice(plc1);*/
+
+  await deviceManager.loadAllFromDb();
 
   /*
   try {
@@ -88,8 +100,6 @@ export async function main(httpServer: Server) {
 */
   await tagManager.loadFromDb();
 
-  console.debug(tagManager.getNode("/demo/test"));
-
   startOPCUAClient();
 
   /*const udtProps = {
@@ -115,7 +125,6 @@ export async function main(httpServer: Server) {
 let toggle = false;
 
 function poll() {
-  Tag.tags.get("/demo/test")?.update(Tag.tags.get("/demo/test")?.value + 1);
-  toggle = !toggle;
+  //console.debug(deviceManager.getDevice("plc1")?.status);
   setTimeout(poll, 1000);
 }

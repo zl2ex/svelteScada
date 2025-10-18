@@ -44,11 +44,15 @@ export const Z_BaseTypes = {
   String: z.string(),
 } as const;
 
+export function getAllDataTypeStrings() {
+  return Object.keys(Z_BaseTypes);
+}
+
 // allows each property to be a string expresstion like "${folder}/${name}"
 // where folder and name are either parameters or properties of the tagOptions
 export interface TagOptionsInput<
   DataTypeString extends BaseTypeStringsWithArrays,
-> extends NodeOptions {
+> extends Omit<NodeOptions, "type"> {
   dataType: DataTypeString | string;
   writeable?: boolean | string;
   exposeOverOpcua?: boolean | string;
@@ -84,10 +88,10 @@ export class TagOptions<
     parentPath: z.string(),
     dataType: z.string(), // TD WIP Tighten type ?
     nodeId: z.string().optional(),
-    writeable: z.boolean().optional(),
+    writeable: z.boolean().optional().default(false),
     initialValue: z.any().optional(),
     parameters: z.object().optional(),
-    exposeOverOpcua: z.boolean().optional(),
+    exposeOverOpcua: z.boolean().optional().default(false),
   });
 
   static resolveTemplate(
@@ -361,7 +365,7 @@ export class Tag<
   DataTypeString extends BaseTypeStringsWithArrays,
 > extends Node {
   //static tags: TagTypeMap = [];
-  static opcuaServer: OPCUAServer;
+  static opcuaServer?: OPCUAServer;
   nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
   dataType: DataTypeString;
   opcuaDataType: DataType;
@@ -384,6 +388,10 @@ export class Tag<
   parameters?: UdtParams; // parameters for building udt path's ect
 
   error?: TagError; // if any errors exist with the tag
+
+  static initOpcuaServer(server: OPCUAServer) {
+    Tag.opcuaServer = server;
+  }
 
   constructor(options: TagOptionsInput<any>) {
     options.type = "Tag";
@@ -500,6 +508,11 @@ export class Tag<
     }
 
     if (this.exposeOverOpcua) {
+      if (!Tag.opcuaServer?.engine) {
+        throw new Error(
+          `[Tag] no opcua server defined for tag ${this.path}  please call Tag.initOpcuaServer() and provide a server`
+        );
+      }
       const namespace = Tag.opcuaServer.engine.addressSpace!.getOwnNamespace();
       const parent = Tag.opcuaServer.engine.addressSpace?.rootFolder; // TD WIP
       this.variable = namespace.addVariable({
@@ -544,7 +557,7 @@ export class Tag<
 
     // push instance to tags map referenced by path
     // TD WIP typescript
-    logger.info(`[Tag] created new tag ${this.path} = ${this.value}`);
+    logger.debug(`[Tag] created new tag ${this.path} = ${this.value}`);
   }
 
   // will throw ZodError if it fails
@@ -665,6 +678,8 @@ export class Tag<
         parentPath: this.parentPath,
         nodeId: this.nodeId,
         dataType: this.dataType,
+        parameters: this.parameters,
+        exposeOverOpcua: this.exposeOverOpcua,
         value: this.value,
         writeable: this.writeable,
         error: this.error,

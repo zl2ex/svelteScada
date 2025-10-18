@@ -3,6 +3,10 @@ import { io } from "socket.io-client";
 import { type Socket } from "socket.io-client";
 import type {
   EmitPayload,
+  Rpc,
+  RpcName,
+  RpcRequest,
+  RpcResponse,
   SocketIOClientToServerEvents,
   SocketIOServerToClientEvents,
 } from "$lib/server/socket.io/socket.io";
@@ -23,6 +27,22 @@ export class SocketIoClientHandler {
 
   get connected() {
     return this.socket.connected;
+  }
+
+  async rpc<K extends RpcName>(
+    request: RpcRequest<K>
+  ): Promise<RpcResponse<K>> {
+    return new Promise((resolve, reject) => {
+      this.socket.emit("rpc", request, (response) => {
+        console.log(response);
+        if ("error" in response) {
+          reject(response);
+          //throw response.payload?.error;
+        } else {
+          resolve(response);
+        }
+      });
+    });
   }
 
   tagWrite({ path, value }: EmitPayload) {

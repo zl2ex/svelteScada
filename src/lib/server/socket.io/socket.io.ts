@@ -1,7 +1,13 @@
 import { Server as SocketIOServer } from "socket.io";
 import { type Server } from "http";
 import { logger } from "../pino/logger";
-import { Tag, TagError, type TagPaths } from "../tag/tag";
+import {
+  getAllDataTypeStrings,
+  Tag,
+  TagError,
+  type TagOptionsInput,
+  type TagPaths,
+} from "../tag/tag";
 import { tagManager } from "../../../server";
 import type { Node } from "../../../lib/client/tag/tagState.svelte";
 import { attempt, type Result } from "../../../lib/util/attempt";
@@ -15,12 +21,11 @@ export type EmitPayload = {
     | "isArray"
     | "arrayLength"
     | "schema"
-    | "exposeOverOpcua"
     | "variable"
     | "opcuaVarible"
     | "children"
     | "opcuaParent"
-    | "parameters"
+    | "udtParent"
     | "update"
     | "subscribeByPath"
     | "unsubscribeByPath"
@@ -34,31 +39,53 @@ export type WritePayload = {
   path: TagPaths;
   value: any;
 };
+export interface RpcMap {
+  "getDataTypeStrings()": {
+    parameters?: {};
+    response: Result<string[], Error>;
+  };
+  "getChildrenAsNode()": {
+    parameters: { path: string };
+    response: Result<Node[], Error>;
+  };
+  "createTag()": {
+    parameters: { options: TagOptionsInput<any> };
+    response: Result<Tag<any>, Error>;
+  };
+  "updateTag()": {
+    parameters: { path: string; options: TagOptionsInput<any> };
+    response: Result<Tag<any> | null, Error>;
+  };
+}
 
-export type ErrorPayload = {
-  message: string;
-};
+export type RpcName = keyof RpcMap;
+
+export type RpcRequest<K extends keyof RpcMap = keyof RpcMap> = {
+  [P in K]: {
+    name: P;
+    parameters: RpcMap[P]["parameters"];
+  };
+}[K];
+
+export type RpcResponse<K extends RpcName> = RpcMap[K]["response"];
 
 export interface SocketIOServerToClientEvents {
   "tag:update": (payload: EmitPayload) => void;
-  "tag:subscribe": (path: TagPaths) => void;
-  "tag:unsubscribe": (path: TagPaths) => void;
 }
-
 export interface SocketIOClientToServerEvents {
-  "tag:update": (payload: EmitPayload) => void;
   "tag:write": (
     payload: WritePayload,
-    callback: (error: ErrorPayload) => void
+    callback: (payload: Result<EmitPayload, Error | unknown>) => void
   ) => void;
   "tag:subscribe": (
     path: TagPaths,
     callback: (payload: Result<EmitPayload, Error | unknown>) => void
   ) => void;
   "tag:unsubscribe": (path: TagPaths) => void;
-  "tag:getChildrenAsNode": (
-    path: string,
-    callback: (items: Node[]) => void
+
+  rpc: (
+    request: RpcRequest<RpcName>,
+    callback: (response: RpcResponse<RpcName>) => void
   ) => void;
 }
 
@@ -133,32 +160,48 @@ export function creatSocketIoServer(httpServer: Server) {
     });
 
     socket.on("tag:write", ({ path, value }, callback) => {
-      let error: unknown | undefined = undefined;
-      try {
-        if (!tagManager.getTag(path)) {
-          throw new Error(
-            `[Socket.io] tag write failed, tag ${path} does not exist`
-          );
-        }
+      callback(
+        attempt(() => {
+          const tag = tagManager.getTag(path);
+          if (!tag) {
+            throw new Error(
+              `[Socket.io] tag write failed, tag ${path} does not exist`
+            );
+          }
 
-        tagManager.getTag(path)?.update(value);
-        logger.info(
-          `[Socket.io] client ${socket.id} wrote to tag ${path} = ${value}`
-        );
-      } catch (e) {
-        error = e;
-        logger.error(`[Socket.io] tag:write failed with Error ${e.message}`);
-      }
-      callback({
-        message: error?.message,
-      });
+          tag.update(value);
+          logger.info(
+            `[Socket.io] client ${socket.id} wrote to tag ${path} = ${value}`
+          );
+          return tag.getEmitPayload();
+        })
+      );
     });
 
-    socket.on("tag:getChildrenAsNode", (path, callback) => {
+    socket.on("rpc", async (request, callback) => {
       logger.debug(
-        `[Socket.io] client ${socket.id} requested tag:getChildrenAsNode ${path}`
+        `[Socket.io] rpc() client ${socket.id} requested ${request.name} Params ${request.parameters}`
       );
-      callback(tagManager.getChildrenAsNode(path));
+      if (request.name === "getChildrenAsNode()") {
+        callback(
+          attempt(() => tagManager.getChildrenAsNode(request.parameters.path))
+        );
+      } else if (request.name === "getDataTypeStrings()") {
+        callback(attempt(() => getAllDataTypeStrings()));
+      } else if (request.name === "createTag()") {
+        callback(
+          await attempt(() => tagManager.createTag(request.parameters.options))
+        );
+      } else if (request.name === "updateTag()") {
+        callback(
+          await attempt(() =>
+            tagManager.updateTag(
+              request.parameters.path,
+              request.parameters.options
+            )
+          )
+        );
+      }
     });
 
     socket.on("disconnect", () => {

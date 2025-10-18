@@ -77,19 +77,18 @@ export class TagManager {
     opts: TagFolderOptions,
     writeToDb: boolean = true
   ): Promise<TagFolder> {
-    if (opts.parentPath.endsWith("/")) {
-      opts.parentPath = opts.parentPath.slice(0, -1);
+    if (!opts.parentPath.endsWith("/")) {
+      opts.parentPath = opts.parentPath + "/";
     }
-    const path = `${opts.parentPath}/${opts.name}`;
-    if (opts.path && path !== opts.path) {
-      throw new Error(
-        `[TagManager] createFolder() path ${opts.path} does not equal generated path ${path}`
-      );
+
+    let path = `${opts.parentPath}${opts.name}`;
+    // folders path always ends with /
+    if (!path.endsWith("/")) {
+      path = path + "/";
     }
 
     const doc: TagFolderOptions = {
-      type: "Folder",
-      path: opts.path,
+      path,
       name: opts.name,
       parentPath: opts.parentPath,
     };
@@ -108,6 +107,8 @@ export class TagManager {
     const folder = new TagFolder(doc);
     this.tree.addNode(folder);
 
+    logger.debug(`[TagManager] added folder ${path}`);
+
     return folder;
   }
 
@@ -115,18 +116,12 @@ export class TagManager {
     opts: TagOptionsInput<any>,
     writeToDb: boolean = true
   ): Promise<Tag<any>> {
-    if (opts.parentPath.endsWith("/")) {
-      opts.parentPath = opts.parentPath.slice(0, -1);
+    if (!opts.parentPath.endsWith("/")) {
+      opts.parentPath = opts.parentPath + "/";
     }
-    const path = `${opts.parentPath}/${opts.name}`;
-    if (opts.path && path !== opts.path) {
-      throw new Error(
-        `[TagManager] createTag() path ${opts.path} does not equal generated path ${path}`
-      );
-    }
+    const path = `${opts.parentPath}${opts.name}`;
 
     const doc: TagOptionsInput<any> = {
-      type: "Tag",
       path,
       name: opts.name,
       parentPath: opts.parentPath,
@@ -151,6 +146,8 @@ export class TagManager {
 
     const tag = new Tag(doc);
     this.tree.addNode(tag);
+
+    logger.info(`[TagManager] added tag ${path}`);
 
     return tag;
   }
@@ -180,6 +177,9 @@ export class TagManager {
   }
 
   getChildrenAsNode(parentPath: string): Node[] {
+    logger.debug(
+      `[TagManager] getChildrenAsNode() at parentPath ${parentPath}`
+    );
     return this.tree.getChildren(parentPath).map((child) => {
       return new Node(child);
     });
@@ -212,17 +212,19 @@ export class TagManager {
     path: string,
     updates: TagOptionsInput<any>
   ): Promise<Tag<any> | null> {
+    const updated = new Tag(updates);
+    this.tree.removeNode(path);
+    this.tree.addNode(updated);
+
     const result = await collections.tags.findOneAndUpdate(
       { path },
       { $set: updates },
       { returnDocument: "after" }
     );
 
-    if (!result) return null;
-
-    const updated = new Tag(result);
-    this.tree.removeNode(path);
-    this.tree.addNode(updated);
+    if (!result) {
+      throw new Error(`[TagManger] updateTag() failed to write to database`);
+    }
 
     return updated;
   }

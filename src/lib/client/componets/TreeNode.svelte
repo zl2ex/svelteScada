@@ -1,7 +1,8 @@
 <script lang="ts">
   import TreeNode from "./TreeNode.svelte";
   import { ClientTag } from "../tag/tagState.svelte";
-  import type { MouseEventHandler } from "svelte/elements";
+  import { socketIoClientHandler } from "../socket.io/socket.io.svelte";
+  import { error } from "@sveltejs/kit";
 
   type props = {
     path: string;
@@ -12,24 +13,33 @@
 </script>
 
 <svelte:boundary>
-  {#each await ClientTag.getChildrenAsNode(path) as node}
-    {#if node.type == "Folder"}
-      <details>
-        <summary>{node.name}</summary>
-        <div class="indent">
-          <TreeNode path={node.path} {onclick}></TreeNode>
-        </div>
-      </details>
-    {:else if node.type == "Tag"}
-      <summary
-        onclick={() => {
-          if (onclick) {
-            onclick(node.path);
-          }
-        }}>T: {node.name}</summary
-      >
+  {#await socketIoClientHandler.rpc( { name: "getChildrenAsNode()", parameters: { path: path } } ) then response}
+    {#if response.error}
+      <p>{response.error.message}</p>
+    {:else}
+      {#each response.data as node}
+        {#if node.type == "Folder"}
+          <details>
+            <summary>{node.name}</summary>
+            <div class="indent">
+              <TreeNode path={node.path} {onclick}></TreeNode>
+            </div>
+          </details>
+        {:else if node.type == "Tag"}
+          <summary
+            tabindex="0"
+            onclick={() => {
+              if (onclick) {
+                onclick(node.path);
+              }
+            }}>T: {node.name}</summary
+          >
+        {/if}
+      {/each}
     {/if}
-  {/each}
+  {:catch error}
+    <p>async catch error {error}</p>
+  {/await}
   {#snippet pending()}
     <p>loading...</p>
   {/snippet}
@@ -52,5 +62,6 @@
 
   summary {
     padding: 0.25rem;
+    /*list-style-position: outside;*/
   }
 </style>

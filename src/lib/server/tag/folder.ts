@@ -4,7 +4,7 @@ import {
 } from "../../../lib/client/tag/tagState.svelte";
 import type { Tag } from "./tag";
 
-export interface TagFolderOptions extends NodeOptions {}
+export interface TagFolderOptions extends Omit<NodeOptions, "type"> {}
 
 export class TagFolder extends Node {
   children: Map<string, TagFolder | Tag<any>> = new Map();

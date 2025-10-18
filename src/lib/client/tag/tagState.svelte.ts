@@ -3,7 +3,8 @@ import type {
   SocketIOClientToServerEvents,
   SocketIOServerToClientEvents,
 } from "$lib/server/socket.io/socket.io";
-import type { ResolveType, TagPaths } from "$lib/server/tag/tag";
+import type { ResolveType, TagError, TagPaths } from "$lib/server/tag/tag";
+import type { UdtParams } from "$lib/server/tag/udt";
 import type { Result } from "$lib/util/attempt";
 import type { Socket } from "socket.io-client";
 
@@ -48,6 +49,8 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   nodeId?: string;
   dataType?: DataTypeString;
   writeable?: boolean;
+  parameters?: UdtParams;
+  exposeOverOpcua?: boolean;
   private _value: ResolveType<DataTypeString>;
   errorMessage?: string;
   error?: TagError;
@@ -56,19 +59,6 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     ClientTag.socket = clientSocket;
     ClientTag.socket.on("tag:update", ({ path, value }) => {
       ClientTag.tags[path]?.update({ path, value });
-    });
-  }
-
-  static async getChildrenAsNode(path: string): Promise<Node[]> {
-    if (!ClientTag.socket) {
-      throw new Error(
-        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling subscribe()`
-      );
-    }
-    return new Promise((resolve) => {
-      ClientTag.socket?.emit("tag:getChildrenAsNode", path, (items) => {
-        resolve(items);
-      });
     });
   }
 
@@ -83,6 +73,8 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this.parentPath = $state(opts.parentPath ?? "");
     this.dataType = $state(dataType);
     this.writeable = $state(false);
+    this.parameters = $state(undefined);
+    this.exposeOverOpcua = $state(false);
     this._value = $state(opts.initialValue ?? null);
     this.errorMessage = $state(undefined);
     this.error = $state(undefined);
@@ -114,6 +106,8 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this.parentPath = value.parentPath;
     this.nodeId = value.nodeId;
     this.dataType = value.dataType;
+    this.parameters = value.parameters;
+    this.exposeOverOpcua = value.exposeOverOpcua;
     this._value = value.value;
     this.writeable = value.writeable;
     this.error = value.error;
@@ -124,14 +118,30 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     return this._value;
   }
 
-  write(value: ResolveType<DataTypeString>) {
+  async write(value: ResolveType<DataTypeString>) {
     if (!ClientTag.socket) {
       throw new Error(
         `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling write()`
       );
     }
-    ClientTag.socket.emit("tag:write", { path: this.path, value }, (error) => {
-      this.errorMessage = error.message ?? undefined;
+
+    return new Promise((resolve, reject) => {
+      ClientTag.socket?.emit(
+        "tag:write",
+        { path: this.path, value },
+        (response) => {
+          if ("error" in response) {
+            console.error(response.error.message);
+            this.errorMessage = response.error.message;
+            reject({ data: undefined, error: response.error });
+          } else {
+            // populate the tag with all the data returned
+            this.update(response.data);
+            this.errorMessage = undefined;
+            resolve({ data: this, error: undefined });
+          }
+        }
+      );
     });
   }
 
@@ -145,18 +155,16 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     console.log(`[ClientTag] attempt to subscribe tag ${this.path}`);
 
     return new Promise((resolve, reject) => {
-      ClientTag.socket?.emit("tag:subscribe", this.path, (callback) => {
-        console.log(callback);
-        if ("error" in callback) {
-          console.error(callback.error.message);
-          this.errorMessage = callback.error.message;
-          reject({ data: undefined, error: callback.error });
-          return; // keep typescript happy
+      ClientTag.socket?.emit("tag:subscribe", this.path, (response) => {
+        if ("error" in response) {
+          console.error(response.error.message);
+          this.errorMessage = response.error.message;
+          reject({ data: undefined, error: response.error });
+        } else {
+          // populate the tag with all the data returned
+          this.update(response.data);
+          resolve({ data: this, error: undefined });
         }
-
-        // populate the tag with all the data returned
-        this.update(callback.data);
-        resolve({ data: this, error: undefined });
       });
     });
   }

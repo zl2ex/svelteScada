@@ -15,6 +15,9 @@ const config = {
     adapter: adapter({
       out: "build",
     }),
+    experimental: {
+			remoteFunctions: true
+		},
   
     
   },
@@ -26,9 +29,7 @@ const config = {
         async: true
     },
   },
-  experimental: {
-    remoteFunctions: true,
-  },
+
 };
 
 export default config;

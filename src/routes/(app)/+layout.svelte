@@ -42,7 +42,8 @@
     <nav class={menuOpen ? "" : "closed"}>
       <a href="/" onclick={closeMenu}>Home</a>
       <a href="/scada" onclick={closeMenu}>Scada</a>
-      <a href="/scada/tags" onclick={closeMenu}>Tags</a>
+      <a href="/editor/tags" onclick={closeMenu}>Edit Tags</a>
+      <a href="/editor/devices" onclick={closeMenu}>Edit Devices</a>
     </nav>
 
     <main>
