@@ -116,13 +116,14 @@ export async function main(httpServer: Server) {
     folderr: "${folder}/test",
   };
 */
-  //httpServer.listen(3000);
-  //poll();
 }
 
-//main(httpServer);
-
-let toggle = false;
+const mode = "dev";
+if (mode === "prod") {
+  httpServer.listen(3000);
+  main(httpServer);
+  //app.listen(3000);
+}
 
 function poll() {
   //console.debug(deviceManager.getDevice("plc1")?.status);

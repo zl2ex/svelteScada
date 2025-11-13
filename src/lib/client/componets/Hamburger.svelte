@@ -11,7 +11,7 @@
 </script>
 
 <div class="Hamburger">
-  <button onclick={toggleActive} class="hamburger" aria-label="Open Menu">
+  <button onclick={toggleActive} class="hamburger" aria-label="Toggle Menu">
     <svg
       viewBox="0 0 60 40"
       class={active ? " hamburgerAnimation active" : "hamburgerAnimation"}
@@ -42,7 +42,7 @@
   .hamburgerAnimation {
     width: 3rem;
     padding: 10px;
-    stroke: var(--app-color-neutral-900);
+    stroke: var(--app-text-color);
   }
 
   .top,

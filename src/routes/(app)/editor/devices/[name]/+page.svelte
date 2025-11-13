@@ -1,13 +1,35 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import {
+    deleteDevice,
     getAvalibleDrivers,
     getDevice,
     updateDevice,
   } from "$lib/remote/devices.remote";
-  import { optional } from "zod";
+  import type { DeviceOptions } from "$lib/server/drivers/driver";
 
   let device = await getDevice(page.params.name ?? "");
+
+  if (!device) {
+    // create a new device
+    device = {
+      name: "new_Device",
+      driverName: "ModbusTCPDriver",
+      enabled: true,
+      options: {
+        ip: "127.0.0.1",
+        port: 502,
+        unitId: 1,
+        endian: "BigEndian",
+        pollingIntervalMs: 1000,
+        reconnectInervalMs: 5000,
+        spanGaps: false,
+        startAddress: 1,
+        swapWords: false,
+      },
+    } satisfies DeviceOptions;
+  }
 
   updateDevice.fields.set({
     name: device.name,
@@ -24,10 +46,9 @@
         submit();
       })}
     >
-      <h2>Edit Device</h2>
       <div class="form-item">
-        <label for="name">name</label>
-        <input {...updateDevice.fields.name.as("text")} />
+        <h2>{device.name}</h2>
+        <input {...updateDevice.fields.name.as("hidden", device.name)} />
         {#each updateDevice.fields.driverName.issues() as issue}
           <span class="issue">{issue.message}</span>
         {/each}
@@ -123,9 +144,92 @@
             <span class="issue">{issue.message}</span>
           {/each}
         </div>
-      {:else if updateDevice.fields.driverName.value() == "ModbusRTUDriver"}{/if}
+      {:else if updateDevice.fields.driverName.value() == "ModbusRTUDriver"}
+        <div class="form-item">
+          <label for="serialPort">serial port</label>
+          <input {...updateDevice.fields.options.serialPort.as("text")} />
+          {#each updateDevice.fields.options.serialPort.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
 
-      <button type="submit" class="primary">submit</button>
+        <div class="form-item">
+          <label for="baudRate">baudRate</label>
+          <input {...updateDevice.fields.options.baudRate.as("number")} />
+          {#each updateDevice.fields.options.baudRate.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
+
+        <div class="form-item">
+          <label for="parity">parity</label>
+          <select {...updateDevice.fields.options.parity.as("string")}>
+            {#each ["none", "even", "odd"] as option}
+              <option value={option}>{option}</option>
+            {/each}
+          </select>
+          {#each updateDevice.fields.options.parity.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
+
+        <div class="form-item">
+          <label for="unitId">unitId</label>
+          <input {...updateDevice.fields.options.unitId.as("number")} />
+          {#each updateDevice.fields.options.unitId.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
+
+        <div class="form-item-row">
+          <label for="spanGaps">spanGaps</label>
+          <input {...updateDevice.fields.options.spanGaps.as("checkbox")} />
+          {#each updateDevice.fields.options.spanGaps.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
+
+        <div class="form-item">
+          <label for="pollingIntervalMs">pollingIntervalMs</label>
+          <input
+            {...updateDevice.fields.options.pollingIntervalMs.as("number")}
+          />
+          {#each updateDevice.fields.options.pollingIntervalMs.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
+
+        <div class="form-item">
+          <label for="startAddress">startAddress</label>
+          <input {...updateDevice.fields.options.startAddress.as("number")} />
+          {#each updateDevice.fields.options.startAddress.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
+
+        <div class="form-item">
+          <label for="endian">endian</label>
+          <select {...updateDevice.fields.options.endian.as("select")}>
+            <option value="BigEndian">Big Endian</option>
+            <option value="LittleEndian">Little Endian</option>
+          </select>
+          {#each updateDevice.fields.options.endian.issues() as issue}
+            <span class="issue">{issue.message}</span>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="form-item-row">
+        <button type="submit" class="primary">save</button>
+        <button
+          type="button"
+          class="secondary"
+          onclick={async () => {
+            await deleteDevice(device.name);
+            goto("/editor/devices/");
+          }}>delete</button
+        >
+      </div>
 
       {#each updateDevice.fields.allIssues() as issue}
         <span class="issue">{issue.message}</span>
@@ -151,6 +255,6 @@
   form {
     display: grid;
     gap: 1rem;
-    width: clamp(25ch, 40%, 50ch);
+    width: clamp(25ch, 50%, 40ch);
   }
 </style>

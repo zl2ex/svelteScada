@@ -4,26 +4,29 @@
   box-sizing: border-box;
 }
 
+
+/*
 :root {
   --app-font-size-desktop: 16px;
   --app-font-size-mobile: 18px;
 
+  --app-screen-platform: desktop;
+
   font-size: var(--app-font-size-desktop);
   font-family: sans-serif;
 
-  --app-text-color: #ffffff;
-
-  --app-color-neutral-000: #000000;
-  --app-color-neutral-100: #101010;
-  --app-color-neutral-200: #202020;
-  --app-color-neutral-300: #303030;
-  --app-color-neutral-400: #505050;
-  --app-color-neutral-500: #707070;
-
-  --app-color-neutral-600: #909090;
-  --app-color-neutral-700: #a0a0a0;
-  --app-color-neutral-800: #c0c0c0;
-  --app-color-neutral-900: #ffffff;
+  --app-text-color: #000000;
+  
+  --app-color-neutral-000: #ffffff;
+  --app-color-neutral-100: #f0f0f0;
+  --app-color-neutral-200: #eeeeee;
+  --app-color-neutral-300: #e0e0e0;
+  --app-color-neutral-400: #dddddd;
+  --app-color-neutral-500: #d0d0d0;
+  --app-color-neutral-600: #c0c0c0;
+  --app-color-neutral-700: #b0b0b0;
+  --app-color-neutral-800: #a0a0a0;
+  --app-color-neutral-900: #909090;
 
   --app-color-state-off: var(--app-color-neutral-400);
   --app-color-state-on: #00ff00;
@@ -43,12 +46,12 @@
   --app-color-primary-800: hsl(283, 74%, 71%);
   --app-color-primary-900: hsl(283, 81%, 79%);
 
-  --app-color-secondary-000: hsl(190, 95%, 16%);
-  --app-color-secondary-100: hsl(190, 86%, 25%);
-  --app-color-secondary-200: hsl(190, 80%, 28%);
-  --app-color-secondary-300: hsl(190, 74%, 32%);
-  --app-color-secondary-400: hsl(190, 63%, 44%);
-  --app-color-secondary-500: hsl(190, 56%, 49%);
+  --app-color-secondary-000: hsl(190, 95%, 5%);
+  --app-color-secondary-100: hsl(190, 86%, 8%);
+  --app-color-secondary-200: hsl(190, 79%, 12%);
+  --app-color-secondary-300: hsl(190, 74%, 18%);
+  --app-color-secondary-400: hsl(190, 63%, 22%);
+  --app-color-secondary-500: hsl(190, 56%, 30%);
   --app-color-secondary-600: hsl(190, 59%, 54%);
   --app-color-secondary-700: hsl(190, 76%, 65%);
   --app-color-secondary-800: hsl(190, 74%, 71%);
@@ -60,8 +63,6 @@
   --app-color-info-4: #6ab361;
   --app-color-info-5: #00ffdd;
 
-  /* hover active focus state varibles */
-
   --app-hover-opacity: 0.9;
   --app-active-opacity: 0.8;
 
@@ -70,22 +71,387 @@
   --app-main-content-height: calc(100svh - var(--app-header-height));
 }
 
-@media only screen and (max-aspect-ratio: 0.7) {
+@media (prefers-color-scheme: dark) {
   :root {
-    font-size: var(--app-font-size-mobile);
+    --app-text-color: #ffffff;
+    
+    --app-color-neutral-000: #020202;
+    --app-color-neutral-100: #040404;
+    --app-color-neutral-200: #060606;
+    --app-color-neutral-300: #101010;
+    --app-color-neutral-400: #151515;
+    --app-color-neutral-500: #202020;
+  
+    --app-color-neutral-600: #303030;
+    --app-color-neutral-700: #505050;
+    --app-color-neutral-800: #707070;
+    --app-color-neutral-900: #909090;
+    }
+  }
+
+html {
+  color-scheme: dark light;
+}
+
+:root:has(#theme-picker [value="light"]:checked) {
+  color-scheme: light;
+  --app-text-color: #000000;
+
+  --app-color-neutral-000: #ffffff;
+  --app-color-neutral-100: #f0f0f0;
+  --app-color-neutral-200: #eeeeee;
+  --app-color-neutral-300: #e0e0e0;
+  --app-color-neutral-400: #dddddd;
+  --app-color-neutral-500: #d0d0d0;
+  --app-color-neutral-600: #c0c0c0;
+  --app-color-neutral-700: #b0b0b0;
+  --app-color-neutral-800: #a0a0a0;
+  --app-color-neutral-900: #909090;
+}
+
+:root:has(#theme-picker [value="dark"]:checked) {
+  color-scheme: dark;
+  --app-text-color: #ffffff;
+  
+  --app-color-neutral-000: #020202;
+  --app-color-neutral-100: #040404;
+  --app-color-neutral-200: #060606;
+  --app-color-neutral-300: #101010;
+  --app-color-neutral-400: #151515;
+  --app-color-neutral-500: #202020;
+
+  --app-color-neutral-600: #303030;
+  --app-color-neutral-700: #505050;
+  --app-color-neutral-800: #707070;
+  --app-color-neutral-900: #909090;
+}
+*/
+
+
+:root {
+  /*=============================================
+  =  BASE VARIABLES
+  =============================================*/
+  --app-font-size-desktop: 16px;
+  --app-font-size-mobile: 18px;
+  --app-screen-platform: desktop;
+  font-size: var(--app-font-size-desktop);
+  font-family: sans-serif;
+
+  --app-hover-opacity: 0.8;
+  --app-active-opacity: 0.7;
+  --app-header-height: 3rem;
+  --app-main-content-height: calc(100svh - var(--app-header-height));
+
+  /*=============================================
+  =  LIGHT THEME PALETTE
+  =============================================*/
+  --light-text-color: #000000;
+
+  --light-color-neutral-000: #ffffff;
+  --light-color-neutral-100: #f0f0f0;
+  --light-color-neutral-200: #eeeeee;
+  --light-color-neutral-300: #e0e0e0;
+  --light-color-neutral-400: #dddddd;
+  --light-color-neutral-500: #d0d0d0;
+  --light-color-neutral-600: #c0c0c0;
+  --light-color-neutral-700: #b0b0b0;
+  --light-color-neutral-800: #a0a0a0;
+  --light-color-neutral-900: #909090;
+  --light-color-box-shadow: rgba(0, 0, 0, 0.5);
+
+  --light-color-primary-000: hsl(283, 95%, 80%);
+  --light-color-primary-100: hsl(283, 86%, 75%);
+  --light-color-primary-200: hsl(283, 80%, 65%);
+  --light-color-primary-300: hsl(283, 74%, 54%);
+  --light-color-primary-400: hsl(283, 63%, 49%);
+  --light-color-primary-500: hsl(283, 56%, 44%);
+  --light-color-primary-600: hsl(283, 59%, 36%);
+  --light-color-primary-700: hsl(283, 76%, 28%);
+  --light-color-primary-800: hsl(283, 74%, 20%);
+  --light-color-primary-900: hsl(283, 81%, 15%);
+
+  --light-color-secondary-000: hsl(190, 95%, 80%);
+  --light-color-secondary-100: hsl(190, 86%, 71%);
+  --light-color-secondary-200: hsl(190, 79%, 65%);
+  --light-color-secondary-300: hsl(190, 74%, 54%);
+  --light-color-secondary-400: hsl(190, 63%, 45%);
+  --light-color-secondary-500: hsl(190, 56%, 35%);
+  --light-color-secondary-600: hsl(190, 59%, 28%);
+  --light-color-secondary-700: hsl(190, 76%, 20%);
+  --light-color-secondary-800: hsl(190, 74%, 16%);
+  --light-color-secondary-900: hsl(190, 81%, 10%);
+
+  /*=============================================
+  =  DARK THEME PALETTE
+  =============================================*/
+  --dark-text-color: #ffffff;
+
+  --dark-color-neutral-000: #020202;
+  --dark-color-neutral-100: #040404;
+  --dark-color-neutral-200: #070707;
+  --dark-color-neutral-300: #101010;
+  --dark-color-neutral-400: #151515;
+  --dark-color-neutral-500: #202020;
+  --dark-color-neutral-600: #303030;
+  --dark-color-neutral-700: #505050;
+  --dark-color-neutral-800: #707070;
+  --dark-color-neutral-900: #909090;
+  --dark-color-box-shadow: rgba(255,255,255, 0.1);
+
+  --app-color-state-off: var(--light-color-neutral-400);
+  --app-color-state-on: #00ff00;
+  --app-color-state-warn: #ffd900;
+  --app-color-state-fault: #ff0000;
+  --app-color-state-error: #ff0000;
+
+  --dark-color-primary-000: hsl(283, 95%, 16%);
+  --dark-color-primary-100: hsl(283, 86%, 25%);
+  --dark-color-primary-200: hsl(283, 80%, 28%);
+  --dark-color-primary-300: hsl(283, 74%, 32%);
+  --dark-color-primary-400: hsl(283, 63%, 44%);
+  --dark-color-primary-500: hsl(283, 56%, 49%);
+  --dark-color-primary-600: hsl(283, 59%, 54%);
+  --dark-color-primary-700: hsl(283, 76%, 65%);
+  --dark-color-primary-800: hsl(283, 74%, 71%);
+  --dark-color-primary-900: hsl(283, 81%, 79%);
+
+  --dark-color-secondary-000: hsl(190, 95%, 5%);
+  --dark-color-secondary-100: hsl(190, 86%, 8%);
+  --dark-color-secondary-200: hsl(190, 79%, 12%);
+  --dark-color-secondary-300: hsl(190, 74%, 18%);
+  --dark-color-secondary-400: hsl(190, 63%, 22%);
+  --dark-color-secondary-500: hsl(190, 56%, 30%);
+  --dark-color-secondary-600: hsl(190, 59%, 54%);
+  --dark-color-secondary-700: hsl(190, 76%, 65%);
+  --dark-color-secondary-800: hsl(190, 74%, 71%);
+  --dark-color-secondary-900: hsl(190, 81%, 79%);
+
+  --app-color-info-1: #ff00ff;
+  --app-color-info-2: #965096;
+  --app-color-info-3: #00ff80;
+  --app-color-info-4: #6ab361;
+  --app-color-info-5: #00ffdd;
+
+  /*=============================================
+  =  DEFAULT ALIASES (LIGHT)
+  =============================================*/
+  color-scheme: light;
+  --app-text-color: var(--light-text-color);
+  --app-color-neutral-000: var(--light-color-neutral-000);
+  --app-color-neutral-100: var(--light-color-neutral-100);
+  --app-color-neutral-200: var(--light-color-neutral-200);
+  --app-color-neutral-300: var(--light-color-neutral-300);
+  --app-color-neutral-400: var(--light-color-neutral-400);
+  --app-color-neutral-500: var(--light-color-neutral-500);
+  --app-color-neutral-600: var(--light-color-neutral-600);
+  --app-color-neutral-700: var(--light-color-neutral-700);
+  --app-color-neutral-800: var(--light-color-neutral-800);
+  --app-color-neutral-900: var(--light-color-neutral-900);
+  --app-color-box-shadow: var(--light-color-box-shadow);
+  --app-color-box-shadow-inset: transparent;
+
+  --app-color-primary-000: var(--light-color-primary-000);
+  --app-color-primary-100: var(--light-color-primary-100);
+  --app-color-primary-200: var(--light-color-primary-200);
+  --app-color-primary-300: var(--light-color-primary-300);
+  --app-color-primary-400: var(--light-color-primary-400);
+  --app-color-primary-500: var(--light-color-primary-500);
+  --app-color-primary-600: var(--light-color-primary-600);
+  --app-color-primary-700: var(--light-color-primary-700);
+  --app-color-primary-800: var(--light-color-primary-800);
+  --app-color-primary-900: var(--light-color-primary-900);
+
+  --app-color-secondary-000: var(--light-color-secondary-000);
+  --app-color-secondary-100: var(--light-color-secondary-100);
+  --app-color-secondary-200: var(--light-color-secondary-200);
+  --app-color-secondary-300: var(--light-color-secondary-300);
+  --app-color-secondary-400: var(--light-color-secondary-400);
+  --app-color-secondary-500: var(--light-color-secondary-500);
+  --app-color-secondary-600: var(--light-color-secondary-600);
+  --app-color-secondary-700: var(--light-color-secondary-700);
+  --app-color-secondary-800: var(--light-color-secondary-800);
+  --app-color-secondary-900: var(--light-color-secondary-900);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root/*:has(#theme-picker [value="system"]:checked) */{
+    color-scheme: dark;
+    --app-text-color: var(--dark-text-color);
+    --app-color-neutral-000: var(--dark-color-neutral-000);
+    --app-color-neutral-100: var(--dark-color-neutral-100);
+    --app-color-neutral-200: var(--dark-color-neutral-200);
+    --app-color-neutral-300: var(--dark-color-neutral-300);
+    --app-color-neutral-400: var(--dark-color-neutral-400);
+    --app-color-neutral-500: var(--dark-color-neutral-500);
+    --app-color-neutral-600: var(--dark-color-neutral-600);
+    --app-color-neutral-700: var(--dark-color-neutral-700);
+    --app-color-neutral-800: var(--dark-color-neutral-800);
+    --app-color-neutral-900: var(--dark-color-neutral-900);
+    --app-color-box-shadow: transparent;
+    --app-color-box-shadow-inset: var(--dark-color-box-shadow);
+
+    --app-color-primary-000: var(--dark-color-primary-000);
+    --app-color-primary-100: var(--dark-color-primary-100);
+    --app-color-primary-200: var(--dark-color-primary-200);
+    --app-color-primary-300: var(--dark-color-primary-300);
+    --app-color-primary-400: var(--dark-color-primary-400);
+    --app-color-primary-500: var(--dark-color-primary-500);
+    --app-color-primary-600: var(--dark-color-primary-600);
+    --app-color-primary-700: var(--dark-color-primary-700);
+    --app-color-primary-800: var(--dark-color-primary-800);
+    --app-color-primary-900: var(--dark-color-primary-900);
+
+    --app-color-secondary-000: var(--dark-color-secondary-000);
+    --app-color-secondary-100: var(--dark-color-secondary-100);
+    --app-color-secondary-200: var(--dark-color-secondary-200);
+    --app-color-secondary-300: var(--dark-color-secondary-300);
+    --app-color-secondary-400: var(--dark-color-secondary-400);
+    --app-color-secondary-500: var(--dark-color-secondary-500);
+    --app-color-secondary-600: var(--dark-color-secondary-600);
+    --app-color-secondary-700: var(--dark-color-secondary-700);
+    --app-color-secondary-800: var(--dark-color-secondary-800);
+    --app-color-secondary-900: var(--dark-color-secondary-900);
   }
 }
 
+html {
+  color-scheme: light dark;
+}
+
+/* Force Light */
+:root:has(#theme-picker [value="light"]:checked) {
+  color-scheme: light;
+  --app-text-color: var(--light-text-color);
+  --app-color-neutral-000: var(--light-color-neutral-000);
+  --app-color-neutral-100: var(--light-color-neutral-100);
+  --app-color-neutral-200: var(--light-color-neutral-200);
+  --app-color-neutral-300: var(--light-color-neutral-300);
+  --app-color-neutral-400: var(--light-color-neutral-400);
+  --app-color-neutral-500: var(--light-color-neutral-500);
+  --app-color-neutral-600: var(--light-color-neutral-600);
+  --app-color-neutral-700: var(--light-color-neutral-700);
+  --app-color-neutral-800: var(--light-color-neutral-800);
+  --app-color-neutral-900: var(--light-color-neutral-900);
+  --app-color-box-shadow: var(--light-color-box-shadow);
+  --app-color-box-shadow-inset: transparent;
+
+  --app-color-primary-000: var(--light-color-primary-000);
+  --app-color-primary-100: var(--light-color-primary-100);
+  --app-color-primary-200: var(--light-color-primary-200);
+  --app-color-primary-300: var(--light-color-primary-300);
+  --app-color-primary-400: var(--light-color-primary-400);
+  --app-color-primary-500: var(--light-color-primary-500);
+  --app-color-primary-600: var(--light-color-primary-600);
+  --app-color-primary-700: var(--light-color-primary-700);
+  --app-color-primary-800: var(--light-color-primary-800);
+  --app-color-primary-900: var(--light-color-primary-900);
+
+  --app-color-secondary-000: var(--light-color-secondary-000);
+  --app-color-secondary-100: var(--light-color-secondary-100);
+  --app-color-secondary-200: var(--light-color-secondary-200);
+  --app-color-secondary-300: var(--light-color-secondary-300);
+  --app-color-secondary-400: var(--light-color-secondary-400);
+  --app-color-secondary-500: var(--light-color-secondary-500);
+  --app-color-secondary-600: var(--light-color-secondary-600);
+  --app-color-secondary-700: var(--light-color-secondary-700);
+  --app-color-secondary-800: var(--light-color-secondary-800);
+  --app-color-secondary-900: var(--light-color-secondary-900);
+}
+
+/* Force Dark */
+:root:has(#theme-picker [value="dark"]:checked) {
+  color-scheme: dark;
+  --app-text-color: var(--dark-text-color);
+  --app-color-neutral-000: var(--dark-color-neutral-000);
+  --app-color-neutral-100: var(--dark-color-neutral-100);
+  --app-color-neutral-200: var(--dark-color-neutral-200);
+  --app-color-neutral-300: var(--dark-color-neutral-300);
+  --app-color-neutral-400: var(--dark-color-neutral-400);
+  --app-color-neutral-500: var(--dark-color-neutral-500);
+  --app-color-neutral-600: var(--dark-color-neutral-600);
+  --app-color-neutral-700: var(--dark-color-neutral-700);
+  --app-color-neutral-800: var(--dark-color-neutral-800);
+  --app-color-neutral-900: var(--dark-color-neutral-900);
+  --app-color-box-shadow: transparent;
+  --app-color-box-shadow-inset: var(--dark-color-box-shadow);
+
+  --app-color-primary-000: var(--dark-color-primary-000);
+  --app-color-primary-100: var(--dark-color-primary-100);
+  --app-color-primary-200: var(--dark-color-primary-200);
+  --app-color-primary-300: var(--dark-color-primary-300);
+  --app-color-primary-400: var(--dark-color-primary-400);
+  --app-color-primary-500: var(--dark-color-primary-500);
+  --app-color-primary-600: var(--dark-color-primary-600);
+  --app-color-primary-700: var(--dark-color-primary-700);
+  --app-color-primary-800: var(--dark-color-primary-800);
+  --app-color-primary-900: var(--dark-color-primary-900);
+
+  --app-color-secondary-000: var(--dark-color-secondary-000);
+  --app-color-secondary-100: var(--dark-color-secondary-100);
+  --app-color-secondary-200: var(--dark-color-secondary-200);
+  --app-color-secondary-300: var(--dark-color-secondary-300);
+  --app-color-secondary-400: var(--dark-color-secondary-400);
+  --app-color-secondary-500: var(--dark-color-secondary-500);
+  --app-color-secondary-600: var(--dark-color-secondary-600);
+  --app-color-secondary-700: var(--dark-color-secondary-700);
+  --app-color-secondary-800: var(--dark-color-secondary-800);
+  --app-color-secondary-900: var(--dark-color-secondary-900);
+}
+
+
 body {
   color: var(--app-text-color);
-  background-color: var(--app-color-neutral-300);
+  background-color: var(--app-color-neutral-000);
   margin: 0;
-  overflow: hidden;
+}
+
+@media only screen and (max-aspect-ratio: 0.7) {
+  :root {
+    font-size: var(--app-font-size-mobile);
+    --app-screen-platform: mobile;
+  }
 }
 
 a {
   text-decoration: none;
   color: inherit;
+}
+
+/* For Chrome, Safari, Edge, Opera */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* For Firefox */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+select,
+::picker(select) {
+  appearance: base-select;
+  border: none;
+  border-radius: 0.2rem;
+}
+
+
+option {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus-visible,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px var(--app-color-neutral-400) inset !important;
+  -webkit-text-fill-color: var(--app-text-color) !important;
 }
 
 input,
@@ -94,14 +460,14 @@ select,
 textarea {
   font: inherit;
   color: inherit;
-  background-color: var(--app-color-neutral-200);
+  background-color: var(--app-color-neutral-400);
   accent-color: var(--app-color-primary-400);
 }
 
 input {
   border: none;
   border-radius: 0.2rem;
-  padding: 0.2rem 0;
+  padding: 0.2rem 1ch;
   min-width: 0;
 }
 
@@ -110,7 +476,8 @@ button:hover,
 a:hover,
 .btn:hover,
 select:hover,
-summary:hover {
+summary:hover,
+option:hover {
   opacity: var(--app-hover-opacity);
 }
 
@@ -119,17 +486,19 @@ button:active,
 a:active,
 .btn:active,
 select:active,
-summary:active {
+summary:active,
+option:active {
   opacity: var(--app-active-opacity);
 }
 
-input:focus:not(:active),
-button:focus:not(:active),
-a:focus:not(:active),
-.btn:focus:not(:active),
-select:focus:not(:active),
-summary:focus:not(:active),
-details:focus:not(:active) {
+input:focus-visible,
+button:focus-visible,
+a:focus-visible,
+.btn:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+details:focus-visible,
+option:focus-visible {
   outline: 2px solid var(--app-color-primary-600);
   outline-offset: -2px;
   border-radius: 0.2rem;
@@ -145,7 +514,7 @@ button {
   width: fit-content;
 }
 
-form .issue {
+.issue {
   color: var(--app-color-state-error);
 }
 
@@ -162,11 +531,11 @@ form .issue {
 }
 
 .primary {
-  background-color: var(--app-color-primary-400);
+  background-color: var(--app-color-primary-300);
 }
 
 .secondary {
-  background-color: var(--app-color-secondary-400);
+  background-color: var(--app-color-secondary-300);
 }
 
 ::-webkit-scrollbar {
@@ -174,7 +543,7 @@ form .issue {
 }
 
 ::-webkit-scrollbar-track {
-  background-color: var(--app-color-neutral-200);
+  background-color: transparent;
   /*border: 1px solid var(--app-color-neutral-100);*/
 }
 

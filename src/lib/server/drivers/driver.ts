@@ -1,10 +1,16 @@
-import type { NodeIdLike, OPCUAServer } from "node-opcua";
-import { ModbusTCPDriver, Z_ModbusTCPDriverOptions } from "./modbus/modbusTcp";
+import type { NodeIdLike, OPCUAServer, StatusCode } from "node-opcua";
+import {
+  ModbusTCPDriver,
+  Z_ModbusTCPDriverOptions,
+  type TagSubscription,
+} from "./modbus/modbusTcp";
 import { Z_ModbusRTUDriverOptions } from "./modbus/modbusRtu";
-import { symbol, z } from "zod";
+import { z } from "zod";
 import { logger } from "../pino/logger";
 import { collections } from "../mongodb/collections";
 import { attempt } from "../../../lib/util/attempt";
+import { resolveOpcuaPath, Tag } from "../tag/tag";
+import { tagManager } from "../../../server";
 
 export type AvalibleDriver = {
   id: string; // internal name must match class name
@@ -24,15 +30,25 @@ export function isValidDriver(id: string): id is DriverId {
   return avalibeDrivers.some((driver) => driver.id === id);
 }
 
+export class DriverStatusError extends Error {
+  opcuaStatus: StatusCode;
+  message: string;
+  constructor(opcuaStatus: StatusCode, message: string) {
+    super(message);
+    this.message = message;
+    this.opcuaStatus = opcuaStatus;
+  }
+}
+
 export const Z_DeviceOptions = z.discriminatedUnion("driverName", [
   z.object({
-    name: z.string(),
+    name: z.string().nonempty(),
     driverName: z.literal("ModbusTCPDriver"),
     options: Z_ModbusTCPDriverOptions,
     enabled: z.coerce.boolean<boolean>(),
   }),
   z.object({
-    name: z.string(),
+    name: z.string().nonempty(),
     driverName: z.literal("ModbusRTUDriver"),
     options: Z_ModbusRTUDriverOptions,
     enabled: z.coerce.boolean<boolean>(),
@@ -64,6 +80,10 @@ export class Device {
     if (this.options.enabled) this.driver.connect();
   }
 
+  [Symbol.dispose]() {
+    this.dispose();
+  }
+
   dispose() {
     this.disable();
     this.driver.dispose();
@@ -87,13 +107,12 @@ export class Device {
     }
   }
 
-  tagSubscribed(path: string, parent?: NodeIdLike) {
-    return this.driver?.subscribeByPath(path, parent);
+  tagSubscribed(tag: Tag<any>, parent?: NodeIdLike) {
+    return this.driver.subscribeByNodeId(tag, parent);
   }
 
-  tagUnsubscribed(path: string) {
-    // TD WIP
-    throw new Error("TD WIP Unsibscribe");
+  tagUnsubscribed(nodeId: string) {
+    this.driver.unsubscribeByNodeId(nodeId);
   }
 }
 
@@ -120,7 +139,9 @@ export class DeviceManager {
 
     for (const device of devices) {
       const { _id, ...deviceWithoutId } = device;
+      // TD typscript error about this.opcuaServer possibly being undefined because im using attempt(() => {})
       const { data, error } = await attempt(() =>
+        // @ts-ignore
         this.addDevice(new Device(this.opcuaServer, deviceWithoutId), false)
       );
       if (error) logger.error(error);
@@ -142,6 +163,7 @@ export class DeviceManager {
       }
     }
     logger.info(`[DeviceManager] added device ${device.name}`);
+    return device;
   }
 
   async removeDevice(deviceName: string) {
@@ -155,6 +177,27 @@ export class DeviceManager {
       logger.error(error);
     }
     logger.debug(`[DeviceManager] removed device ${deviceName}`);
+  }
+
+  async updateDevice(device: Device, writeToDb: boolean = true) {
+    let oldDevice = this.devices.get(device.name);
+    if (oldDevice) {
+      await this.removeDevice(device.name);
+    }
+
+    const newDevice = await this.addDevice(device, writeToDb);
+
+    for (const tag of tagManager.getAllTags()) {
+      if (tag.nodeId) {
+        const resolved = resolveOpcuaPath(tag.nodeId);
+        if (resolved.deviceName == newDevice.name) {
+          tag.subscribeToDriver();
+        }
+      }
+    }
+
+    logger.info(`[DeviceManager] updated device ${device.name}`);
+    return newDevice;
   }
 
   getDevice(deviceName: string) {

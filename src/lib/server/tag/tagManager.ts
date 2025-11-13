@@ -33,6 +33,7 @@ export class TreeIndex {
   removeNode(path: string) {
     const node = this.nodes.get(path);
     if (!node) return;
+    node.dispose();
 
     // Remove from parent’s children
     const siblings = this.children.get(node.parentPath);
@@ -185,6 +186,26 @@ export class TagManager {
     });
   }
 
+  getAllTags(): Tag<any>[] {
+    let tags: Tag<any>[] = [];
+    let children = this.getChildren("/");
+    console.debug(children);
+    while (children.length > 0) {
+      const child = children.pop();
+      console.debug(child?.name);
+      if (child instanceof Tag) {
+        tags.push(child);
+      }
+      if (child instanceof TagFolder) {
+        for (const nested of this.getChildren(child.path)) {
+          children.push(nested);
+        }
+      }
+    }
+
+    return tags;
+  }
+
   // -------------------------
   // Update Functions
   // -------------------------
@@ -201,8 +222,8 @@ export class TagManager {
 
     if (!result) return null;
 
-    const updated = new TagFolder(result);
     this.tree.removeNode(path);
+    const updated = new TagFolder(result);
     this.tree.addNode(updated);
 
     return updated;
@@ -212,8 +233,8 @@ export class TagManager {
     path: string,
     updates: TagOptionsInput<any>
   ): Promise<Tag<any> | null> {
-    const updated = new Tag(updates);
     this.tree.removeNode(path);
+    const updated = new Tag(updates);
     this.tree.addNode(updated);
 
     const result = await collections.tags.findOneAndUpdate(

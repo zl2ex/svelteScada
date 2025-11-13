@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { TagPaths } from "$lib/server/tag/tag";
   import { ClientTag } from "$lib/client/tag/tagState.svelte";
-  import { flash } from "$lib/ui/flash.svelte";
   import type { MouseEventHandler } from "svelte/elements";
 
   type props = {

@@ -3,6 +3,19 @@ import { authenticateUser } from "$lib/server/auth/auth";
 import { logger } from "$lib/server/pino/logger";
 import { connectToDatabase } from "$lib/server/mongodb/db";
 
+// for serialisiing errors
+Object.defineProperty(Error.prototype, "toJSON", {
+  value: function () {
+    return {
+      name: this.name,
+      message: this.message,
+      stack: this.stack,
+      ...this,
+    };
+  },
+  configurable: true,
+});
+
 export const init: ServerInit = async () => {
   logger.debug("[hooks.server.ts] init hook");
   connectToDatabase();

@@ -1,8 +1,7 @@
 <script lang="ts">
   import TreeNode from "./TreeNode.svelte";
-  import { ClientTag } from "../tag/tagState.svelte";
   import { socketIoClientHandler } from "../socket.io/socket.io.svelte";
-  import { error } from "@sveltejs/kit";
+  import Label from "./scada/Label.svelte";
 
   type props = {
     path: string;
@@ -10,6 +9,15 @@
   };
 
   let { path, onclick }: props = $props();
+
+  // let tag = new ClientTag("any", { path });
+
+  // $effect.root(() => {
+  //   tag.subscribe();
+  //   return () => {
+  //     tag.unsubscribe(); // unsibscribe when unmounted
+  //   };
+  // });
 </script>
 
 <svelte:boundary>
@@ -19,7 +27,7 @@
     {:else}
       {#each response.data as node}
         {#if node.type == "Folder"}
-          <details>
+          <details open>
             <summary>{node.name}</summary>
             <div class="indent">
               <TreeNode path={node.path} {onclick}></TreeNode>
@@ -32,8 +40,31 @@
               if (onclick) {
                 onclick(node.path);
               }
-            }}>T: {node.name}</summary
-          >
+            }}
+            ><div class="tag-item-container">
+              <svg viewBox="0 0 100 100">
+                <g
+                  stroke-width="4px"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  fill="none"
+                >
+                  <line x1="10" y1="20" x2="70" y2="20"></line>
+                  <line x1="10" y1="80" x2="70" y2="80"></line>
+                  <line x1="70" y1="20" x2="90" y2="40"></line>
+                  <line x1="70" y1="80" x2="90" y2="60"></line>
+
+                  <line x1="10" y1="20" x2="10" y2="80"></line>
+                  <line x1="90" y1="40" x2="90" y2="60"></line>
+
+                  <circle r="5" cx="70" cy="50"></circle>
+                </g>
+              </svg>
+              <span>{node.name}</span>
+              <Label path={node.path} onclick={(ev) => ev.stopPropagation()}
+              ></Label>
+            </div>
+          </summary>
         {/if}
       {/each}
     {/if}
@@ -63,5 +94,17 @@
   summary {
     padding: 0.25rem;
     /*list-style-position: outside;*/
+  }
+
+  .tag-item-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5ch;
+
+    svg {
+      stroke: var(--app-text-color);
+      fill: transparent;
+      width: 1rem;
+    }
   }
 </style>

@@ -27,6 +27,44 @@ export class Node {
   }
 }
 
+type EventMap = Record<string, Event>;
+
+export class TypedEventTarget<T extends EventMap> {
+  private target = new EventTarget();
+
+  addEventListener<K extends keyof T>(
+    type: K,
+    listener: (ev: T[K]) => void,
+    options?: boolean | AddEventListenerOptions
+  ): void {
+    this.target.addEventListener(
+      type as string,
+      listener as EventListener,
+      options
+    );
+  }
+
+  removeEventListener<K extends keyof T>(
+    type: K,
+    listener: (ev: T[K]) => void,
+    options?: boolean | EventListenerOptions
+  ): void {
+    this.target.removeEventListener(
+      type as string,
+      listener as EventListener,
+      options
+    );
+  }
+
+  dispatchEvent<K extends keyof T>(event: T[K]): boolean {
+    return this.target.dispatchEvent(event);
+  }
+}
+
+type TagEvents = {
+  "tag:update:": CustomEvent<EmitPayload>;
+};
+
 export type ClientTagOptions = {
   path: TagPaths;
   name?: string;
@@ -42,7 +80,9 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     SocketIOServerToClientEvents,
     SocketIOClientToServerEvents
   >;
-  static tags: Record<TagPaths, ClientTag<any>> = [];
+  //static tags: Record<TagPaths, ClientTag<any>> = []; // TD WIP REMOVE ??
+  static events = new TypedEventTarget<TagEvents>();
+  private _value: ResolveType<DataTypeString>;
   name?: string;
   path: TagPaths;
   parentPath: string;
@@ -51,14 +91,20 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   writeable?: boolean;
   parameters?: UdtParams;
   exposeOverOpcua?: boolean;
-  private _value: ResolveType<DataTypeString>;
+  valueStatus: string;
   errorMessage?: string;
   error?: TagError;
 
   static initSocketIo(clientSocket: Socket) {
     ClientTag.socket = clientSocket;
-    ClientTag.socket.on("tag:update", ({ path, value }) => {
-      ClientTag.tags[path]?.update({ path, value });
+    ClientTag.socket.on("tag:update", (payload) => {
+      //ClientTag.tags[path]?.update({ path, value });
+      console.log(
+        `tag.update:${payload.path} = ${payload.value.value} ${payload.value.valueStatus}`
+      );
+      ClientTag.events.dispatchEvent(
+        new CustomEvent(`tag:update:${payload.path}`, { detail: payload })
+      );
     });
   }
 
@@ -76,23 +122,37 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this.parameters = $state(undefined);
     this.exposeOverOpcua = $state(false);
     this._value = $state(opts.initialValue ?? null);
+    this.valueStatus = $state("UncertainInitalValue");
     this.errorMessage = $state(undefined);
     this.error = $state(undefined);
 
-    ClientTag.tags[this.path] = this;
+    //ClientTag.tags[this.path] = this;
+
+    ClientTag.events.addEventListener(`tag:update:${this.path}`, this.update);
+
     console.log(`[ClientTag] created tag ${this.path}`);
   }
 
   [Symbol.dispose]() {
-    this.unsubscribe();
-    delete ClientTag.tags[this.path];
+    this.dispose();
   }
 
-  private update({ path, value }: EmitPayload) {
-    console.log(value);
-    if (path != this.path || value.path != this.path)
+  dispose() {
+    this.unsubscribe();
+    ClientTag.events.removeEventListener(
+      `tag:update:${this.path}`,
+      this.update
+    );
+    //delete ClientTag.tags[this.path];
+  }
+
+  private update = (e: CustomEvent<EmitPayload>) => {
+    const path = e.detail.path;
+    const value = e.detail.value;
+
+    if (path != this.path)
       throw new Error(
-        `[Client Tag]  tag:update  path ${value.path} does not match requested path ${this.path}`
+        `[Client Tag]  tag:update  path ${path} does not match requested path ${this.path}`
       );
 
     // TD WIP Validate datatype of tag vs datatype of clientTag
@@ -109,13 +169,19 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this.parameters = value.parameters;
     this.exposeOverOpcua = value.exposeOverOpcua;
     this._value = value.value;
+    this.valueStatus = value.valueStatus;
     this.writeable = value.writeable;
     this.error = value.error;
+    this.errorMessage = value.error?.message;
     //Object.assign(this, value);
-  }
+  };
 
   get value() {
     return this._value;
+  }
+
+  set value(newValue: any) {
+    this.write(newValue);
   }
 
   async write(value: ResolveType<DataTypeString>) {
@@ -124,6 +190,9 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
         `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling write()`
       );
     }
+
+    // only update on change
+    if (value == this._value) return;
 
     return new Promise((resolve, reject) => {
       ClientTag.socket?.emit(
@@ -136,7 +205,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
             reject({ data: undefined, error: response.error });
           } else {
             // populate the tag with all the data returned
-            this.update(response.data);
+            this.update({ detail: response.data });
             this.errorMessage = undefined;
             resolve({ data: this, error: undefined });
           }
@@ -162,7 +231,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
           reject({ data: undefined, error: response.error });
         } else {
           // populate the tag with all the data returned
-          this.update(response.data);
+          this.update({ detail: response.data });
           resolve({ data: this, error: undefined });
         }
       });

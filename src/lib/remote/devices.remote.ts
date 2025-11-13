@@ -4,11 +4,9 @@ import {
   Device,
   Z_DeviceOptions,
 } from "$lib/server/drivers/driver";
-import z, { boolean } from "zod";
+import { z } from "zod";
 import { deviceManager } from "../../server";
-import { Tag } from "$lib/server/tag/tag";
-import { dev } from "$app/environment";
-import { error } from "@sveltejs/kit";
+import { error, redirect } from "@sveltejs/kit";
 
 export const getAvalibleDrivers = prerender(async () => {
   return avalibeDrivers;
@@ -32,6 +30,7 @@ export const getDevices = query("unchecked", async () => {
   });
 });
 
+/*
 export const updateDeviceEnabled = form(
   z.object({
     name: z.string().nonempty(),
@@ -45,20 +44,25 @@ export const updateDeviceEnabled = form(
     }
     if (data.enabled) device.enable();
     else device.disable();
-    console.debug(data);
+
+    // TD WIP UPDATE DB
     return device.options.enabled;
   }
-);
+);*/
 
 export const updateDevice = form(Z_DeviceOptions, async (data) => {
-  let oldDevice = deviceManager.getDevice(data.name);
-  if (oldDevice) {
-    await deviceManager.removeDevice(data.name);
-  }
   if (!deviceManager.opcuaServer) {
     throw new Error(
       `[devices.remote.ts] updateDevice() Tag.opcuaServer undefined, please call Tag.initOpcuaServer() first`
     );
   }
-  await deviceManager.addDevice(new Device(deviceManager.opcuaServer, data));
+  await deviceManager.updateDevice(new Device(deviceManager.opcuaServer, data));
+  redirect(308, "/editor/devices");
 });
+
+export const deleteDevice = command(
+  z.string().nonempty(),
+  async (deviceName) => {
+    await deviceManager.removeDevice(deviceName);
+  }
+);

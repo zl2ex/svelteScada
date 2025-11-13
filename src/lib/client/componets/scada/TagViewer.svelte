@@ -28,7 +28,7 @@
     return tag;
   }
 
-  let tag = $derived(await getClientTag(tagPath));
+  let tag = $state(await getClientTag(tagPath));
   /*
   $effect.root(() => {
     return () => {
@@ -39,7 +39,7 @@
 </script>
 
 <svelte:boundary>
-  <div>
+  <div class="container">
     {#if tag.error}
       <p>{tag.error.message}</p>
       <p>{tag.error.feildName}</p>
@@ -52,17 +52,20 @@
       {...updateTag.enhance(async ({ form, data, submit }) => {
         try {
           await submit();
-          tag = await getClientTag(tagPath);
+          tag = getClientTag(tagPath);
           // form.reset();
         } catch (error) {
           alert(error);
         }
       })}
     >
-      <label>
-        name
+      <div class="form-item">
+        <label for="name">name</label>
         <input {...updateTag.fields.name.as("text")} />
-      </label>
+        {#each updateTag.fields.name.issues() as issue}
+          <span class="issue">{issue.message}</span>
+        {/each}
+      </div>
       <input {...updateTag.fields.path.as("hidden", tag.path)} />
       <input {...updateTag.fields.parentPath.as("hidden", tag.parentPath)} />
 
@@ -79,88 +82,112 @@
           </datalist>
           <label for="dataType">dataType</label>
           <input {...updateTag.fields.dataType.as("text")} />-->
-      <select {...updateTag.fields.dataType.as("select")} autocomplete="on">
-        {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
-          {#if options.error}
-            <p>Error {options.error.message}</p>
-          {:else}
-            {#each options.data as option}
-              <option value={option}>{option}</option>
-            {/each}
-          {/if}
-        {/await}
-      </select>
-      <label>
-        nodeId
-        <input {...updateTag.fields.nodeId.as("text")} />
-      </label>
 
-      <label>
-        exposeOverOpcua
+      <div class="form-item">
+        <label for="dataType">data type</label>
+        <select {...updateTag.fields.dataType.as("select")} autocomplete="on">
+          {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
+            {#if options.error}
+              <p>Error {options.error.message}</p>
+            {:else}
+              {#each options.data as option}
+                <option value={option}>{option}</option>
+              {/each}
+            {/if}
+          {/await}
+        </select>
+        {#each updateTag.fields.dataType.issues() as issue}
+          <span class="issue">{issue.message}</span>
+        {/each}
+      </div>
+
+      <div class="form-item">
+        <label for="nodeId">nodeId</label>
+        <input {...updateTag.fields.nodeId.as("text")} />
+        {#each updateTag.fields.nodeId.issues() as issue}
+          <span class="issue">{issue.message}</span>
+        {/each}
+      </div>
+
+      <div class="form-item-row">
+        <label for="exposeOverOpcua">exposeOverOpcua</label>
         <input {...updateTag.fields.exposeOverOpcua.as("checkbox")} />
-      </label>
-      <label>
-        writeable
+        {#each updateTag.fields.exposeOverOpcua.issues() as issue}
+          <span class="issue">{issue.message}</span>
+        {/each}
+      </div>
+
+      <div class="form-item-row">
+        <label for="writeable">writeable</label>
         <input {...updateTag.fields.writeable.as("checkbox")} />
-      </label>
-      <button class="primary">submit</button>
+        {#each updateTag.fields.writeable.issues() as issue}
+          <span class="issue">{issue.message}</span>
+        {/each}
+      </div>
+
+      <div class="form-item-row">
+        <button class="primary">save</button>
+      </div>
     </form>
-    {#if typeof tag.value === "boolean"}
-      <input
-        type="checkbox"
-        checked={tag.value}
-        oninput={(ev) => {
-          tag.write(Boolean(ev.target?.checked));
-        }}
-      />
-    {:else if typeof tag.value === "number"}
-      <input
-        type="number"
-        value={tag.value}
-        oninput={(ev) => {
-          console.log(ev.target.value);
-          tag.write(Number(ev.target.value));
-        }}
-      />
-    {:else if typeof tag.value === "string"}
-      <input
-        type="text"
-        value={tag.value}
-        oninput={(ev) => {
-          tag.write(String(ev.target?.value));
-        }}
-      />
-    {:else if typeof tag.value === "object" && tag.value}
-      {#each Object.entries(tag.value) as [key, value]}
-        {#if typeof tag.value === "boolean"}
-          <input
-            type="checkbox"
-            checked={tag.value}
-            oninput={(ev) => {
-              tag.write(Boolean(ev.target?.checked));
-            }}
-          />
-        {:else if typeof tag.value === "number"}
-          <input
-            type="number"
-            value={tag.value}
-            oninput={(ev) => {
-              tag.write(Number(ev.target?.value));
-            }}
-          />
-        {:else if typeof tag.value === "string"}
-          <input
-            type="text"
-            value={tag.value}
-            oninput={(ev) => {
-              tag.write(String(ev.target?.value));
-            }}
-          />
-        {/if}
-      {/each}
-    {:else}
-      unsupported type {typeof tag.value}
-    {/if}
+
+    <div class="form-item">
+      {#if typeof tag.value === "boolean"}
+        <input
+          type="checkbox"
+          checked={tag.value}
+          oninput={(ev) => {
+            tag.write(Boolean(ev.target?.checked));
+          }}
+        />
+      {:else if typeof tag.value === "number"}
+        <input
+          type="number"
+          value={tag.value}
+          oninput={(ev) => {
+            console.log(ev.target.value);
+            tag.write(Number(ev.target.value));
+          }}
+        />
+      {:else if typeof tag.value === "string"}
+        <input
+          type="text"
+          value={tag.value}
+          oninput={(ev) => {
+            tag.write(String(ev.target?.value));
+          }}
+        />
+      {:else if typeof tag.value === "object" && tag.value}
+        {#each Object.entries(tag.value) as [key, value]}
+          {#if typeof tag.value === "boolean"}
+            <input
+              type="checkbox"
+              checked={tag.value}
+              oninput={(ev) => {
+                tag.write(Boolean(ev.target?.checked));
+              }}
+            />
+          {:else if typeof tag.value === "number"}
+            <input
+              type="number"
+              value={tag.value}
+              oninput={(ev) => {
+                tag.write(Number(ev.target?.value));
+              }}
+            />
+          {:else if typeof tag.value === "string"}
+            <input
+              type="text"
+              value={tag.value}
+              oninput={(ev) => {
+                tag.write(String(ev.target?.value));
+              }}
+            />
+          {/if}
+        {/each}
+      {:else}
+        unsupported type {typeof tag.value}
+      {/if}
+    </div>
   </div>
 
   {#snippet pending()}
@@ -173,15 +200,14 @@
 </svelte:boundary>
 
 <style>
-  div {
-    display: flex;
-    flex-direction: row;
-    flex: 0;
-    width: fit-content;
-    border: 3px solid brown;
+  .container {
     padding: 1rem;
+    max-width: 30ch;
+    margin: 0 auto;
   }
-  input[type="number"] {
-    width: 6rem;
+
+  form {
+    display: grid;
+    gap: 1rem;
   }
 </style>

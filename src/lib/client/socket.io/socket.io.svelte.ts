@@ -2,15 +2,12 @@ import { io } from "socket.io-client";
 //import { type DataType } from "node-opcua";
 import { type Socket } from "socket.io-client";
 import type {
-  EmitPayload,
-  Rpc,
   RpcName,
   RpcRequest,
   RpcResponse,
   SocketIOClientToServerEvents,
   SocketIOServerToClientEvents,
 } from "$lib/server/socket.io/socket.io";
-import type { TagTypeMapDefinition } from "$lib/server/tag/tag";
 
 //export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
 export class SocketIoClientHandler {
@@ -43,22 +40,6 @@ export class SocketIoClientHandler {
         }
       });
     });
-  }
-
-  tagWrite({ path, value }: EmitPayload) {
-    let errorMessage: string | undefined = undefined;
-    this.socket.emit("tag:write", { path, value }, (error) => {
-      errorMessage = error.message;
-    });
-    return errorMessage;
-  }
-
-  tagSubscribe(path: keyof TagTypeMapDefinition) {
-    this.socket.emit("tag:subscribe", path);
-  }
-
-  tagUnsubscribe(path: keyof TagTypeMapDefinition) {
-    this.socket.emit("tag:unsubscribe", path);
   }
 }
 

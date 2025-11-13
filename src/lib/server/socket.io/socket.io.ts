@@ -21,8 +21,8 @@ export type EmitPayload = {
     | "isArray"
     | "arrayLength"
     | "schema"
-    | "variable"
-    | "opcuaVarible"
+    | "exposeOpcuaVarible"
+    | "driverOpcuaVarible"
     | "children"
     | "opcuaParent"
     | "udtParent"
@@ -31,6 +31,8 @@ export type EmitPayload = {
     | "unsubscribeByPath"
     | "triggerEmit"
     | "getEmitPayload"
+    | "dispose"
+    | "[SymbolConstructor.dispose]"
   >;
 };
 
@@ -140,7 +142,7 @@ export function creatSocketIoServer(httpServer: Server) {
         }
       });
 
-      if (result.error instanceof TagError) {
+      if ("error" in result) {
         logger.error(result.error);
       }
 
