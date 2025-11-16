@@ -6,6 +6,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import Label from "$lib/client/componets/scada/Label.svelte";
+  import { onMount } from "svelte";
 
   let tagEditorPath = $state(page.url.searchParams.get("tagPath") ?? "/");
 

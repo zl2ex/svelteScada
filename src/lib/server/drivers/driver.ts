@@ -87,6 +87,7 @@ export class Device {
   dispose() {
     this.disable();
     this.driver.dispose();
+    logger.trace(`[Device] dispose() ${this.name}`);
   }
 
   enable() {
@@ -108,11 +109,11 @@ export class Device {
   }
 
   tagSubscribed(tag: Tag<any>, parent?: NodeIdLike) {
-    return this.driver.subscribeByNodeId(tag, parent);
+    return this.driver.subscribeByTag(tag, parent);
   }
 
-  tagUnsubscribed(nodeId: string) {
-    this.driver.unsubscribeByNodeId(nodeId);
+  tagUnsubscribed(tag: Tag<any>) {
+    this.driver.unsubscribeByTag(tag);
   }
 }
 
@@ -176,16 +177,24 @@ export class DeviceManager {
     if (error) {
       logger.error(error);
     }
-    logger.debug(`[DeviceManager] removed device ${deviceName}`);
+    logger.info(`[DeviceManager] removed device ${deviceName}`);
   }
 
-  async updateDevice(device: Device, writeToDb: boolean = true) {
-    let oldDevice = this.devices.get(device.name);
+  async updateDevice(deviceOptions: DeviceOptions, writeToDb: boolean = true) {
+    let oldDevice = this.devices.get(deviceOptions.name);
     if (oldDevice) {
-      await this.removeDevice(device.name);
+      await this.removeDevice(deviceOptions.name);
     }
 
-    const newDevice = await this.addDevice(device, writeToDb);
+    if (!this.opcuaServer) {
+      throw new Error(
+        `[DeviceManager] updateDevice() this.opcuaServer undefined, please call initOpcuaServer() first`
+      );
+    }
+    const newDevice = await this.addDevice(
+      new Device(this.opcuaServer, deviceOptions),
+      writeToDb
+    );
 
     for (const tag of tagManager.getAllTags()) {
       if (tag.nodeId) {
@@ -196,7 +205,7 @@ export class DeviceManager {
       }
     }
 
-    logger.info(`[DeviceManager] updated device ${device.name}`);
+    logger.info(`[DeviceManager] updated device ${deviceOptions.name}`);
     return newDevice;
   }
 

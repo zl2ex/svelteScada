@@ -50,13 +50,8 @@ export const updateDeviceEnabled = form(
   }
 );*/
 
-export const updateDevice = form(Z_DeviceOptions, async (data) => {
-  if (!deviceManager.opcuaServer) {
-    throw new Error(
-      `[devices.remote.ts] updateDevice() Tag.opcuaServer undefined, please call Tag.initOpcuaServer() first`
-    );
-  }
-  await deviceManager.updateDevice(new Device(deviceManager.opcuaServer, data));
+export const updateDevice = form(Z_DeviceOptions, async (deviceOptions) => {
+  await deviceManager.updateDevice(deviceOptions);
   redirect(308, "/editor/devices");
 });
 

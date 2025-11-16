@@ -143,6 +143,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
       `tag:update:${this.path}`,
       this.update
     );
+    console.debug(`[ClientTag] dispose() ${this.path}`);
     //delete ClientTag.tags[this.path];
   }
 

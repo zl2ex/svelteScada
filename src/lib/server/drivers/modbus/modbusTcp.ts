@@ -10,11 +10,18 @@ import {
 
 import Modbus, { ModbusTCPClient } from "jsmodbus";
 import net from "net";
-import { z } from "zod";
-import { resolveOpcuaPath, Tag, type BaseTypeStrings } from "../../tag/tag";
+import { array, z } from "zod";
+import {
+  resolveOpcuaPath,
+  Tag,
+  TagError,
+  type BaseTypeStrings,
+} from "../../tag/tag";
 import { logger } from "../../pino/logger";
 import { attempt } from "../../../../lib/util/attempt";
 import { DriverStatusError } from "../driver";
+import { ErrorMessages } from "jsmodbus/dist/codes";
+import { deleteOpcuaVariable } from "../opcua/opcuaServer";
 
 type ModbusRegisterType = "hr" | "ir" | "co" | "di";
 
@@ -31,11 +38,10 @@ type ParsedModbusPath = {
 export interface TagSubscription extends ParsedModbusPath {
   // nodeId: string;
   // path: string;
-  // opcuaDataType: DataType;
-  // driverOpcuaVarible: UAVariable;
+  opcuaDataType: DataType;
+  driverOpcuaVarible: UAVariable;
   value: number;
-  monitoredCount: number;
-  tag: Tag<any>;
+  tags: Map<string, Tag<any>>;
 }
 
 export const Z_Endian = z.literal(["BigEndian", "LittleEndian"]);
@@ -137,15 +143,18 @@ export class ModbusTCPDriver {
     this.socket.destroy();
     //this.socket = undefined;
     for (const sub of Object.values(this.subscriptions)) {
-      if (sub.tag.nodeId) this.unsubscribeByNodeId(sub.tag.nodeId);
+      sub.tags.forEach((tag) => {
+        if (tag.nodeId) tag.unsubscribeToDriver();
+      });
     }
     //this.tags = undefined;
+    logger.trace(`[ModbusTCPDriver] dispose()`);
   }
 
   private reconnect() {
     // already waiting to try again
     if (this.reconnectAttempt === false) return;
-    logger.error(
+    logger.warn(
       `[ModbusTCPDriver] failed to connect to device at ${this.ip}:${this.port} retry in ${this.reconnectInervalMs} ms`
     );
     this.reconnectAttempt = false;
@@ -163,17 +172,19 @@ export class ModbusTCPDriver {
   }
 
   private setOpcuaVaribleStatus(sub: TagSubscription, status: StatusCode) {
-    if (sub.tag.driverOpcuaVarible && sub.tag.driverOpcuaVarible.addressSpace) {
-      if (sub.tag.driverOpcuaVarible.readValue().statusCode == status) return; // dont update the status if it has not changed
-      sub.tag.driverOpcuaVarible.setValueFromSource(
+    if (sub.driverOpcuaVarible && sub.driverOpcuaVarible.addressSpace) {
+      if (sub.driverOpcuaVarible.readValue().statusCode == status) {
+        return; // dont update the status if it has not changed
+      }
+      sub.driverOpcuaVarible.setValueFromSource(
         {
-          dataType: sub.tag.opcuaDataType,
+          dataType: sub.opcuaDataType,
           value: sub.value,
         },
         status
       );
-      //sub.tag.update(sub.value)
-      sub.tag.triggerEmit(); // emit new status to client
+      //sub.sub.update(sub.value)
+      sub.tags.forEach((tag) => tag.triggerEmit()); // emit new status to client
     }
   }
 
@@ -193,19 +204,19 @@ export class ModbusTCPDriver {
     this.stopPolling();
     this.socket.destroy();
     this.setAllOpcuaVaribleStatus(StatusCodes.BadConditionDisabled);
+    logger.info(
+      `[ModbusTCPDriver] Disconnected from Modbus device at ${this.ip}:${this.port}`
+    );
   }
 
   getSubscriptions() {
     return Object.values(this.subscriptions);
   }
 
-  subscribeByNodeId(
-    tag: Tag<any>,
-    parent?: NodeIdLike
-  ): UAVariable | undefined {
+  subscribeByTag(tag: Tag<any>, parent?: NodeIdLike): UAVariable | undefined {
     if (!tag.nodeId) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByNodeId() no node id provided for tag ${tag.path}`
+        `[ModbusTCPDriver] subscribeByTag() no node id provided for tag ${tag.path}`
       );
     }
     const nodeId = tag.nodeId;
@@ -213,44 +224,53 @@ export class ModbusTCPDriver {
 
     if (!resolvedPath.tagPath) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByNodeId() empty tag nodeId for nodeId ${nodeId}`
+        `[ModbusTCPDriver] subscribeByTag() empty tag nodeId for nodeId ${nodeId}`
       );
     }
     const parsed = this.parsePath(resolvedPath.tagPath);
     if (!parsed) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByNodeId() Invalid Modbus path: ${nodeId}`
+        `[ModbusTCPDriver] subscribeByTag() Invalid Modbus path: ${nodeId}`
       );
     }
 
-    let opcuaParent = parent
-      ? parent
-      : this.opcuaServer.engine.addressSpace?.rootFolder;
-
+    let opcuaParent = parent ?? tag.tagFolder;
     if (!opcuaParent) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByNodeId() tag ${nodeId} cannot subscribe because parent or root folder is not provided`
+        `[ModbusTCPDriver] subscribeByTag() tag ${nodeId} cannot subscribe because parent or root folder is not provided`
       );
     }
 
+    const monitoredCount = this.subscriptions[nodeId]?.tags.size;
     // return varibleNode if multiple tags reference the same address
-    if (this.subscriptions[nodeId]) {
-      this.subscriptions[nodeId].monitoredCount++; // add to the monitored count
-      logger.debug(
-        `[ModbusTcpDriver] subscribeByNodeId() varible already exists, returning varible already set up`
+    if (monitoredCount >= 1) {
+      this.subscriptions[nodeId].tags.set(tag.path, tag);
+      logger.trace(
+        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.nodeId} returning varible already set up to tag ${tag.path}`
       );
-      return this.subscriptions[nodeId]!.tag.driverOpcuaVarible;
+      return this.subscriptions[nodeId].driverOpcuaVarible;
     }
 
     if (
       !Object.values(DataType).includes(parsed.dataType as unknown as DataType)
     ) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByNodeId() dataType ${parsed.dataType} is not supported by the internal OPCUA Server`
+        `[ModbusTCPDriver] subscribeByTag() dataType ${parsed.dataType} is not supported by the internal OPCUA Server`
       );
     }
 
+    // if(this.namespace.findNode(nodeId)) return existingOpcuaVarible;
+
     const opcuaDataType = parsed.dataType as unknown as DataType;
+
+    const node = this.namespace.findNode(nodeId);
+
+    if (node) {
+      logger.warn(node.allReferences(), "Exists, and references are:");
+      node.allReferences().forEach((ref) => {
+        node.removeReference(ref);
+      });
+    }
 
     const driverOpcuaVarible = this.namespace.addVariable({
       componentOf: opcuaParent,
@@ -266,8 +286,10 @@ export class ModbusTCPDriver {
         throw new Error(`[ModbusTCPDriver] nodeId not valid ${nodeId}`);
       }
 
-      //if (this.connected) {
       if (sub.value !== newValue.value.value) {
+        logger.trace(
+          `[ModbusTCPDriver] valueChanged ${sub.address} = ${newValue.value.value} : ${newValue.statusCode.toString()}`
+        );
         try {
           await this.writeModbus(parsed, newValue.value.value);
           sub.value = newValue.value.value;
@@ -288,6 +310,8 @@ export class ModbusTCPDriver {
 
     const subscription: TagSubscription = {
       dataType: parsed.dataType,
+      opcuaDataType: tag.opcuaDataType,
+      driverOpcuaVarible: driverOpcuaVarible,
       address: parsed.address,
       registerType: parsed.registerType,
       registerLength: parsed.registerLength,
@@ -295,58 +319,54 @@ export class ModbusTCPDriver {
       swapWords: this.swapWords,
       arrayLength: parsed.arrayLength,
       bit: parsed.bit,
-      tag,
-      monitoredCount: 1,
+      tags: new Map().set(tag.path, tag),
       value: 0,
     };
 
     this.subscriptions[nodeId] = subscription;
     logger.debug(
-      `[ModbusTCPDriver] subscribeByNodeId() Created OPCUA node and subscription for ${nodeId}`
+      `[ModbusTCPDriver] subscribeByTag() Created OPCUA node and subscription for ${nodeId}`
     );
     return driverOpcuaVarible;
   }
 
-  unsubscribeByNodeId(nodeId: string) {
-    this.subscriptions[nodeId].monitoredCount--; // update monitored count
-    if (this.subscriptions[nodeId].monitoredCount > 0) {
+  unsubscribeByTag(tag: Tag<any>) {
+    if (!tag.nodeId) return;
+
+    this.subscriptions[tag.nodeId].tags.delete(tag.path);
+    if (this.subscriptions[tag.nodeId].tags.size > 0) {
       logger.debug(
-        `[ModbusTCPDriver] unsubscribeByNodeId() monitored count ${this.subscriptions[nodeId].monitoredCount} not removing varible node`
+        `[ModbusTCPDriver] unsubscribeByTag() ${tag.nodeId} monitored count ${this.subscriptions[tag.nodeId].tags.size} not removing varible node`
       );
       return; // dont remove if there are more insances looking at the varible
     }
-    const resolvedPath = resolveOpcuaPath(nodeId);
+    const resolvedPath = resolveOpcuaPath(tag.nodeId);
 
     if (!resolvedPath.tagPath) {
       throw new Error(
-        `[ModbusTCPDriver] unsubscribeByNodeId() empty tag nodeId for path ${nodeId}`
+        `[ModbusTCPDriver] unsubscribeByTag() empty tag nodeId for path ${tag}`
       );
     }
     const parsed = this.parsePath(resolvedPath.tagPath);
     if (!parsed) {
       throw new Error(
-        `[ModbusTCPDriver] unsubscribeByNodeId() Invalid Modbus path: ${nodeId}`
+        `[ModbusTCPDriver] unsubscribeByTag() Invalid Modbus path: ${tag}`
       );
     }
 
-    if (this.subscriptions[nodeId].tag.driverOpcuaVarible) {
-      this.subscriptions[nodeId].tag.driverOpcuaVarible.removeAllListeners();
-      this.opcuaServer.engine.addressSpace?.deleteNode(
-        this.subscriptions[nodeId].tag.driverOpcuaVarible
+    if (!this.opcuaServer.engine.addressSpace) {
+      throw new Error(
+        `[ModbusTCPDriver] unsubscribeByTag() pcuaServer.engine.addressSpace not defined, cannot remove opcua varible at ${tag.nodeId}`
       );
-      //this.subscriptions[nodeId].tag.driverOpcuaVarible = undefined;
     }
 
-    delete this.subscriptions[nodeId];
-    logger.debug(`[ModbusTCPDriver] unsubscribeByNodeId() ${nodeId}`);
-  }
+    deleteOpcuaVariable(
+      this.opcuaServer.engine.addressSpace,
+      this.subscriptions[tag.nodeId].driverOpcuaVarible
+    );
 
-  private totalMonitoredCount() {
-    let total = 0;
-    for (const [key, tag] of Object.entries(this.subscriptions)) {
-      total += tag.monitoredCount;
-    }
-    return total;
+    delete this.subscriptions[tag.nodeId]; // remove the subscription entirely
+    logger.debug(`[ModbusTCPDriver] unsubscribeByTag() ${tag.nodeId}`);
   }
 
   private startPolling() {
@@ -376,7 +396,7 @@ export class ModbusTCPDriver {
     // Group tags by type
     const groups = new Map<ModbusRegisterType, TagSubscription[]>();
     for (const [key, tag] of Object.entries(this.subscriptions)) {
-      if (tag.monitoredCount === 0) continue;
+      if (tag.tags.size === 0) continue;
       if (!groups.has(tag.registerType)) {
         groups.set(tag.registerType, []);
       }
@@ -431,43 +451,45 @@ export class ModbusTCPDriver {
             break;
         }
 
-        if ("error" in response) {
-          logger.error(response.error);
-          continue;
-        }
-
-        const buffer = response.data.response.body.valuesAsBuffer;
-
         for (const sub of subs) {
           if (sub.address < batch.start || sub.address > batch.end) continue;
-          if (
-            sub.tag.driverOpcuaVarible &&
-            sub.tag.driverOpcuaVarible.addressSpace
-          ) {
-            const offset = sub.address - batch.start;
-            let value = decode(sub, buffer, offset);
-            const oldValue =
-              sub.tag.driverOpcuaVarible?.readValue().value.value;
+          for (const tag of sub.tags.values()) {
+            if (tag.driverOpcuaVarible && tag.driverOpcuaVarible.addressSpace) {
+              if ("error" in response) {
+                logger.error(response.error);
+                for (const tag of sub.tags.values()) {
+                  tag.error = new TagError("nodeId", response.error.message);
+                }
+                continue;
+              }
 
-            if (oldValue !== value) {
-              logger.debug(
-                `[ModbusTCPDriver] poll() updated varible ${sub.tag.path} = ${value}`
-              );
-              // TD i have my own typesafety at runtime with opcuaDataType
-              //@ts-ignore
-              sub.value = value;
-              sub.tag.driverOpcuaVarible.setValueFromSource(
-                {
-                  dataType: sub.tag.opcuaDataType,
-                  value: value,
-                },
-                StatusCodes.Good
-              );
+              const buffer = response.data.response.body.valuesAsBuffer;
+
+              const offset = sub.address - batch.start;
+              let value = decode(sub, buffer, offset);
+              const oldValue = tag.driverOpcuaVarible?.readValue().value.value;
+
+              if (oldValue !== value) {
+                logger.trace(
+                  `[ModbusTCPDriver] poll() updated varible ${tag.path} = ${value}`
+                );
+                // TD i have my own typesafety at runtime with opcuaDataType
+                //@ts-ignore
+                sub.value = value;
+                tag.driverOpcuaVarible.setValueFromSource(
+                  {
+                    dataType: tag.opcuaDataType,
+                    value: value,
+                  },
+                  StatusCodes.Good
+                );
+                tag.error = undefined;
+              }
+            } else {
+              const errorMessage = `[ModbusTCPDriver] poll() driverOpcuaVarible.addressSpace undefined for tag ${tag.path}`;
+              tag.error = new TagError("nodeId", errorMessage);
+              logger.error(errorMessage);
             }
-          } else {
-            logger.error(
-              `[ModbusTCPDriver] poll() driverOpcuaVarible.addressSpace undefined for tag ${sub.tag.path}`
-            );
           }
         }
       }

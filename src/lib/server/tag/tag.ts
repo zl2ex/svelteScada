@@ -24,6 +24,7 @@ import {
   type NodeIdLike,
   DataValue,
   StatusCode,
+  type UAObject,
 } from "node-opcua";
 import { emitToSubscribers, type EmitPayload } from "../socket.io/socket.io";
 import { deviceManager } from "../../../server";
@@ -36,6 +37,7 @@ import {
   Node,
   type NodeOptions,
 } from "../../../lib/client/tag/tagState.svelte";
+import { deleteOpcuaVariable } from "../drivers/opcua/opcuaServer";
 
 // Base schemas for primitives
 export const Z_BaseTypes = {
@@ -367,7 +369,8 @@ export class Tag<
   DataTypeString extends BaseTypeStringsWithArrays,
 > extends Node {
   //static tags: TagTypeMap = [];
-  static opcuaServer?: OPCUAServer;
+  opcuaServer: OPCUAServer;
+  tagFolder?: UAObject;
   nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
   dataType: DataTypeString;
   opcuaDataType: DataType;
@@ -391,12 +394,26 @@ export class Tag<
 
   error?: TagError; // if any errors exist with the tag
 
-  static initOpcuaServer(server: OPCUAServer) {
-    Tag.opcuaServer = server;
-  }
+  /* static initOpcuaServer(server: OPCUAServer) {
+    this.opcuaServer = server;
+    Tag.tagFolder = this.opcuaServer.engine.addressSpace
+      ?.getOwnNamespace()
+      .addObject({
+        organizedBy: this.opcuaServer
+  .engine.addressSpace?.rootFolder.objects,
+        browseName: "Tags",
+      });
+  }*/
 
-  constructor(options: TagOptionsInput<any>) {
+  constructor(
+    opcuaServer: OPCUAServer,
+    tagFolder: UAObject,
+    options: TagOptionsInput<any>
+  ) {
     super({ ...options, type: "Tag" });
+    this.opcuaServer = opcuaServer;
+    this.tagFolder = tagFolder;
+
     const opts = attempt(() => new TagOptions(options));
 
     if ("error" in opts) {
@@ -419,7 +436,7 @@ export class Tag<
 
     this.udtParent = opts.data.udtParent;
     //? parent
-    //: Tag.opcuaServer.engine.addressSpace?.rootFolder;
+    //: this.opcuaServer.engine.addressSpace?.rootFolder;
 
     this.parameters = opts.data.parameters;
 
@@ -464,34 +481,6 @@ export class Tag<
       return;
     }
 
-    // no inital value given so generate defaults
-    // TD WIP DataType
-    if (opts.data.initialValue == undefined) {
-      if (
-        this.dataType === "Double" ||
-        this.dataType === "Int32" ||
-        this.dataType === "Boolean"
-      ) {
-        if (this.isArray) {
-          this.value = Array<ResolveType<DataTypeString>>(
-            this.arrayLength
-          ).fill(0);
-        } else {
-          this.value = 0;
-        }
-      } else if (dataType === "String") {
-        if (this.isArray) {
-          this.value = Array<ResolveType<DataTypeString>>(
-            this.arrayLength
-          ).fill("");
-        } else {
-          this.value = "";
-        }
-      }
-    } else {
-      this.value = this.validate(opts.data.initialValue);
-    }
-
     // subscribe to value from driver if nodeId provided
     if (this.nodeId) {
       const opcuaVarible = attempt(() => this.subscribeToDriver());
@@ -507,13 +496,13 @@ export class Tag<
     }
 
     if (this.exposeOverOpcua) {
-      if (!Tag.opcuaServer?.engine) {
+      if (!this.opcuaServer?.engine) {
         throw new Error(
           `[Tag] no opcua server defined for tag ${this.path}  please call Tag.initOpcuaServer() and provide a server`
         );
       }
-      const namespace = Tag.opcuaServer.engine.addressSpace!.getOwnNamespace();
-      const parent = Tag.opcuaServer.engine.addressSpace?.rootFolder; // TD WIP
+      const namespace = this.opcuaServer.engine.addressSpace!.getOwnNamespace();
+      const parent = this.tagFolder;
       this.exposeOpcuaVarible = namespace.addVariable({
         componentOf: parent,
         browseName: this.name,
@@ -542,17 +531,43 @@ export class Tag<
           },
         },
       });
-
-      /*
-      this.variable.on("value_changed", (dataValue) => {
-        if (this.isArray) {
-          this.value = Array.from(dataValue.value.value);
-        } else {
-          this.value = dataValue.value.value;
-        }
-        this.triggerEmit();
-      });*/
     }
+
+    // no inital value given so generate defaults
+    // TD WIP DataType
+    let initalValue: any;
+
+    if (opts.data.initalValue) {
+      initalValue = this.validate(opts.data.initalValue);
+    } else {
+      if (
+        this.dataType === "Double" ||
+        this.dataType === "Int32" ||
+        this.dataType === "Boolean"
+      ) {
+        if (this.isArray) {
+          initalValue = Array<ResolveType<DataTypeString>>(
+            this.arrayLength
+          ).fill(0);
+        } else {
+          initalValue = 0;
+        }
+      } else if (dataType === "String") {
+        if (this.isArray) {
+          initalValue = Array<ResolveType<DataTypeString>>(
+            this.arrayLength
+          ).fill("");
+        } else {
+          initalValue = "";
+        }
+      } else {
+        initalValue = 0;
+      }
+    }
+
+    this.update(
+      this.driverOpcuaVarible?.readValue().value.value ?? initalValue
+    ); // update tag value when created if it is there, if not set to inital value
 
     // push instance to tags map referenced by path
     // TD WIP typescript
@@ -569,14 +584,15 @@ export class Tag<
       this.unsubscribeToDriver();
 
       if (this.exposeOpcuaVarible) {
-        this.exposeOpcuaVarible.removeAllListeners();
-        if (
-          Tag.opcuaServer?.engine.addressSpace &&
-          this.exposeOpcuaVarible.addressSpace
-        )
-          Tag.opcuaServer.engine.addressSpace?.deleteNode(
-            this.exposeOpcuaVarible
+        if (!this.opcuaServer.engine.addressSpace) {
+          throw new Error(
+            `[Tag] dispose() this.opcuaServer.engine.addressSpace undefined`
           );
+        }
+        deleteOpcuaVariable(
+          this.opcuaServer.engine.addressSpace,
+          this.exposeOpcuaVarible
+        );
       }
 
       this.children?.forEach((child) => {
@@ -593,9 +609,9 @@ export class Tag<
   }
 
   private valueChanged = (newValue: DataValue) => {
-    if (newValue.value.value == this.value) return;
-    console.debug(
-      `[Tag] Value changed for ${this.path} = ${newValue.value.value} ${newValue.statusCode.toString()}`
+    if (newValue.value.value == this.value) return; // return if the tag class called update() already
+    logger.trace(
+      `[Tag] valueChanged() for ${this.path} = ${newValue.value.value} ${newValue.statusCode.toString()}`
     );
     // TD WIP Datatype check
     /*if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
@@ -669,14 +685,15 @@ export class Tag<
     }
 
     this.driverOpcuaVarible?.removeListener("value_changed", this.valueChanged);
+    this.driverOpcuaVarible = undefined;
     const device = deviceManager.getDeviceFromPath(resolvedPath.deviceName);
-    device.tagUnsubscribed(this.nodeId);
+    device.tagUnsubscribed(this);
   }
 
   update(value: ResolveType<DataTypeString>) {
     if (this.writeable == false) {
       logger.warn(
-        `[Tag] update ${this.path} failed because writeable is set to false`
+        `[Tag] update() ${this.path} failed because writeable is set to false`
       );
       this.triggerEmit(); // emit old value back to client
       return;
@@ -685,11 +702,11 @@ export class Tag<
     const newValue = this.validate(value);
     if (this.isArray !== Array.isArray(newValue))
       throw new TypeError(
-        `[Tag] Array Type Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}`
+        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}`
       );
     if (this.isArray && this.arrayLength !== newValue?.length)
       throw new TypeError(
-        `[Tag] Array Size Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`
+        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`
       );
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
 
@@ -703,15 +720,11 @@ export class Tag<
         value: newValue,
       });
     }
-    // only trigger emit if this.valueChanged handler wont run and triggerEmit()
-    if (!this.driverOpcuaVarible) {
-      this.triggerEmit();
-    }
 
     if (this.exposeOverOpcua) {
       if (!this.exposeOpcuaVarible) {
         throw new Error(
-          `[Tag] path: ${this.path} cannot update OPCUA varible as it is not initalised`
+          `[Tag] update() path: ${this.path} cannot update exposeOpcuaVariable as it is not initalised`
         );
       }
       this.exposeOpcuaVarible?.setValueFromSource({
@@ -722,7 +735,10 @@ export class Tag<
       });
     }
 
-    logger.debug(`[Tag] update ${this.path} = ${value}`);
+    this.triggerEmit();
+    logger.trace(
+      `[Tag] update() ${this.path} = ${value} : ${this.driverOpcuaVarible?.readValue().statusCode.toString()}`
+    );
   }
 
   getEmitPayload(): EmitPayload {

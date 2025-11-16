@@ -96,11 +96,12 @@ let io: SocketIOServer<
   SocketIOServerToClientEvents
 >;
 
-const socketClientSubscriptions = new Map<string, Set<string>>();
+const socketClientSubscriptions = new Map<string, Map<string, number>>();
 
 export function emitToSubscribers(payload: EmitPayload) {
   for (const [socketId, subs] of socketClientSubscriptions.entries()) {
-    if (subs.has(payload.path)) {
+    const subCount = subs.get(payload.path);
+    if (subCount) {
       io.to(socketId).emit("tag:update", payload);
     }
   }
@@ -118,7 +119,7 @@ export function creatSocketIoServer(httpServer: Server) {
       `[Socket.io] socket.io client connected with id of ${socket.id}`
     );
 
-    socketClientSubscriptions.set(socket.id, new Set());
+    socketClientSubscriptions.set(socket.id, new Map());
 
     socket.on("tag:subscribe", (path, callback) => {
       const subs = socketClientSubscriptions.get(socket.id);
@@ -136,8 +137,12 @@ export function creatSocketIoServer(httpServer: Server) {
             );
           }
 
-          subs.add(path);
-          logger.info(`[Socket.io] client ${socket.id} subscribed to: ${path}`);
+          let currentSubsCount = subs.get(path)?.valueOf() ?? 0;
+          currentSubsCount++;
+          subs.set(path, currentSubsCount);
+          logger.info(
+            `[Socket.io] client ${socket.id} subscribed to: ${path} count: ${currentSubsCount}`
+          );
           return tagManager.getTag(path)?.getEmitPayload();
         }
       });
@@ -150,15 +155,19 @@ export function creatSocketIoServer(httpServer: Server) {
     });
 
     socket.on("tag:unsubscribe", (path) => {
-      logger.info(`[Socket.io] client ${socket.id} unsubscribed from: ${path}`);
-      const subs = socketClientSubscriptions.get(socket.id);
+      let subs = socketClientSubscriptions.get(socket.id);
       if (subs) {
-        subs.delete(path);
+        let currentSubsCount = subs.get(path)?.valueOf() ?? 1;
+        currentSubsCount--;
+        if (currentSubsCount <= 0) {
+          subs.delete(path);
+        }
+
+        subs.set(path, currentSubsCount);
         logger.info(
-          `[Socket.io] client ${socket.id} unsubscribed from: ${path}`
+          `[Socket.io] client ${socket.id} unsubscribed from: ${path} count: ${currentSubsCount}`
         );
       }
-      // TD WIP Maybe point triggerEmit() to void ?
     });
 
     socket.on("tag:write", ({ path, value }, callback) => {

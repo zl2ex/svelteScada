@@ -25,6 +25,7 @@
   onMount(() => {
     // on unmount
     return () => {
+      // TD WIP Causing subscribe issues on server
       tag.dispose();
     };
   });

@@ -1,3 +1,4 @@
+import type { OPCUAServer, UAObject, UAObjectsFolder } from "node-opcua";
 import { Node } from "../../../lib/client/tag/tagState.svelte";
 import { attempt } from "../../../lib/util/attempt";
 import { collections } from "../mongodb/collections";
@@ -67,11 +68,24 @@ export class TreeIndex {
 
 export class TagManager {
   private tree: TreeIndex;
+  opcuaServer?: OPCUAServer;
+  tagFolder?: UAObject;
 
   constructor() {
     this.tree = new TreeIndex();
+
     // add root folder
     this.tree.addNode(new TagFolder({ name: "/", parentPath: "", path: "/" }));
+  }
+
+  initOpcuaServer(opcuaServer: OPCUAServer) {
+    this.opcuaServer = opcuaServer;
+    this.tagFolder = this.opcuaServer.engine.addressSpace
+      ?.getOwnNamespace()
+      .addObject({
+        organizedBy: this.opcuaServer.engine.addressSpace?.rootFolder.objects,
+        browseName: "Tags",
+      });
   }
 
   async createFolder(
@@ -117,6 +131,11 @@ export class TagManager {
     opts: TagOptionsInput<any>,
     writeToDb: boolean = true
   ): Promise<Tag<any>> {
+    if (!this.opcuaServer || !this.tagFolder) {
+      throw new Error(
+        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`
+      );
+    }
     if (!opts.parentPath.endsWith("/")) {
       opts.parentPath = opts.parentPath + "/";
     }
@@ -145,7 +164,7 @@ export class TagManager {
       await collections.tags.insertOne(doc);
     }
 
-    const tag = new Tag(doc);
+    const tag = new Tag(this.opcuaServer, this.tagFolder, doc);
     this.tree.addNode(tag);
 
     logger.info(`[TagManager] added tag ${path}`);
@@ -189,10 +208,8 @@ export class TagManager {
   getAllTags(): Tag<any>[] {
     let tags: Tag<any>[] = [];
     let children = this.getChildren("/");
-    console.debug(children);
     while (children.length > 0) {
       const child = children.pop();
-      console.debug(child?.name);
       if (child instanceof Tag) {
         tags.push(child);
       }
@@ -233,8 +250,13 @@ export class TagManager {
     path: string,
     updates: TagOptionsInput<any>
   ): Promise<Tag<any> | null> {
+    if (!this.opcuaServer || !this.tagFolder) {
+      throw new Error(
+        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`
+      );
+    }
     this.tree.removeNode(path);
-    const updated = new Tag(updates);
+    const updated = new Tag(this.opcuaServer, this.tagFolder, updates);
     this.tree.addNode(updated);
 
     const result = await collections.tags.findOneAndUpdate(

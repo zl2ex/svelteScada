@@ -14,5 +14,6 @@ export const updateTag = form(TagOptions.zodSchema, async (data) => {
     error(500, result.error.message);
   }
 
+  result.data?.triggerEmit();
   return result.data?.getEmitPayload();
 });
