@@ -29,7 +29,7 @@ export async function createOPCUAServer(): Promise<OPCUAServer> {
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
-      console.debug("vite dispose");
+      logger.trace("vite dispose");
       server.shutdown();
     });
   }

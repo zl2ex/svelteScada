@@ -1,7 +1,7 @@
 <script lang="ts">
   import Hamburger from "$lib/client/componets/Hamburger.svelte";
   import { io } from "socket.io-client";
-  import { ClientTag } from "$lib/client/tag/tagState.svelte";
+  import { ClientTag } from "$lib/client/tag/clientTag.svelte.js";
   import { browser } from "$app/environment";
   import { setTheme, type Theme } from "$lib/client/theme.js";
 
@@ -24,7 +24,7 @@
 
   const socket = io();
   socket.on("connect", () => {
-    console.log("socketIO Connected");
+    console.log("[+layout.svelte] socketIO Connected");
   });
 
   ClientTag.initSocketIo(socket);

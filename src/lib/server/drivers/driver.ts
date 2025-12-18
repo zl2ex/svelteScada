@@ -42,14 +42,14 @@ export class DriverStatusError extends Error {
 
 export const Z_DeviceOptions = z.discriminatedUnion("driverName", [
   z.object({
-    name: z.string().nonempty(),
     driverName: z.literal("ModbusTCPDriver"),
+    name: z.string().nonempty(),
     options: Z_ModbusTCPDriverOptions,
     enabled: z.coerce.boolean<boolean>(),
   }),
   z.object({
-    name: z.string().nonempty(),
     driverName: z.literal("ModbusRTUDriver"),
+    name: z.string().nonempty(),
     options: Z_ModbusRTUDriverOptions,
     enabled: z.coerce.boolean<boolean>(),
   }),
@@ -197,8 +197,8 @@ export class DeviceManager {
     );
 
     for (const tag of tagManager.getAllTags()) {
-      if (tag.nodeId) {
-        const resolved = resolveOpcuaPath(tag.nodeId);
+      if (tag.resolvedOptions.nodeId) {
+        const resolved = resolveOpcuaPath(tag.resolvedOptions.nodeId);
         if (resolved.deviceName == newDevice.name) {
           tag.subscribeToDriver();
         }

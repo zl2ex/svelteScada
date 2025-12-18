@@ -1,82 +1,95 @@
 <script lang="ts">
-  import TreeNode from "$lib/client/componets/TreeNode.svelte";
   import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
-  import { ClientTag } from "$lib/client/tag/tagState.svelte";
-  import { updateTag } from "$lib/remote/tags.remote";
+  import {
+    ClientTag,
+    Node,
+    type ClientTagOptions,
+  } from "$lib/client/tag/clientTag.svelte";
+  import { deleteTag, updateTag } from "$lib/remote/tags.remote";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import Label from "$lib/client/componets/scada/Label.svelte";
-  import { onMount } from "svelte";
+  import type { TagOptionsInput } from "$lib/server/tag/tag";
 
-  let tagEditorPath = $state(page.url.searchParams.get("tagPath") ?? "/");
+  let tagEditorPath = $derived(page.url.searchParams.get("tagPath") ?? "/");
+  let parentPath = $derived(page.url.searchParams.get("parentPath") ?? "/");
 
-  async function getClientTag(tagPath: string) {
-    let tag = new ClientTag("any", { path: tagPath });
-    await tag.subscribe();
-    updateTag.fields.set({
-      name: tag.name,
-      dataType: tag.dataType,
-      path: tag.path,
-      nodeId: tag.nodeId,
-      parentPath: tag.parentPath,
-      parameters: tag.parameters,
-      initialValue: tag.value,
-      exposeOverOpcua: tag.exposeOverOpcua,
-      writeable: tag.writeable,
-    });
-    return tag;
-  }
+  let newTagOptions = $derived({
+    name: "newTag",
+    path: `${parentPath}"newTag"`,
+    parentPath: parentPath,
+  } satisfies ClientTagOptions);
 
-  let newTag = $derived(getClientTag(tagEditorPath));
+  let existingTag = $derived.by(async () => {
+    if (tagEditorPath == "newTag") {
+      //let tag = new ClientTag("any", tagOptions);
+      //updateTag.fields.set(tagOptions);
+      //updateTag.fields.parentPath.set(tagOptions.parentPath);
+      //updateTag.fields.path.set()
+      // return newTag;
+
+      let tag = new ClientTag("any", newTagOptions);
+      await tag.subscribe().catch((reason) => {
+        console.error(reason);
+      });
+      updateTag.fields.set(newTagOptions);
+      return tag;
+    } else {
+      let tag = new ClientTag("any", { path: tagEditorPath });
+      await tag.subscribe();
+      updateTag.fields.set(tag.options);
+      return tag;
+    }
+  });
+
+  /*
+  $effect.pre(() => {
+    if (tagEditorPath == "newTag") {
+      let tagOptions = {
+        name: "newTag",
+        dataType: "Double",
+        parentPath: parentPath,
+      } satisfies TagOptionsInput<any>;
+      updateTag.fields.set(tagOptions.options);
+      //updateTag.fields.parentPath.set(tagOptions.parentPath);
+    } else {
+      updateTag.fields.set(newTag.options);
+    }
+  });*/
 </script>
 
-<div id="page">
-  <div id="treeBrowser">
-    <!--<input type="text" bind:value={tagEditorPath} />-->
-    <svelte:boundary>
-      <TreeNode
-        path={""}
-        onclick={(path) => {
-          tagEditorPath = path;
-          goto(`?tagPath=${tagEditorPath}`);
-        }}
-      ></TreeNode>
+<div id="tagEditor">
+  <svelte:boundary>
+    <div class="container">
+      {#await existingTag then tag}
+        <form
+          {...updateTag.enhance(async ({ form, data, submit }) => {
+            await submit();
+            let node = new Node({ ...data, type: "Tag" });
+            goto(`?tagPath=${node.path}`);
+            /*
+            // force reload of newTag $derrived on submit
+            let oldTagEditorPath = tagEditorPath;
+            tagEditorPath = "";
+            tagEditorPath = oldTagEditorPath;*/
+          })}
+        >
+          <div class="form-item">
+            <label for="name">name</label>
+            <input {...updateTag.fields.name.as("text")} />
+            {#each updateTag.fields.name.issues() as issue}
+              <span class="issue">{issue.message}</span>
+            {/each}
+          </div>
+          <input {...updateTag.fields.path.as("hidden", tag.path)} />
+          <input
+            {...updateTag.fields.parentPath.as(
+              "hidden",
+              tag.options.parentPath
+            )}
+          />
 
-      {#snippet pending()}
-        <p>loading...</p>
-      {/snippet}
-      {#snippet failed(error, reset)}
-        <p>{error}</p>
-        <button onclick={reset} class="primary">oops! try again</button>
-      {/snippet}
-    </svelte:boundary>
-  </div>
-  <div id="tagEditor">
-    <svelte:boundary>
-      <div class="container">
-        {#await newTag then tag}
-          <form
-            {...updateTag.enhance(async ({ form, data, submit }) => {
-              await submit();
-              // force reload of newTag $derrived on submit
-              let oldTagEditorPath = tagEditorPath;
-              tagEditorPath = "";
-              tagEditorPath = oldTagEditorPath;
-            })}
-          >
-            <div class="form-item">
-              <label for="name">name</label>
-              <input {...updateTag.fields.name.as("text")} />
-              {#each updateTag.fields.name.issues() as issue}
-                <span class="issue">{issue.message}</span>
-              {/each}
-            </div>
-            <input {...updateTag.fields.path.as("hidden", tag.path)} />
-            <input
-              {...updateTag.fields.parentPath.as("hidden", tag.parentPath)}
-            />
-
-            <!-- <datalist id="dataTypeAutocomplete">
+          <!-- <datalist id="dataTypeAutocomplete">
             {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
               {#if options.error}
               <p>Error {options.error.message}</p>
@@ -90,102 +103,90 @@
           <label for="dataType">dataType</label>
           <input {...updateTag.fields.dataType.as("text")} /> -->
 
-            <div class="form-item">
-              <label for="dataType">data type</label>
-              <select
-                {...updateTag.fields.dataType.as("select")}
-                autocomplete="on"
-              >
-                {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
-                  {#if options.error}
-                    <span class="issue">Error {options.error.message}</span>
-                  {:else}
-                    {#each options.data as option}
-                      <option value={option}>{option}</option>
-                    {/each}
-                  {/if}
-                {/await}
-              </select>
-              {#each updateTag.fields.dataType.issues() as issue}
-                <span class="issue">{issue.message}</span>
-              {/each}
-            </div>
-
-            <div class="form-item">
-              <label for="nodeId">nodeId</label>
-              <input {...updateTag.fields.nodeId.as("text")} />
-              {#each updateTag.fields.nodeId.issues() as issue}
-                <span class="issue">{issue.message}</span>
-              {/each}
-            </div>
-
-            <div class="form-item-row">
-              <label for="exposeOverOpcua">exposeOverOpcua</label>
-              <input {...updateTag.fields.exposeOverOpcua.as("checkbox")} />
-              {#each updateTag.fields.exposeOverOpcua.issues() as issue}
-                <span class="issue">{issue.message}</span>
-              {/each}
-            </div>
-
-            <div class="form-item-row">
-              <label for="writeable">writeable</label>
-              <input {...updateTag.fields.writeable.as("checkbox")} />
-              {#each updateTag.fields.writeable.issues() as issue}
-                <span class="issue">{issue.message}</span>
-              {/each}
-            </div>
-
-            <div class="form-item-row">
-              <button class="primary">save</button>
-            </div>
-
-            <div class="form-item">
-              {#each updateTag.fields.issues() as issue}
-                <span class="issue">{issue.message}</span>
-              {/each}
-              {#if tag.error}
-                <span class="issue">{tag.error.message}</span>
-                <span class="issue">{tag.error.feildName}</span>
-              {:else if tag.errorMessage}
-                <span class="issue">{tag.errorMessage}</span>
-              {/if}
-            </div>
-          </form>
+          <div class="form-item">
+            <label for="dataType">data type</label>
+            <select
+              {...updateTag.fields.dataType.as("select")}
+              autocomplete="on"
+            >
+              {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
+                {#if options.error}
+                  <span class="issue">Error {options.error.message}</span>
+                {:else}
+                  {#each options.data as option}
+                    <option value={option}>{option}</option>
+                  {/each}
+                {/if}
+              {/await}
+            </select>
+            {#each updateTag.fields.dataType.issues() as issue}
+              <span class="issue">{issue.message}</span>
+            {/each}
+          </div>
 
           <div class="form-item">
-            <Label path={tag.path} label="value"></Label>
+            <label for="nodeId">nodeId</label>
+            <input {...updateTag.fields.nodeId.as("text")} />
+            {#each updateTag.fields.nodeId.issues() as issue}
+              <span class="issue">{issue.message}</span>
+            {/each}
           </div>
-        {/await}
-      </div>
 
-      {#snippet pending()}
-        <p>loading...</p>
-      {/snippet}
-      {#snippet failed(error, reset)}
-        <p>{error}</p>
-        <button onclick={reset} class="primary">oops! try again</button>
-      {/snippet}
-    </svelte:boundary>
-  </div>
+          <div class="form-item-row">
+            <label for="exposeOverOpcua">exposeOverOpcua</label>
+            <input {...updateTag.fields.exposeOverOpcua.as("checkbox")} />
+            {#each updateTag.fields.exposeOverOpcua.issues() as issue}
+              <span class="issue">{issue.message}</span>
+            {/each}
+          </div>
+
+          <div class="form-item-row">
+            <label for="writeable">writeable</label>
+            <input {...updateTag.fields.writeable.as("checkbox")} />
+            {#each updateTag.fields.writeable.issues() as issue}
+              <span class="issue">{issue.message}</span>
+            {/each}
+          </div>
+
+          <div class="form-item-row">
+            <button type="submit" class="primary">save</button>
+            <button
+              type="button"
+              class="secondary"
+              onclick={async () => {
+                await deleteTag(tag.path);
+                goto("/editor/tags");
+              }}>delete</button
+            >
+          </div>
+
+          <div class="form-item">
+            {#each updateTag.fields.issues() as issue}
+              <span class="issue">{issue.message}</span>
+            {/each}
+            {#if tag.errorMessage}
+              <span class="issue">{tag.errorMessage}</span>
+            {/if}
+          </div>
+        </form>
+
+        <div class="form-item">
+          <Label path={tagEditorPath} label="value"></Label>
+        </div>
+      {/await}
+    </div>
+
+    {#snippet pending()}
+      <p>loading...</p>
+    {/snippet}
+    {#snippet failed(error, reset)}
+      <p>{error}</p>
+      <button onclick={reset} class="primary">oops! try again</button>
+    {/snippet}
+  </svelte:boundary>
 </div>
 
 <style>
-  #page {
-    display: flex;
-  }
-
-  #treeBrowser {
-    flex-shrink: 0;
-    height: var(
-      --app-main-content-height
-    ); /*space for the header  has to have a height for overflow-y: auto*/
-    overflow-y: auto;
-    overflow-x: hidden;
-    background-color: var(--app-color-neutral-400);
-    padding-left: 0.5rem;
-    padding-right: 0.5rem;
-  }
-
   #tagEditor {
     flex-grow: 1;
     height: var(

@@ -1,26 +1,36 @@
 <script lang="ts">
+  import Label from "./Label.svelte"; // self
   import type { TagPaths } from "$lib/server/tag/tag";
-  import { ClientTag } from "$lib/client/tag/tagState.svelte";
+  import { ClientTag } from "$lib/client/tag/clientTag.svelte";
   import type { MouseEventHandler } from "svelte/elements";
   import { onMount } from "svelte";
 
-  type props = {
+  type propsPath = {
     path: TagPaths;
+    clientTag?: ClientTag<any>;
     label?: string;
     style?: string;
     onclick?: MouseEventHandler<any>;
   };
 
-  let { path, label, style, onclick }: props = $props();
+  type propsClientTag = {
+    path?: TagPaths;
+    clientTag: ClientTag<any>;
+    label?: string;
+    style?: string;
+    onclick?: MouseEventHandler<any>;
+  };
 
-  // setup client tag of expected type Double
-  let tag = new ClientTag("any", { path });
+  type props = propsPath | propsClientTag;
+
+  let { path, clientTag, label, style, onclick }: props = $props();
+
+  // either provided client tag or create a new instance with the path
+  let tag = clientTag ?? new ClientTag("any", { path });
+  //subscribe to updates from the server over socket.io
+  tag.subscribe();
+
   let isFocus = $state(false);
-
-  // for every instance of component subscribe to tag updates from the server
-  $effect.root(() => {
-    tag.subscribe();
-  });
 
   onMount(() => {
     // on unmount
@@ -36,16 +46,19 @@
     {style}
     {onclick}
     type="button"
-    class={tag.error ? "error tooltip" : "tooltip"}
+    class={tag.errorMessage ? "error tooltip" : "tooltip"}
   >
-    <label for="input">{label ? label : tag.name}</label>
+    <label for="input">{label ? label : tag.options.name}</label>
     {#if typeof tag.value === "boolean"}
       <input
         type="checkbox"
-        checked={tag.value}
+        name="input"
+        checked={isFocus ? undefined : tag.value}
         oninput={(ev) => {
-          tag.write(Boolean(ev.target?.checked));
+          console.debug(ev.currentTarget.checked);
+          tag.write(Boolean(ev.currentTarget.checked));
         }}
+        disabled={!tag.options.writeable}
       />
     {:else if typeof tag.value === "number"}
       <input
@@ -76,56 +89,51 @@
         onfocusin={() => {
           isFocus = true;
         }}
-        disabled={!tag.writeable}
+        disabled={!tag.options.writeable}
       />
     {:else if typeof tag.value === "string"}
       <input
         type="text"
-        value={tag.value}
-        disabled={!tag.writeable}
-        oninput={(ev) => {
-          tag.write(String(ev.target?.value));
+        name="input"
+        value={isFocus ? undefined : tag.value}
+        onkeyup={(ev) => {
+          if (ev.currentTarget) {
+            if (ev.key === "Enter") {
+              tag.write(String(ev.currentTarget.value));
+              // Create a new FocusEvent
+              ev.currentTarget.blur();
+            }
+            if (ev.key === "Escape") {
+              ev.currentTarget.value = tag.value;
+              ev.currentTarget.blur();
+            }
+          }
         }}
+        onfocusout={(ev) => {
+          if (ev.currentTarget.value) {
+            tag.write(String(ev.currentTarget?.value));
+          } else {
+            ev.currentTarget.value = tag.value;
+          }
+          isFocus = false;
+        }}
+        onfocusin={() => {
+          isFocus = true;
+        }}
+        disabled={!tag.options.writeable}
       />
-    {:else if typeof tag.value === "object" && tag.value}
-      {#each Object.entries(tag.value) as [key, value]}
-        {#if typeof tag.value === "boolean"}
-          <input
-            type="checkbox"
-            checked={tag.value}
-            disabled={!tag.writeable}
-            oninput={(ev) => {
-              tag.write(Boolean(ev.target?.checked));
-            }}
-          />
-        {:else if typeof tag.value === "number"}
-          <input
-            type="number"
-            value={tag.value}
-            disabled={!tag.writeable}
-            oninput={(ev) => {
-              tag.write(Number(ev.target?.value));
-            }}
-          />
-        {:else if typeof tag.value === "string"}
-          <input
-            type="text"
-            value={tag.value}
-            disabled={!tag.writeable}
-            oninput={(ev) => {
-              tag.write(String(ev.target?.value));
-            }}
-          />
-        {/if}
+    {:else if typeof tag.value === "object" && tag.value && tag.children}
+      {#each tag.children.values() as childTag}
+        <Label clientTag={childTag}></Label>
       {/each}
     {:else}
       unsupported type {typeof tag.value}
     {/if}
-    {#if tag.valueStatus !== "Good"}
-      <span class="issue">{tag.valueStatus}</span>
+    {#if tag.statusCodeString !== "Good"}
+      <span class="issue">{tag.statusCodeString}</span>
     {/if}
-    {#if tag.error?.message}
-      <span class="issue tooltiptext">{tag.error.message}</span>
+    {#if tag.errorMessage}
+      <span class="issue tooltiptext">{tag.errorMessage}</span>
     {/if}
   </button>
 

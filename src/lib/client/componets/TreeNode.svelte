@@ -2,46 +2,64 @@
   import TreeNode from "./TreeNode.svelte";
   import { socketIoClientHandler } from "../socket.io/socket.io.svelte";
   import Label from "./scada/Label.svelte";
+  import { goto } from "$app/navigation";
+  import { getChildrenAsNode } from "$lib/remote/tags.remote";
 
   type props = {
     path: string;
-    onclick?: (path: string) => void;
   };
 
-  let { path, onclick }: props = $props();
-
-  // let tag = new ClientTag("any", { path });
-
-  // $effect.root(() => {
-  //   tag.subscribe();
-  //   return () => {
-  //     tag.unsubscribe(); // unsibscribe when unmounted
-  //   };
-  // });
+  let { path }: props = $props();
 </script>
 
 <svelte:boundary>
-  {#await socketIoClientHandler.rpc( { name: "getChildrenAsNode()", parameters: { path: path } } ) then response}
-    {#if response.error}
+  <!--{#await socketIoClientHandler.rpc( { name: "getChildrenAsNode()", parameters: { path: path } } ) then response}-->
+  {#await getChildrenAsNode(path) then response}
+    <!--{#if response.error}
       <p>{response.error.message}</p>
-    {:else}
-      {#each response.data as node}
-        {#if node.type == "Folder"}
-          <details open>
-            <summary>{node.name}</summary>
-            <div class="indent">
-              <TreeNode path={node.path} {onclick}></TreeNode>
-            </div>
-          </details>
-        {:else if node.type == "Tag"}
-          <summary
-            tabindex="0"
-            onclick={() => {
-              if (onclick) {
-                onclick(node.path);
-              }
-            }}
-            ><div class="tag-item-container">
+    {:else}-->
+    {#each response as node}
+      {#if node.type == "Folder"}
+        <details open>
+          <summary>{node.name}</summary>
+          <div class="indent">
+            <button
+              onclick={() => goto(`?tagPath=newTag&parentPath=${node.path}`)}
+              >+ new Tag</button
+            >
+            <TreeNode path={node.path}></TreeNode>
+          </div>
+        </details>
+      {:else if node.type == "Tag"}
+        <summary tabindex="0" onclick={() => goto(`?tagPath=${node.path}`)}>
+          <div class="tag-item-container">
+            <svg viewBox="0 0 100 100">
+              <g
+                stroke-width="4px"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                fill="none"
+              >
+                <line x1="10" y1="20" x2="70" y2="20"></line>
+                <line x1="10" y1="80" x2="70" y2="80"></line>
+                <line x1="70" y1="20" x2="90" y2="40"></line>
+                <line x1="70" y1="80" x2="90" y2="60"></line>
+
+                <line x1="10" y1="20" x2="10" y2="80"></line>
+                <line x1="90" y1="40" x2="90" y2="60"></line>
+
+                <circle r="5" cx="70" cy="50"></circle>
+              </g>
+            </svg>
+            <span>{node.name}</span>
+            <Label path={node.path} onclick={(ev) => ev.stopPropagation()}
+            ></Label>
+          </div>
+        </summary>
+      {:else if node.type == "UdtTag"}
+        <details open>
+          <summary tabindex="0">
+            <div class="tag-item-container">
               <svg viewBox="0 0 100 100">
                 <g
                   stroke-width="4px"
@@ -55,19 +73,26 @@
                   <line x1="70" y1="80" x2="90" y2="60"></line>
 
                   <line x1="10" y1="20" x2="10" y2="80"></line>
+                  <line x1="20" y1="20" x2="20" y2="80"></line>
+                  <line x1="30" y1="20" x2="30" y2="80"></line>
+                  <line x1="40" y1="20" x2="40" y2="80"></line>
+
                   <line x1="90" y1="40" x2="90" y2="60"></line>
 
                   <circle r="5" cx="70" cy="50"></circle>
                 </g>
               </svg>
-              <span>{node.name}</span>
-              <Label path={node.path} onclick={(ev) => ev.stopPropagation()}
-              ></Label>
+              <span>
+                {node.name}
+              </span>
             </div>
           </summary>
-        {/if}
-      {/each}
-    {/if}
+          <div class="indent">
+            <TreeNode path={node.path}></TreeNode>
+          </div>
+        </details>
+      {/if}
+    {/each}
   {:catch error}
     <p>async catch error {error}</p>
   {/await}
@@ -88,6 +113,7 @@
   }
 
   details {
+    position: relative;
     cursor: pointer;
   }
 
@@ -100,11 +126,10 @@
     display: flex;
     align-items: center;
     gap: 0.5ch;
-
-    svg {
-      stroke: var(--app-text-color);
-      fill: transparent;
-      width: 1rem;
-    }
+  }
+  svg {
+    stroke: var(--app-text-color);
+    fill: transparent;
+    width: 1.5rem;
   }
 </style>

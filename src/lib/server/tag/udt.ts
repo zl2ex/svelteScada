@@ -1,5 +1,5 @@
-import { DataType } from "node-opcua";
-import { Tag, TagOptions, type TagOptionsInput } from "./tag";
+import { DataType, OPCUAServer, type UAObject } from "node-opcua";
+import { Tag, TagOptionsResolved, type TagOptionsInput } from "./tag";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -207,67 +207,52 @@ type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
 
 export type UdtDefinitionOptions = {
   name: string;
-  feilds: TagOptions<any>[];
+  feilds: TagOptionsInput<any>[];
   initalValue: any;
-  // namespace: Namespace;
-  // parent: UAObject;
   parameters?: UdtParams;
 };
 
 export class UdtDefinition {
-  static udts: Record<string, UdtDefinition> = {};
   name: string;
   feilds: TagOptionsInput<any>[];
   initalValue: any;
-  // namespace: Namespace;
-  // parent: UAObject;
   parameters?: UdtParams;
 
   constructor(opts: UdtDefinitionOptions) {
     this.name = opts.name;
-    // this.namespace = opts.namespace;
-    // this.parent = opts.parent;
     this.parameters = opts.parameters;
     this.feilds = opts.feilds;
     this.initalValue = opts.initalValue;
-
-    UdtDefinition.udts[this.name] = this;
   }
 
   buildTagFeilds(
-    udtName: string,
-    instanceParameters?: UdtParams
-  ): Record<string, Tag<any>>[] {
-    if (!UdtDefinition.udts[udtName]) {
-      throw new Error(
-        `[Udt] cannont build feilds because ${udtName} does not exist`
-      );
-    }
-
+    tagOptions: TagOptionsResolved,
+    parentTagOptions: TagOptionsResolved
+  ) {
     // instance parameters overide udt parameters
-    let parameters: UdtParams = {};
-    if (this.parameters) {
+
+    let parameters = this.parameters ?? {};
+    if (this.parameters && parentTagOptions?.parameters) {
       for (const [key, udtDefParameter] of Object.entries(this.parameters)) {
-        if (instanceParameters[key]) {
-          parameters[key] = instanceParameters[key];
-        } else {
-          parameters[key] = udtDefParameter;
+        if (parentTagOptions?.parameters[key]) {
+          parameters[key] = parentTagOptions?.parameters[key];
         }
       }
     }
 
-    const feilds: Record<string, Tag<any>>[] = [];
-    for (const tagOptions of UdtDefinition.udts[udtName].feilds) {
-      const resolvedTagOptions = new TagOptions(tagOptions);
-      /*
-      const resolvedTagOptions = resolveTagOptions(
-        parameters,
-        tagOptions,
-        Z_TagOptions
-      );
-*/
-      feilds[resolvedTagOptions.name] = new Tag(resolvedTagOptions); // TD WIP
+    const feilds = new Map<string, TagOptionsInput<any>>();
+    for (let options of this.feilds) {
+      options.udtParent = this.name;
+      options.parameters = parameters;
+      options.exposeOverOpcua =
+        options.exposeOverOpcua ?? parentTagOptions.exposeOverOpcua;
+      options.initalValue = options.initalValue ?? parentTagOptions.initalValue;
+      options.nodeId = options.nodeId ?? parentTagOptions.nodeId;
+      options.writeable = options.writeable ?? parentTagOptions.writeable;
+
+      feilds.set(options.name, options);
     }
+
     return feilds;
   }
 }
@@ -413,12 +398,23 @@ type UdtParamTypes = UdtParam["type"];
 
 //export type UdtParams = Record<string, UdtParam>;
 
-export type UdtParams = Record<string, number | boolean | string>;
+//export type UdtParams = Record<string, number | boolean | string>;
+
+export const Z_UdtParams = z.record(
+  z.string(),
+  z.union([
+    z.object({ type: z.literal("string"), default: z.string() }),
+    z.object({ type: z.literal("number"), default: z.number() }),
+    z.object({ type: z.literal("boolean"), default: z.boolean() }),
+  ])
+);
+
+export type UdtParams = z.input<typeof Z_UdtParams>;
 
 export type UdtOptions = {
   name: string;
   props: UdtParams;
-  children: TagOptions<any>[]; // TD WIP
+  children: TagOptionsInput<any>[]; // TD WIP
 };
 /*
 export interface TagInstanceDoc {

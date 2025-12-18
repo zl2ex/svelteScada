@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ClientTag } from "$lib/client/tag/tagState.svelte";
+  import type { ClientTag } from "$lib/client/tag/clientTag.svelte";
 
   type props = {
     tag: ClientTag<any>;
@@ -38,7 +38,7 @@
 </script>
 
 <div>
-  <h3>{tag.name}</h3>
+  <h3>{tag.options.name}</h3>
   <table>
     <thead>
       <tr>

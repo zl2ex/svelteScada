@@ -6,9 +6,9 @@ import {
   createOPCUAServer,
   startOPCUAClient,
 } from "../lib/server/drivers/opcua/opcuaServer";
-import { logger } from "../lib/server/pino/logger";
 import { DeviceManager } from "../lib/server/drivers/driver";
 import { TagManager } from "../lib/server/tag/tagManager";
+import { UdtManager } from "../lib/server/tag/udtManager";
 
 const app = express();
 const httpServer = createServer(app);
@@ -20,6 +20,11 @@ app.use(handler);
 export const deviceManager: DeviceManager =
   globalThis.__deviceManager ?? new DeviceManager();
 if (!globalThis.__deviceManager) globalThis.__deviceManager = deviceManager;
+
+// global this to work with sveltekit in dev mode
+export const udtManager: UdtManager =
+  globalThis.__udtManager ?? new UdtManager();
+if (!globalThis.__udtManager) globalThis.__udtManager = udtManager;
 
 // global this to work with sveltekit in dev mode
 export const tagManager: TagManager =
@@ -34,8 +39,8 @@ export async function main(httpServer: Server) {
   tagManager.initOpcuaServer(opcuaServer);
 
   await deviceManager.loadAllFromDb();
-
-  await tagManager.loadFromDb();
+  await udtManager.loadAllFromDb();
+  await tagManager.loadAllFromDb();
 
   startOPCUAClient();
 }

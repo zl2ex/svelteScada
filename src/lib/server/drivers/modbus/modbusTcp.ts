@@ -10,7 +10,7 @@ import {
 
 import Modbus, { ModbusTCPClient } from "jsmodbus";
 import net from "net";
-import { array, z } from "zod";
+import { z } from "zod";
 import {
   resolveOpcuaPath,
   Tag,
@@ -20,7 +20,6 @@ import {
 import { logger } from "../../pino/logger";
 import { attempt } from "../../../../lib/util/attempt";
 import { DriverStatusError } from "../driver";
-import { ErrorMessages } from "jsmodbus/dist/codes";
 import { deleteOpcuaVariable } from "../opcua/opcuaServer";
 
 type ModbusRegisterType = "hr" | "ir" | "co" | "di";
@@ -40,7 +39,7 @@ export interface TagSubscription extends ParsedModbusPath {
   // path: string;
   opcuaDataType: DataType;
   driverOpcuaVarible: UAVariable;
-  value: number;
+  value: number | boolean | string;
   tags: Map<string, Tag<any>>;
 }
 
@@ -144,7 +143,7 @@ export class ModbusTCPDriver {
     //this.socket = undefined;
     for (const sub of Object.values(this.subscriptions)) {
       sub.tags.forEach((tag) => {
-        if (tag.nodeId) tag.unsubscribeToDriver();
+        if (tag.resolvedOptions.nodeId) tag.unsubscribeToDriver();
       });
     }
     //this.tags = undefined;
@@ -202,8 +201,8 @@ export class ModbusTCPDriver {
   disconnect() {
     this.connected = false;
     this.stopPolling();
-    this.socket.destroy();
     this.setAllOpcuaVaribleStatus(StatusCodes.BadConditionDisabled);
+    this.socket.destroy();
     logger.info(
       `[ModbusTCPDriver] Disconnected from Modbus device at ${this.ip}:${this.port}`
     );
@@ -214,12 +213,12 @@ export class ModbusTCPDriver {
   }
 
   subscribeByTag(tag: Tag<any>, parent?: NodeIdLike): UAVariable | undefined {
-    if (!tag.nodeId) {
+    if (!tag.resolvedOptions.nodeId) {
       throw new Error(
         `[ModbusTCPDriver] subscribeByTag() no node id provided for tag ${tag.path}`
       );
     }
-    const nodeId = tag.nodeId;
+    const nodeId = tag.resolvedOptions.nodeId;
     const resolvedPath = resolveOpcuaPath(nodeId);
 
     if (!resolvedPath.tagPath) {
@@ -246,8 +245,14 @@ export class ModbusTCPDriver {
     if (monitoredCount >= 1) {
       this.subscriptions[nodeId].tags.set(tag.path, tag);
       logger.trace(
-        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.nodeId} returning varible already set up to tag ${tag.path}`
+        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.resolvedOptions.nodeId} returning varible already set up to tag ${tag.path}`
       );
+
+      if (this.subscriptions[nodeId].opcuaDataType !== tag.opcuaDataType) {
+        throw new Error(
+          `[ModbusTcpDriver] subscribeByTag() varible tag ${tag.path} dataType ${this.subscriptions[nodeId].dataType} is not equal to ${tag.options.dataType}`
+        );
+      }
       return this.subscriptions[nodeId].driverOpcuaVarible;
     }
 
@@ -259,24 +264,21 @@ export class ModbusTCPDriver {
       );
     }
 
-    // if(this.namespace.findNode(nodeId)) return existingOpcuaVarible;
+    const dataType = Object.entries(DataType).find(([key, val]) => {
+      return key == parsed.dataType;
+    })?.[1] as unknown as DataType;
 
-    const opcuaDataType = parsed.dataType as unknown as DataType;
-
-    const node = this.namespace.findNode(nodeId);
-
-    if (node) {
-      logger.warn(node.allReferences(), "Exists, and references are:");
-      node.allReferences().forEach((ref) => {
-        node.removeReference(ref);
-      });
+    if (dataType !== tag.opcuaDataType) {
+      throw new Error(
+        `[ModbusTCPDriver] subscribeByTag() dataType does not match that of tag that it refereneces`
+      );
     }
 
     const driverOpcuaVarible = this.namespace.addVariable({
       componentOf: opcuaParent,
       nodeId: nodeId,
       browseName: nodeId,
-      dataType: opcuaDataType,
+      dataType: dataType,
     });
 
     // write to modbusDevice when opcuaVarible is changed
@@ -310,18 +312,20 @@ export class ModbusTCPDriver {
 
     const subscription: TagSubscription = {
       dataType: parsed.dataType,
-      opcuaDataType: tag.opcuaDataType,
+      opcuaDataType: dataType,
       driverOpcuaVarible: driverOpcuaVarible,
       address: parsed.address,
       registerType: parsed.registerType,
       registerLength: parsed.registerLength,
-      endian: this.endian,
-      swapWords: this.swapWords,
+      endian: parsed.endian,
+      swapWords: parsed.swapWords,
       arrayLength: parsed.arrayLength,
       bit: parsed.bit,
       tags: new Map().set(tag.path, tag),
-      value: 0,
+      value: typeHandlers[parsed.dataType].default,
     };
+
+    //this.setOpcuaVaribleStatus(subscription, StatusCodes.BadConditionDisabled);
 
     this.subscriptions[nodeId] = subscription;
     logger.debug(
@@ -331,16 +335,16 @@ export class ModbusTCPDriver {
   }
 
   unsubscribeByTag(tag: Tag<any>) {
-    if (!tag.nodeId) return;
+    if (!tag.resolvedOptions.nodeId) return;
 
-    this.subscriptions[tag.nodeId].tags.delete(tag.path);
-    if (this.subscriptions[tag.nodeId].tags.size > 0) {
+    this.subscriptions[tag.resolvedOptions.nodeId].tags.delete(tag.path);
+    if (this.subscriptions[tag.resolvedOptions.nodeId].tags.size > 0) {
       logger.debug(
-        `[ModbusTCPDriver] unsubscribeByTag() ${tag.nodeId} monitored count ${this.subscriptions[tag.nodeId].tags.size} not removing varible node`
+        `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId} monitored count ${this.subscriptions[tag.resolvedOptions.nodeId].tags.size} not removing varible node`
       );
       return; // dont remove if there are more insances looking at the varible
     }
-    const resolvedPath = resolveOpcuaPath(tag.nodeId);
+    const resolvedPath = resolveOpcuaPath(tag.resolvedOptions.nodeId);
 
     if (!resolvedPath.tagPath) {
       throw new Error(
@@ -356,17 +360,19 @@ export class ModbusTCPDriver {
 
     if (!this.opcuaServer.engine.addressSpace) {
       throw new Error(
-        `[ModbusTCPDriver] unsubscribeByTag() pcuaServer.engine.addressSpace not defined, cannot remove opcua varible at ${tag.nodeId}`
+        `[ModbusTCPDriver] unsubscribeByTag() pcuaServer.engine.addressSpace not defined, cannot remove opcua varible at ${tag.resolvedOptions.nodeId}`
       );
     }
 
     deleteOpcuaVariable(
       this.opcuaServer.engine.addressSpace,
-      this.subscriptions[tag.nodeId].driverOpcuaVarible
+      this.subscriptions[tag.resolvedOptions.nodeId].driverOpcuaVarible
     );
 
-    delete this.subscriptions[tag.nodeId]; // remove the subscription entirely
-    logger.debug(`[ModbusTCPDriver] unsubscribeByTag() ${tag.nodeId}`);
+    delete this.subscriptions[tag.resolvedOptions.nodeId]; // remove the subscription entirely
+    logger.debug(
+      `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId}`
+    );
   }
 
   private startPolling() {
@@ -381,7 +387,6 @@ export class ModbusTCPDriver {
   }
 
   private stopPolling() {
-    this.setAllOpcuaVaribleStatus(StatusCodes.BadConditionDisabled);
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
@@ -422,6 +427,7 @@ export class ModbusTCPDriver {
           logger.error(
             `[ModbusTCPDriver] poll() batch address out of range  start: ${batch.start}  end: ${batch.end}`
           );
+          // TD WIP Send this error to client
           continue;
         }
         let response;
@@ -467,9 +473,12 @@ export class ModbusTCPDriver {
 
               const offset = sub.address - batch.start;
               let value = decode(sub, buffer, offset);
-              const oldValue = tag.driverOpcuaVarible?.readValue().value.value;
+              const oldValue = tag.driverOpcuaVarible?.readValue();
 
-              if (oldValue !== value) {
+              if (
+                oldValue.value.value !== value ||
+                oldValue.statusCode.isBad()
+              ) {
                 logger.trace(
                   `[ModbusTCPDriver] poll() updated varible ${tag.path} = ${value}`
                 );
@@ -593,7 +602,7 @@ export class ModbusTCPDriver {
       const flagList = m.groups.flags.split("|").map((f) => f.trim());
       if (flagList.includes("le")) endian = "LittleEndian";
       if (flagList.includes("be")) endian = "BigEndian";
-      if (flagList.includes("sw")) swapWords = true;
+      if (flagList.includes("sw")) swapWords = !this.swapWords;
     }
 
     return {
@@ -752,18 +761,21 @@ export const typeHandlers = {
       }
       view.setUint16(offset, data);
     },
+    default: false,
   },
   SByte: {
     size: 1,
     read: ({ view, offset }: ReadWriteOptions) => view.getInt8(offset),
     write: ({ view, offset, value }: ReadWriteOptions & { value: number }) =>
       view.setInt8(offset, value),
+    default: 0,
   },
   Byte: {
     size: 1,
     read: ({ view, offset }: ReadWriteOptions) => view.getUint8(offset),
     write: ({ view, offset, value }: ReadWriteOptions & { value: number }) =>
       view.setUint8(offset, value),
+    default: 0,
   },
   Int16: {
     size: 2,
@@ -776,6 +788,7 @@ export const typeHandlers = {
       littleEndian = false,
     }: ReadWriteOptions & { value: number }) =>
       view.setInt16(offset, value, littleEndian),
+    default: 0,
   },
   UInt16: {
     size: 2,
@@ -788,6 +801,7 @@ export const typeHandlers = {
       littleEndian = false,
     }: ReadWriteOptions & { value: number }) =>
       view.setUint16(offset, value, littleEndian),
+    default: 0,
   },
   Int32: {
     size: 4,
@@ -800,6 +814,7 @@ export const typeHandlers = {
       littleEndian = false,
     }: ReadWriteOptions & { value: number }) =>
       view.setInt32(offset, value, littleEndian),
+    default: 0,
   },
   UInt32: {
     size: 4,
@@ -812,6 +827,7 @@ export const typeHandlers = {
       littleEndian = false,
     }: ReadWriteOptions & { value: number }) =>
       view.setUint32(offset, value, littleEndian),
+    default: 0,
   },
   Float: {
     size: 4,
@@ -824,6 +840,7 @@ export const typeHandlers = {
       littleEndian = false,
     }: ReadWriteOptions & { value: number }) =>
       view.setFloat32(offset, value, littleEndian),
+    default: 0,
   },
   Double: {
     size: 8,
@@ -836,6 +853,7 @@ export const typeHandlers = {
       littleEndian = false,
     }: ReadWriteOptions & { value: number }) =>
       view.setFloat64(offset, value, littleEndian),
+    default: 0,
   },
   String: {
     size: undefined as number | undefined, // variable length
@@ -847,6 +865,7 @@ export const typeHandlers = {
       const bytes = new TextEncoder().encode(value);
       new Uint8Array(view.buffer, offset, bytes.length).set(bytes);
     },
+    default: "",
   },
 } as const;
 
@@ -902,7 +921,7 @@ function encode(parsed: ParsedModbusPath, value: any): Buffer {
   );
 
   const littleEndian = parsed.endian === "LittleEndian";
-  handler.write({ view, offset: 0, value, littleEndian });
+  handler.write({ view, offset: 0, value, littleEndian, bit: parsed.bit });
 
   if (parsed.swapWords && size > 2) {
     for (let i = 0; i < buffer.length; i += 2) {

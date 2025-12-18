@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ClientTag } from "../tag/tagState.svelte";
+  import { ClientTag } from "../tag/clientTag.svelte";
 
   type props = {
     path: string;
@@ -20,7 +20,7 @@
   {#await getTagData()}
     <p>Loading data...</p>
   {:then tag}
-    <p>Name: {tag.name}</p>
+    <p>Name: {tag.options.name}</p>
     <p>Value: {tag.value}</p>
   {:catch error}
     <p>Error: {error.message}</p>

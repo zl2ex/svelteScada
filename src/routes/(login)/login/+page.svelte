@@ -1,13 +1,10 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { SvelteURL } from "svelte/reactivity";
+  import { page } from "$app/state";
 
   let { form } = $props();
 
-  //WIP Not working
-  const redirect = new SvelteURL("http://localhost:5173/login").search; //searchParams.get('redirect');
-
-  console.log("redirect", redirect);
+  const redirect = page.url.searchParams.get("redirect");
 </script>
 
 <div id="login">

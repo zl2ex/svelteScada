@@ -1,5 +1,5 @@
 import type { OPCUAServer, UAObject, UAObjectsFolder } from "node-opcua";
-import { Node } from "../../../lib/client/tag/tagState.svelte";
+import { Node } from "../../client/tag/clientTag.svelte";
 import { attempt } from "../../../lib/util/attempt";
 import { collections } from "../mongodb/collections";
 import { logger } from "../pino/logger";
@@ -25,6 +25,7 @@ export class TreeIndex {
       this.children.set(node.parentPath, new Set());
     }
     this.children.get(node.parentPath)!.add(node.path);
+    console.debug(this.children);
   }
 
   getNode(path: string): Tag<any> | TagFolder | undefined {
@@ -33,6 +34,7 @@ export class TreeIndex {
 
   removeNode(path: string) {
     const node = this.nodes.get(path);
+    logger.trace(`[TreeIndex] removeNode() ${path}`);
     if (!node) return;
     node.dispose();
 
@@ -75,7 +77,7 @@ export class TagManager {
     this.tree = new TreeIndex();
 
     // add root folder
-    this.tree.addNode(new TagFolder({ name: "/", parentPath: "", path: "/" }));
+    this.tree.addNode(new TagFolder({ name: "/", parentPath: "" }));
   }
 
   initOpcuaServer(opcuaServer: OPCUAServer) {
@@ -92,37 +94,23 @@ export class TagManager {
     opts: TagFolderOptions,
     writeToDb: boolean = true
   ): Promise<TagFolder> {
-    if (!opts.parentPath.endsWith("/")) {
-      opts.parentPath = opts.parentPath + "/";
-    }
-
-    let path = `${opts.parentPath}${opts.name}`;
-    // folders path always ends with /
-    if (!path.endsWith("/")) {
-      path = path + "/";
-    }
-
-    const doc: TagFolderOptions = {
-      path,
-      name: opts.name,
-      parentPath: opts.parentPath,
-    };
+    let node = new Node({ ...opts, type: "Folder" });
 
     if (writeToDb) {
-      const existing = await collections.folders.findOne({ path });
+      const existing = await collections.folders.findOne({ path: node.path });
       if (existing) {
         throw new Error(
-          `[TagManager] createFolder() Folder already exists at ${path}`
+          `[TagManager] createFolder() Folder already exists at ${node.path}`
         );
       }
 
-      await collections.folders.insertOne(doc);
+      await collections.folders.insertOne(node);
     }
 
-    const folder = new TagFolder(doc);
+    const folder = new TagFolder(node);
     this.tree.addNode(folder);
 
-    logger.debug(`[TagManager] added folder ${path}`);
+    logger.debug(`[TagManager] added folder ${node.path}`);
 
     return folder;
   }
@@ -136,29 +124,15 @@ export class TagManager {
         `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`
       );
     }
-    if (!opts.parentPath.endsWith("/")) {
-      opts.parentPath = opts.parentPath + "/";
-    }
-    const path = `${opts.parentPath}${opts.name}`;
 
-    const doc: TagOptionsInput<any> = {
-      path,
-      name: opts.name,
-      parentPath: opts.parentPath,
-      dataType: opts.dataType,
-      exposeOverOpcua: opts.exposeOverOpcua,
-      initalValue: opts.initalValue,
-      nodeId: opts.nodeId,
-      parameters: opts.parameters,
-      udtParent: opts.udtParent,
-      writeable: opts.writeable,
-    };
+    let node = new Node({ ...opts, type: "Tag" });
+    let doc: TagOptionsInput<any> = { ...opts, path: node.path };
 
     if (writeToDb) {
-      const existing = await collections.tags.findOne({ path });
+      const existing = await collections.tags.findOne({ path: node.path });
       if (existing) {
         throw new Error(
-          `[TagManager] createTag() Tag already exists at ${path}`
+          `[TagManager] createTag() Tag already exists at ${node.path}`
         );
       }
       await collections.tags.insertOne(doc);
@@ -167,7 +141,7 @@ export class TagManager {
     const tag = new Tag(this.opcuaServer, this.tagFolder, doc);
     this.tree.addNode(tag);
 
-    logger.info(`[TagManager] added tag ${path}`);
+    logger.info(`[TagManager] added tag ${node.path}`);
 
     return tag;
   }
@@ -181,8 +155,12 @@ export class TagManager {
   }
 
   getTag(path: string): Tag<any> | undefined {
-    const node = this.tree.getNode(path);
+    const [parentPath, propertyName] = path.split(".", 2);
+    const node = this.tree.getNode(parentPath);
     if (!(node instanceof Tag)) return undefined;
+    if (propertyName && node.type == "UdtTag") {
+      return node.children.get(propertyName);
+    }
     return node;
   }
 
@@ -193,15 +171,24 @@ export class TagManager {
   }
 
   getChildren(parentPath: string): (Tag<any> | TagFolder)[] {
+    const node = this.tree.getNode(parentPath);
+    if (node instanceof Tag && node.type == "UdtTag") {
+      return node.children.values().toArray();
+    }
     return this.tree.getChildren(parentPath);
   }
 
   getChildrenAsNode(parentPath: string): Node[] {
-    logger.debug(
+    logger.trace(
       `[TagManager] getChildrenAsNode() at parentPath ${parentPath}`
     );
-    return this.tree.getChildren(parentPath).map((child) => {
-      return new Node(child);
+    return this.getChildren(parentPath).map((child) => {
+      return {
+        name: child.name,
+        path: child.path,
+        parentPath: child.parentPath,
+        type: child.type,
+      };
     });
   }
 
@@ -256,20 +243,28 @@ export class TagManager {
       );
     }
     this.tree.removeNode(path);
-    const updated = new Tag(this.opcuaServer, this.tagFolder, updates);
-    this.tree.addNode(updated);
+    const updatedTag = new Tag(this.opcuaServer, this.tagFolder, updates);
+
+    let oldPath = path;
+    if (oldPath !== updatedTag.path) {
+      // new tag or changed name / parentPath
+      this.deleteTag(oldPath);
+      oldPath = updatedTag.path;
+    }
 
     const result = await collections.tags.findOneAndUpdate(
       { path },
-      { $set: updates },
-      { returnDocument: "after" }
+      { $set: updatedTag.options },
+      { returnDocument: "after", upsert: true }
     );
+
+    this.tree.addNode(updatedTag);
 
     if (!result) {
       throw new Error(`[TagManger] updateTag() failed to write to database`);
     }
 
-    return updated;
+    return updatedTag;
   }
 
   // -------------------------
@@ -370,7 +365,8 @@ export class TagManager {
   // -------------------------
 
   async deleteTag(path: string): Promise<boolean> {
-    const result = await collections.tags.deleteOne({ path });
+    logger.trace(`[TagManager] deleteTag() ${path}`);
+    const result = await collections.tags.deleteOne({ path: path });
     if (result.deletedCount === 0) return false;
 
     this.tree.removeNode(path);
@@ -407,7 +403,7 @@ export class TagManager {
   // Bulk Loader
   // -------------------------
 
-  async loadFromDb(): Promise<TreeIndex> {
+  async loadAllFromDb(): Promise<TreeIndex> {
     const [folders, tags] = await Promise.all([
       await collections.folders.find().toArray(),
       await collections.tags.find().toArray(),
@@ -415,12 +411,14 @@ export class TagManager {
 
     for (const f of folders) {
       const { data, error } = await attempt(() => this.createFolder(f, false));
-      if (error) logger.error(error);
+      if (error)
+        logger.error(`[TagManager] loadAllFromDb() ${f.path} ${error}`);
     }
 
     for (const t of tags) {
       const { data, error } = await attempt(() => this.createTag(t, false));
-      if (error) logger.error(error);
+      if (error)
+        logger.error(`[TagManager] loadAllFromDb() ${t.name} ${error}`);
     }
 
     logger.debug(`[TagManager] loaded all tags and folders from db`);

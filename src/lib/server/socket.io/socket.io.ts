@@ -9,14 +9,27 @@ import {
   type TagPaths,
 } from "../tag/tag";
 import { tagManager } from "../../../server";
-import type { Node } from "../../../lib/client/tag/tagState.svelte";
+import type { Node } from "../../client/tag/clientTag.svelte";
 import { attempt, type Result } from "../../../lib/util/attempt";
+import { string } from "zod";
 
 // emits the whole tag object
 export type EmitPayload = {
   path: TagPaths;
-  value: Omit<
+  value: Pick<
     Tag<any>,
+    "path" | "name" | "options" | "parameters" | "value"
+  > & {
+    statusCodeString: string;
+    errorMessage?: string;
+    children?: EmitPayload[];
+  };
+};
+
+/*
+Omit<
+    Tag<any> & { statusCodeString: string },
+    | "ocpuaServer"
     | "opcuaDataType"
     | "isArray"
     | "arrayLength"
@@ -27,14 +40,15 @@ export type EmitPayload = {
     | "opcuaParent"
     | "udtParent"
     | "update"
-    | "subscribeByPath"
-    | "unsubscribeByPath"
+    | "subscribeToDriver"
+    | "unsubscribeToDriver"
     | "triggerEmit"
     | "getEmitPayload"
     | "dispose"
-    | "[SymbolConstructor.dispose]"
+    | "statusCode"
+    | "[Symbol.dispose]"
   >;
-};
+  */
 
 // write just to the value property of the tag
 export type WritePayload = {
@@ -158,7 +172,7 @@ export function creatSocketIoServer(httpServer: Server) {
       let subs = socketClientSubscriptions.get(socket.id);
       if (subs) {
         let currentSubsCount = subs.get(path)?.valueOf() ?? 1;
-        currentSubsCount--;
+        if (currentSubsCount > 0) currentSubsCount--;
         if (currentSubsCount <= 0) {
           subs.delete(path);
         }
@@ -198,7 +212,7 @@ export function creatSocketIoServer(httpServer: Server) {
           attempt(() => tagManager.getChildrenAsNode(request.parameters.path))
         );
       } else if (request.name === "getDataTypeStrings()") {
-        callback(attempt(() => getAllDataTypeStrings()));
+        callback(await attempt(() => getAllDataTypeStrings()));
       } else if (request.name === "createTag()") {
         callback(
           await attempt(() => tagManager.createTag(request.parameters.options))

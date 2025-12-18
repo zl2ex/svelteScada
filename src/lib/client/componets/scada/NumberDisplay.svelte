@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { TagPaths } from "$lib/server/tag/tag";
-  import { ClientTag } from "$lib/client/tag/tagState.svelte";
+  import { ClientTag } from "$lib/client/tag/clientTag.svelte";
   import type { MouseEventHandler } from "svelte/elements";
 
   type props = {
@@ -36,7 +36,7 @@
 
 <svelte:boundary>
   <div class={clazz} {style} {onclick} role="button" tabindex="0">
-    <span class="label">{tag.name}</span>
+    <span class="label">{tag.options.name}</span>
     <span class="value">{tag.value}</span>
   </div>
 

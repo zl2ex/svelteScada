@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ClientTag } from "$lib/client/tag/tagState.svelte";
+  import { ClientTag } from "$lib/client/tag/clientTag.svelte";
   import type { TagPaths } from "$lib/server/tag/tag";
   import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
   import { updateTag } from "$lib/remote/tags.remote";
@@ -16,14 +16,14 @@
     let tag = new ClientTag("any", { path: tagPath });
     await tag.subscribe();
     updateTag.fields.set({
-      name: tag.name,
-      dataType: tag.dataType,
-      path: tag.path,
-      nodeId: tag.nodeId,
-      parentPath: tag.parentPath,
-      parameters: tag.parameters,
+      name: tag.options.name,
+      dataType: tag.options.dataType,
+      path: tag.options.path,
+      nodeId: tag.options.nodeId,
+      parentPath: tag.options.parentPath,
+      parameters: tag.options.parameters,
       initialValue: tag.value,
-      exposeOverOpcua: tag.exposeOverOpcua,
+      exposeOverOpcua: tag.options.exposeOverOpcua,
     });
     return tag;
   }
@@ -66,8 +66,10 @@
           <span class="issue">{issue.message}</span>
         {/each}
       </div>
-      <input {...updateTag.fields.path.as("hidden", tag.path)} />
-      <input {...updateTag.fields.parentPath.as("hidden", tag.parentPath)} />
+      <input {...updateTag.fields.path.as("hidden", tag.options.path)} />
+      <input
+        {...updateTag.fields.parentPath.as("hidden", tag.options.parentPath)}
+      />
 
       <!--<datalist id="dataTypeAutocomplete">
             {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}

@@ -31,7 +31,7 @@ export class SocketIoClientHandler {
   ): Promise<RpcResponse<K>> {
     return new Promise((resolve, reject) => {
       this.socket.emit("rpc", request, (response) => {
-        console.log(response);
+        console.debug(response);
         if ("error" in response) {
           reject(response);
           //throw response.payload?.error;

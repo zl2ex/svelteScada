@@ -28,185 +28,186 @@ import {
 } from "node-opcua";
 import { emitToSubscribers, type EmitPayload } from "../socket.io/socket.io";
 import { deviceManager } from "../../../server";
-import z from "zod";
-import { UdtDefinition, type UdtParams } from "./udt";
+import z, { ZodObject } from "zod";
+import { Z_UdtParams, type UdtParams } from "./udt";
 import { attempt } from "../../../lib/util/attempt";
 
 import vm from "node:vm";
 import {
   Node,
+  Z_NodeOptions,
   type NodeOptions,
-} from "../../../lib/client/tag/tagState.svelte";
+} from "../../client/tag/clientTag.svelte";
 import { deleteOpcuaVariable } from "../drivers/opcua/opcuaServer";
+import { collections } from "../mongodb/collections";
+import { udtManager } from "../../../server/index";
 
 // Base schemas for primitives
 export const Z_BaseTypes = {
-  Double: z.number(),
-  Int16: z.number().int().max(65535),
-  Int32: z.number().int().max(4294967295), // TD WIP max and min
-  Boolean: z.boolean(),
-  String: z.string(),
+  Double: z.number().default(0),
+  Int16: z.number().int().max(65535).default(0),
+  Int32: z.number().int().max(4294967295).default(0), // TD WIP max and min
+  Boolean: z.boolean().default(false),
+  String: z.string().default(""),
 } as const;
 
-export function getAllDataTypeStrings() {
-  return Object.keys(Z_BaseTypes);
+export async function getAllDataTypeStrings() {
+  const cursor = await collections.udts.find().toArray();
+  return [...Object.keys(Z_BaseTypes), ...cursor.map((udt) => udt.name)];
 }
 
 // allows each property to be a string expresstion like "${folder}/${name}"
 // where folder and name are either parameters or properties of the tagOptions
+
+/*
 export interface TagOptionsInput<
   DataTypeString extends BaseTypeStringsWithArrays,
-> extends Omit<NodeOptions, "type"> {
+> extends Omit<Node, "type"> {
   dataType: DataTypeString | string;
   writeable?: boolean | string;
   exposeOverOpcua?: boolean | string;
   initalValue?: ResolveType<DataTypeString>;
   parameters?: UdtParams;
-  nodeId?: NodeId | NodeIdLike | string;
-  udtParent?: NodeId | NodeIdLike | string;
+  nodeId?: NodeIdLike | string;
+  udtParent?: NodeIdLike | string;
+}*/
+
+const Z_NodeOptionsWithoutType = Z_NodeOptions.omit({ type: true });
+export const Z_TagOptionsInput = Z_NodeOptionsWithoutType.extend({
+  dataType: z.string(), // TD WIP Tighten type ?
+  nodeId: z.string().optional(),
+  writeable: z.boolean().optional().default(false),
+  initalValue: z.any().optional(),
+  parameters: Z_UdtParams.optional(),
+  exposeOverOpcua: z.boolean().optional().default(false),
+  udtParent: z.string().optional(),
+});
+
+export const Z_tagOptionsInputForm = Z_TagOptionsInput.extend({
+  path: z.string(),
+});
+
+export type TagOptionsInput<T> = z.input<typeof Z_TagOptionsInput>;
+
+export const Z_TagOptionsResolved = Z_NodeOptionsWithoutType.extend({
+  path: z.string(),
+  dataType: z.string(), // TD WIP Tighten type ?
+  nodeId: z.string().optional(),
+  writeable: z.boolean().optional().default(false),
+  initalValue: z.any().optional(),
+  parameters: Z_UdtParams.optional(),
+  exposeOverOpcua: z.boolean().optional().default(false),
+  udtParent: z.string().optional(),
+});
+
+export type TagOptionsResolved = z.input<typeof Z_TagOptionsResolved>;
+
+function validateExpression(expr: string): void {
+  // Only allow safe characters and patterns
+  const safeExprRegex =
+    /^[0-9+\-*/%().\s]*([A-Za-z_][A-Za-z0-9_]*|Math\.[A-Za-z_][A-Za-z0-9_]*)*[0-9+\-*/%().\s]*$/;
+
+  if (!safeExprRegex.test(expr)) {
+    throw new Error(`Unsafe expression: ${expr}`);
+  }
 }
-export class TagOptions<
-  DataTypeString extends BaseTypeStringsWithArrays,
-> extends Node {
-  dataType: DataTypeString;
-  writeable: boolean;
-  exposeOverOpcua: boolean;
-  initalValue?: ResolveType<DataTypeString>;
-  parameters?: UdtParams;
-  nodeId?: NodeId | NodeIdLike;
-  udtParent?: NodeId | NodeIdLike;
 
-  static validateExpression(expr: string): void {
-    // Only allow safe characters and patterns
-    const safeExprRegex =
-      /^[0-9+\-*/%().\s]*([A-Za-z_][A-Za-z0-9_]*|Math\.[A-Za-z_][A-Za-z0-9_]*)*[0-9+\-*/%().\s]*$/;
-
-    if (!safeExprRegex.test(expr)) {
-      throw new Error(`Unsafe expression: ${expr}`);
+function resolveTemplate(
+  key: string,
+  expression: string,
+  context: Record<string, any>
+): string {
+  return expression.replace(/\$\{([^}]+)\}/g, (_, expr) => {
+    try {
+      const sandbox = { ...context };
+      const script = new vm.Script(expr); // run in vm to prevent code leaks
+      const result = String(script.runInNewContext(sandbox));
+      return result;
+    } catch (e) {
+      throw new TagError(key, `[Tag] Failed to evaluate expression: ${expr}`);
     }
-  }
-
-  static zodSchema = z.object({
-    name: z.string(),
-    path: z.string(),
-    parentPath: z.string(),
-    dataType: z.string(), // TD WIP Tighten type ?
-    nodeId: z.string().optional(),
-    writeable: z.boolean().optional().default(false),
-    initialValue: z.any().optional(),
-    parameters: z.object().optional(),
-    exposeOverOpcua: z.boolean().optional().default(false),
   });
+}
 
-  static resolveTemplate(
-    key: string,
-    expression: string,
-    context: Record<string, any>
-  ): string {
-    return expression.replace(/\$\{([^}]+)\}/g, (_, expr) => {
-      try {
-        const sandbox = { ...context };
-        const script = new vm.Script(expr); // run in vm to prevent code leaks
-        const result = String(script.runInNewContext(sandbox));
-        return result;
-      } catch (e) {
-        throw new TagError(key, `[Tag] Failed to evaluate expression: ${expr}`);
-      }
-    });
-  }
+function isExpression(expr: unknown): boolean {
+  return typeof expr === "string" && expr.includes("${") && expr.includes("}");
+}
 
-  static isExpression(expr: unknown): boolean {
-    return (
-      typeof expr === "string" && expr.includes("${") && expr.includes("}")
-    );
-  }
+function resolveTagOptions(
+  instanceProps: TagOptionsInput<any>,
+  udtParams?: UdtParams
+): TagOptionsResolved {
+  //@ts-ignore
+  const resolved: TagOptionsResolved = {};
+  const inProgress = new Set<string>();
 
-  resolveTagOptions(
-    instanceProps: TagOptionsInput<any>,
-    udtParams?: UdtParams
-  ): TagOptions<any> {
-    const resolved: TagOptions<any> = {};
-    const inProgress = new Set<string>();
+  function resolveKey(
+    key: keyof TagOptionsResolved,
+    props: TagOptionsInput<any>
+  ) {
+    //if (!isExpression(resolved[key])) return; // if it doesnt need to be evaluated
 
-    function resolveKey(key: string, props: TagOptionsInput<any>) {
-      //if (!isExpression(resolved[key])) return; // if it doesnt need to be evaluated
+    // TD WIP
+    if (
+      inProgress.has(key) &&
+      isExpression(resolved[key]) // &&
+      //resolved[key as keyof typeof resolved].includes(key)
+    ) {
+      throw new TagError(
+        key,
+        `[Tag] Circular reference detected while resolving "${key}"`
+      );
+    }
+    inProgress.add(key);
 
-      // TD WIP
-      if (
-        inProgress.has(key) &&
-        TagOptions.isExpression(resolved[key as keyof typeof resolved]) // &&
-        //resolved[key as keyof typeof resolved].includes(key)
-      ) {
+    const raw = props[key];
+    if (isExpression(raw)) {
+      // Pass udtProps + already resolved instance props into context
+      const res = resolveTemplate(key, raw, {
+        ...udtParams,
+        ...resolved,
+        ...props,
+        ...props.parameters,
+      });
+
+      if (!Z_TagOptionsResolved.shape[key]) {
         throw new TagError(
           key,
-          `[Tag] Circular reference detected while resolving "${key}"`
+          `[Tag] unexpected property ${key} in tagOptions`
         );
       }
-      inProgress.add(key);
 
-      const raw = props[key as keyof TagOptionsInput<any>];
-      if (TagOptions.isExpression(raw)) {
-        // Pass udtProps + already resolved instance props into context
-        const res = TagOptions.resolveTemplate(key, raw, {
-          ...udtParams,
-          ...resolved,
-          ...props,
-          ...props.parameters,
-        });
-
-        if (!TagOptions.zodSchema.shape[key]) {
-          throw new TagError(
-            key,
-            `[Tag] unexpected property ${key} in tagOptions`
-          );
-        }
-
-        // if it expects a number
-        if (TagOptions.zodSchema.shape[key].safeParse(0).success) {
-          resolved[key as keyof typeof resolved] = Number(res);
-        }
-        // if it expects a boolean
-        else if (TagOptions.zodSchema.shape[key].safeParse(true).success) {
-          resolved[key as keyof typeof resolved] = Boolean(res);
-        }
-        // if it expects a string
-        else {
-          resolved[key as keyof typeof resolved] = res; // already a string from resolveTempalte
-        }
-      } else {
-        resolved[key as keyof typeof resolved] = raw;
+      // if it expects a number
+      if (Z_TagOptionsResolved.shape[key].safeParse(0).success) {
+        resolved[key] = Number(res);
       }
-
-      if (!TagOptions.isExpression(resolved[key])) inProgress.delete(key);
-    }
-
-    for (const key of Object.keys(instanceProps)) {
-      resolveKey(key, instanceProps);
-    }
-
-    let tries = 5;
-    while (inProgress.keys.length > 0 && tries > 0) {
-      for (const key in inProgress) {
-        resolveKey(key, resolved);
+      // if it expects a boolean
+      else if (Z_TagOptionsResolved.shape[key].safeParse(true).success) {
+        resolved[key] = Boolean(res);
       }
-      tries--;
+      // if it expects a string
+      else {
+        resolved[key] = res; // already a string from resolveTempalte
+      }
+    } else {
+      resolved[key] = raw;
     }
-    return resolved;
+
+    if (!isExpression(resolved[key])) inProgress.delete(key);
   }
 
-  constructor(options: TagOptionsInput<DataTypeString>) {
-    super(options);
-    let opts = this.resolveTagOptions(options);
-    this.name = opts.name;
-    this.path = opts.path;
-    this.parentPath = opts.parentPath;
-    this.dataType = opts.dataType;
-    this.writeable = opts.writeable ?? false;
-    this.exposeOverOpcua = opts.exposeOverOpcua ?? false;
-    this.initalValue = opts.initalValue;
-    this.parameters = opts.parameters;
-    this.nodeId = opts.nodeId;
+  for (const key of Object.keys(instanceProps)) {
+    resolveKey(key as keyof TagOptionsResolved, instanceProps);
   }
+
+  let tries = 5;
+  while (inProgress.keys.length > 0 && tries > 0) {
+    for (const key in inProgress) {
+      resolveKey(key as keyof TagOptionsResolved, resolved);
+    }
+    tries--;
+  }
+  return resolved;
 }
 
 //export type TagOptions<T> = z.input<typeof Z_TagOptions>;
@@ -371,13 +372,18 @@ export class Tag<
   //static tags: TagTypeMap = [];
   opcuaServer: OPCUAServer;
   tagFolder?: UAObject;
-  nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
-  dataType: DataTypeString;
-  opcuaDataType: DataType;
-  isArray: boolean;
-  arrayLength: number | undefined;
-  writeable: boolean;
-  value: ResolveType<DataTypeString>;
+  options: TagOptionsInput<DataTypeString>;
+  resolvedOptions: TagOptionsResolved;
+
+  //nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
+  //dataType?: DataTypeString;
+  opcuaDataType: DataType = DataType.Null; // TD WIP Datatype check
+  isArray: boolean = false;
+  arrayLength: number = 0;
+  //writeable: boolean = false;
+  //@ts-ignore
+  value: ResolveType<DataTypeString> = 0;
+  statusCode: StatusCode = StatusCodes.UncertainConfigurationError;
   schema:
     | z.ZodNumber
     | z.ZodString
@@ -385,12 +391,12 @@ export class Tag<
     | z.ZodObject
     | z.ZodArray<z.ZodNumber | z.ZodString | z.ZodBoolean | z.ZodObject>
     | undefined;
-  exposeOverOpcua: boolean;
+  //exposeOverOpcua: boolean = false;
+  children: Map<string, Tag<any>>; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
   exposeOpcuaVarible?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
   driverOpcuaVarible?: UAVariable; // varible that nodeId points at
-  children?: Record<string, Tag<any>>[]; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
   udtParent?: NodeIdLike; // parent of Udt child if the tag is a UDT
-  parameters?: UdtParams; // parameters for building udt path's ect
+  //parameters?: UdtParams; // parameters for building udt path's ect
 
   error?: TagError; // if any errors exist with the tag
 
@@ -407,14 +413,24 @@ export class Tag<
 
   constructor(
     opcuaServer: OPCUAServer,
-    tagFolder: UAObject,
-    options: TagOptionsInput<any>
+    tagFolder: UAObject | undefined,
+    options: Omit<TagOptionsInput<any>, "path">
   ) {
     super({ ...options, type: "Tag" });
     this.opcuaServer = opcuaServer;
-    this.tagFolder = tagFolder;
+    this.tagFolder =
+      tagFolder ?? this.opcuaServer.engine.addressSpace?.rootFolder;
+    this.options = { ...options, path: this.path };
 
-    const opts = attempt(() => new TagOptions(options));
+    this.resolvedOptions = {
+      dataType: "",
+      name: "",
+      path: "",
+      parentPath: "",
+    };
+
+    this.children = new Map();
+    const opts = attempt(() => resolveTagOptions(this.options));
 
     if ("error" in opts) {
       if (opts.error instanceof TagError) {
@@ -426,63 +442,84 @@ export class Tag<
       return;
     }
 
-    this.name = opts.data.name;
-    this.path = opts.data.path;
-    this.nodeId = opts.data.nodeId;
-    this.dataType = opts.data.dataType;
+    this.resolvedOptions = opts.data;
 
-    this.writeable = opts.data.writeable ?? false;
-    this.exposeOverOpcua = opts.data.exposeOverOpcua ?? false;
+    //this.nodeId = opts.data.nodeId;
+    //this.dataType = opts.data.dataType;
+
+    //this.writeable = opts.data.writeable ?? false;
+    // this.exposeOverOpcua = opts.data.exposeOverOpcua ?? false;
 
     this.udtParent = opts.data.udtParent;
     //? parent
     //: this.opcuaServer.engine.addressSpace?.rootFolder;
 
-    this.parameters = opts.data.parameters;
+    //this.parameters = opts.data.parameters;
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
-    const arrayMatch = this.dataType.match(/^(\w+)\[(\d*)\]$/);
-    this.isArray = !!arrayMatch || this.dataType.endsWith("[]"); // handles arrays of an unkown size
-    this.arrayLength = arrayMatch ? parseInt(arrayMatch[2], 10) : undefined;
+    const arrayMatch = this.resolvedOptions.dataType.match(/^(\w+)\[(\d*)\]$/);
+    this.isArray = !!arrayMatch || this.resolvedOptions.dataType.endsWith("[]"); // handles arrays of an unkown size
+    this.arrayLength = arrayMatch ? parseInt(arrayMatch[2], 10) : 0;
 
     // type without array size or brackets
     const baseDataType = arrayMatch
       ? arrayMatch[1]
-      : this.dataType.replace("[]", "");
+      : this.resolvedOptions.dataType.replace("[]", "");
 
+    const dataType = Object.entries(DataType);
     // is a opcua primative datatype
     if (baseDataType in DataType) {
-      this.opcuaDataType = baseDataType as unknown as DataType;
-      this.schema = getSchema(this.dataType);
+      this.opcuaDataType = dataType.find(([key, val]) => {
+        return key == baseDataType;
+      })?.[1] as unknown as DataType;
+
+      const result = attempt(() => getSchema(this.resolvedOptions.dataType));
+
+      if ("error" in result) {
+        if (result.error instanceof TagError) {
+          this.error = result.error;
+        } else if (result.error instanceof Error) {
+          this.error = new TagError("initalValue", result.error.message);
+        }
+        logger.error(this.error);
+        return;
+      }
+
+      this.schema = result.data;
     }
 
     // is a user defined datatype and therfore a opcua ExtentionObject
-    else if (UdtDefinition.udts[this.dataType]) {
+    else {
+      this.type = "UdtTag";
       this.opcuaDataType = DataType.ExtensionObject;
-      const udtDefinition =
-        UdtDefinition.udts[this.dataType as keyof typeof UdtDefinition.udts];
+      const udtDefinition = udtManager.udts.get(this.resolvedOptions.dataType);
+      if (!udtDefinition) {
+        const err = new TagError(
+          "dataType",
+          `[Tag] error while creating tag ${this.path} dataType ${this.resolvedOptions.dataType} does not exist in udtDefinitions`
+        );
+        this.error = err;
+        logger.error(err);
+        return;
+      }
 
-      this.children = udtDefinition.buildTagFeilds(
-        this.dataType,
-        this.parameters
-      );
+      udtDefinition
+        .buildTagFeilds(this.resolvedOptions, this.resolvedOptions)
+        .forEach((tagOptions) => {
+          tagOptions.parentPath = this.path + ".";
+          const tag = new Tag(this.opcuaServer, this.tagFolder, tagOptions);
+          this.children.set(tag.name, tag);
+        });
+
       this.schema = z.object();
-      for (const [key, childTag] of Object.entries(this.children)) {
+      for (const [key, childTag] of this.children.entries()) {
         this.schema = this.schema.extend({ [key]: childTag.schema });
       }
-    } else {
-      const err = new TagError(
-        "dataType",
-        `[Tag] error while creating tag ${this.path} dataType ${dataType} does not exist in udtDefinitions`
-      );
-      this.error = err;
-      logger.error(err);
-      return;
     }
 
     // subscribe to value from driver if nodeId provided
-    if (this.nodeId) {
+    if (this.resolvedOptions.nodeId) {
       const opcuaVarible = attempt(() => this.subscribeToDriver());
       if ("error" in opcuaVarible) {
         if (opcuaVarible.error instanceof TagError) {
@@ -495,7 +532,7 @@ export class Tag<
       }
     }
 
-    if (this.exposeOverOpcua) {
+    if (this.resolvedOptions.exposeOverOpcua) {
       if (!this.opcuaServer?.engine) {
         throw new Error(
           `[Tag] no opcua server defined for tag ${this.path}  please call Tag.initOpcuaServer() and provide a server`
@@ -506,7 +543,7 @@ export class Tag<
       this.exposeOpcuaVarible = namespace.addVariable({
         componentOf: parent,
         browseName: this.name,
-        nodeId: this.nodeId,
+        nodeId: this.resolvedOptions.nodeId,
         dataType: this.opcuaDataType,
         valueRank: this.arrayLength ? 1 : 0,
         arrayDimensions: this.arrayLength ? [this.arrayLength] : null,
@@ -524,7 +561,8 @@ export class Tag<
               return { statusCode: StatusCodes.Good };
             } catch (error) {
               logger.error(
-                `[Tag] set value failed with error ${error?.message}`
+                error,
+                `[Tag] exposeOpcuaVariable set() value failed with error`
               );
               return { statusCode: StatusCodes.BadTypeMismatch };
             }
@@ -533,40 +571,46 @@ export class Tag<
       });
     }
 
-    // no inital value given so generate defaults
     // TD WIP DataType
     let initalValue: any;
 
     if (opts.data.initalValue) {
-      initalValue = this.validate(opts.data.initalValue);
+      const result = attempt(() => this.validate(opts.data.initalValue));
+      if ("error" in result) {
+        if (result.error instanceof TagError) {
+          this.error = result.error;
+        } else if (result.error instanceof Error) {
+          this.error = new TagError("initalValue", result.error.message);
+        }
+        logger.error(this.error);
+        return;
+      }
+      initalValue = result.data;
     } else {
-      if (
-        this.dataType === "Double" ||
-        this.dataType === "Int32" ||
-        this.dataType === "Boolean"
-      ) {
-        if (this.isArray) {
-          initalValue = Array<ResolveType<DataTypeString>>(
-            this.arrayLength
-          ).fill(0);
-        } else {
-          initalValue = 0;
+      let getDefaults = undefined;
+      if (this.schema instanceof ZodObject) getDefaults = {};
+      // get intial value defaults from schema
+      const result = attempt(() => this.schema?.parse(getDefaults));
+
+      if ("error" in result) {
+        if (result.error instanceof TagError) {
+          this.error = result.error;
+        } else if (result.error instanceof Error) {
+          this.error = new TagError("", result.error.message);
         }
-      } else if (dataType === "String") {
-        if (this.isArray) {
-          initalValue = Array<ResolveType<DataTypeString>>(
-            this.arrayLength
-          ).fill("");
-        } else {
-          initalValue = "";
-        }
-      } else {
-        initalValue = 0;
+        logger.error(this.error);
+        return;
+      }
+      initalValue = result.data;
+
+      if (this.isArray) {
+        initalValue = Array(this.arrayLength).fill(initalValue);
       }
     }
 
     this.update(
-      this.driverOpcuaVarible?.readValue().value.value ?? initalValue
+      this.driverOpcuaVarible?.readValue().value.value ?? initalValue,
+      StatusCodes.UncertainInitialValue
     ); // update tag value when created if it is there, if not set to inital value
 
     // push instance to tags map referenced by path
@@ -595,8 +639,8 @@ export class Tag<
         );
       }
 
-      this.children?.forEach((child) => {
-        child.tag.dispose();
+      this.children.forEach((child) => {
+        child.dispose();
       });
     } catch (error) {
       logger.error(error);
@@ -609,46 +653,47 @@ export class Tag<
   }
 
   private valueChanged = (newValue: DataValue) => {
-    if (newValue.value.value == this.value) return; // return if the tag class called update() already
+    if (
+      newValue.value.value == this.value &&
+      newValue.statusCode == this.statusCode
+    )
+      return; // if the tag class called update() already so we have the current value and status code
     logger.trace(
       `[Tag] valueChanged() for ${this.path} = ${newValue.value.value} ${newValue.statusCode.toString()}`
     );
-    // TD WIP Datatype check
-    /*if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
-        logger.error(
-          `[Tag] new value for tag ${this.path} type ${newValue.value.dataType as DataType} is not assignable to ${this.opcuaDataType}`
-        );
-        return;
-      }*/
 
     try {
+      if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
+        throw new Error(
+          `[Tag] new value for tag ${this.path} type ${newValue.value.dataType} is not assignable to ${this.opcuaDataType}`
+        );
+      }
+
       this.value = this.validate(newValue.value.value);
+      this.statusCode = newValue.statusCode;
       this.triggerEmit();
     } catch (error) {
       logger.error(error);
     }
   };
 
-  get valueStatus() {
-    return this.driverOpcuaVarible?.readValue().statusCode;
-  }
-
   subscribeToDriver() {
-    if (!this.nodeId) return;
+    if (!this.resolvedOptions.nodeId) return;
 
-    const resolvedPath = resolveOpcuaPath(this.nodeId);
+    const resolvedPath = resolveOpcuaPath(this.resolvedOptions.nodeId);
     if (!resolvedPath.deviceName) {
       throw new Error(
-        `[Tag] Device at ${this.nodeId} not found while trying to create tag ${this.path}`
+        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to create tag ${this.path}`
       );
     }
 
     const device = deviceManager.getDeviceFromPath(resolvedPath.deviceName);
-    const variable = device.tagSubscribed(this, this.udtParent);
+
+    const variable = device.tagSubscribed(this); // TD WIP Parent //this.udtParent);
 
     if (!variable)
       throw new Error(
-        `[Tag] failed to subscribe to tag at ${this.nodeId} while trying to create tag ${this.path}`
+        `[Tag] failed to subscribe to tag at ${this.resolvedOptions.nodeId} while trying to create tag ${this.path}`
       );
     /*
     const addressSpace = server.engine.addressSpace;
@@ -675,11 +720,11 @@ export class Tag<
   }
 
   unsubscribeToDriver() {
-    if (!this.nodeId) return;
-    const resolvedPath = resolveOpcuaPath(this.nodeId);
+    if (!this.resolvedOptions.nodeId) return;
+    const resolvedPath = resolveOpcuaPath(this.resolvedOptions.nodeId);
     if (!resolvedPath.deviceName) {
       logger.error(
-        `[Tag] Device at ${this.nodeId} not found while trying to unsubscribe from tag ${this.path}`
+        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to unsubscribe from tag ${this.path}`
       );
       return;
     }
@@ -690,11 +735,12 @@ export class Tag<
     device.tagUnsubscribed(this);
   }
 
-  update(value: ResolveType<DataTypeString>) {
-    if (this.writeable == false) {
+  update(value: ResolveType<DataTypeString>, statusCode = StatusCodes.Good) {
+    if (this.resolvedOptions.writeable == false) {
       logger.warn(
         `[Tag] update() ${this.path} failed because writeable is set to false`
       );
+      this.statusCode = StatusCodes.BadNotWritable;
       this.triggerEmit(); // emit old value back to client
       return;
     }
@@ -702,37 +748,44 @@ export class Tag<
     const newValue = this.validate(value);
     if (this.isArray !== Array.isArray(newValue))
       throw new TypeError(
-        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}`
+        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.resolvedOptions.dataType}`
       );
     if (this.isArray && this.arrayLength !== newValue?.length)
       throw new TypeError(
-        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`
+        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.resolvedOptions.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`
       );
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
 
     this.value = newValue;
+    this.statusCode = statusCode;
     if (this.driverOpcuaVarible) {
-      this.driverOpcuaVarible.setValueFromSource({
-        dataType: this.opcuaDataType,
-        arrayType: this.isArray ? VariantArrayType.Array : undefined,
-        dimensions:
-          this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
-        value: newValue,
-      });
+      this.driverOpcuaVarible.setValueFromSource(
+        {
+          dataType: this.opcuaDataType,
+          arrayType: this.isArray ? VariantArrayType.Array : undefined,
+          dimensions:
+            this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
+          value: newValue,
+        },
+        this.statusCode
+      );
     }
 
-    if (this.exposeOverOpcua) {
+    if (this.resolvedOptions.exposeOverOpcua) {
       if (!this.exposeOpcuaVarible) {
         throw new Error(
           `[Tag] update() path: ${this.path} cannot update exposeOpcuaVariable as it is not initalised`
         );
       }
-      this.exposeOpcuaVarible?.setValueFromSource({
-        dataType: this.opcuaDataType,
-        arrayType: this.isArray ? VariantArrayType.Array : undefined,
-        //dimensions: this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
-        value: newValue,
-      });
+      this.exposeOpcuaVarible?.setValueFromSource(
+        {
+          dataType: this.opcuaDataType,
+          arrayType: this.isArray ? VariantArrayType.Array : undefined,
+          //dimensions: this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
+          value: newValue,
+        },
+        this.statusCode
+      );
     }
 
     this.triggerEmit();
@@ -745,18 +798,16 @@ export class Tag<
     return {
       path: this.path,
       value: {
-        type: this.type,
         name: this.name,
         path: this.path,
-        parentPath: this.parentPath,
-        nodeId: this.nodeId,
-        dataType: this.dataType,
+        options: this.options,
         parameters: this.parameters,
-        exposeOverOpcua: this.exposeOverOpcua,
         value: this.value,
-        valueStatus: this.valueStatus?.name,
-        writeable: this.writeable,
-        error: this.error,
+        statusCodeString: this.statusCode.name,
+        errorMessage: this.error?.message,
+        children: this.children
+          ? Array.from(this.children).map(([path, tag]) => tag.getEmitPayload())
+          : undefined,
       },
     };
   }
@@ -765,84 +816,3 @@ export class Tag<
     emitToSubscribers(this.getEmitPayload());
   }
 }
-
-///////////////////////////////////////////////////////////////////////////////////////
-
-/*
-type FieldDef = { dataType: string };
-
-export class UdtTag<
-  DataTypeString extends BaseTypeStrings,
-> extends Tag<DataTypeString> {
-  declare dataType: string;
-
-  readonly fields: { [K in keyof DataTypeString]: Tag<DataTypeString> };
-
-  constructor(
-    dataType: string,
-    opts: TagOptions,
-    defs: Record<keyof T, FieldDef>,
-    initial?: Partial<T>
-  ) {
-    super(dataType, opts);
-    this.path = path;
-    this.fields = {} as any;
-
-    for (const key in defs) {
-      const def = defs[key];
-      const schema = dataTypeToZod[def.dataType];
-      if (!schema) throw new Error(`Unknown dataType ${def.dataType}`);
-
-      this.fields[key] = new Tag<T[typeof key]>(
-        `${path}/${String(key)}`,
-        schema,
-        initial?.[key] ?? schema.parse(undefined) // default
-      );
-    }
-  }
-
-  get value(): T {
-    return Object.fromEntries(
-      Object.entries(this.fields).map(([k, tag]) => [k, tag.value])
-    ) as T;
-  }
-
-  set value(newVal: T) {
-    for (const [k, v] of Object.entries(newVal)) {
-      if (this.fields[k as keyof T]) {
-        this.fields[k as keyof T].set(v);
-      }
-    }
-  }
-}
-
-const sensorTypeDef = {
-  _id: "SensorType",
-  fields: {
-    Min: { dataType: "Double" },
-    Max: { dataType: "Double" },
-    Fault: { dataType: "Boolean" },
-  },
-} as const;
-
-type SensorType = typeof sensorTypeDef.fields;
-
-const sensor = new UdtTag<SensorType>(
-  "SensorUDT",
-  {
-    Min: { dataType: "Double" },
-    Max: { dataType: "Double" },
-    Fault: { dataType: "Boolean" },
-  },
-  { Min: 0, Max: 100, Fault: false }
-);
-
-console.log(sensor.value);
-// { Min: 0, Max: 100, Fault: false }
-
-sensor.fields.Min.set(12.5);
-console.log(sensor.value.Min); // 12.5
-
-sensor.value = { Min: 5, Max: 20, Fault: true };
-console.log(sensor.fields.Max.value); // 20
-*/

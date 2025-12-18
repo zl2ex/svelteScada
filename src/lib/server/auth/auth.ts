@@ -58,8 +58,8 @@ export async function loginUser(event: RequestEvent) {
   });
 
   logger.debug(
-    "[Auth] searchParams redirect ",
-    event.url.searchParams.get("redirect")
+    event.url.searchParams.get("redirect"),
+    "[Auth] searchParams redirect "
   );
 
   return redirect(302, event.url.searchParams.get("redirect") || "/");
@@ -81,14 +81,14 @@ export async function authenticateUser(
 
     try {
       const jwtUser = jwt.verify(token, PRIVATE_KEY);
-      logger.debug("[Auth] jwtUser ", jwtUser);
+      logger.debug(jwtUser, "[Auth] jwtUser ");
       const user = await users.findOne(
         { email: jwtUser.email },
         { projection: { _id: false } }
       );
       return user;
     } catch (err) {
-      logger.error(err);
+      logger.debug(err);
     }
   }
 
