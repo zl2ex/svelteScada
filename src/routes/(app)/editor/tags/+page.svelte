@@ -9,7 +9,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import Label from "$lib/client/componets/scada/Label.svelte";
-  import type { TagOptionsInput } from "$lib/server/tag/tag";
+  import { json } from "zod";
 
   let tagEditorPath = $derived(page.url.searchParams.get("tagPath") ?? "/");
   let parentPath = $derived(page.url.searchParams.get("parentPath") ?? "/");
@@ -126,7 +126,12 @@
 
           <div class="form-item">
             <label for="nodeId">nodeId</label>
-            <input {...updateTag.fields.nodeId.as("text")} />
+            <input
+              {...updateTag.fields.nodeId.as("text")}
+              class={tag.options.overrides && "nodeId" in tag.options.overrides
+                ? ""
+                : "override"}
+            />
             {#each updateTag.fields.nodeId.issues() as issue}
               <span class="issue">{issue.message}</span>
             {/each}
@@ -199,6 +204,11 @@
       padding: 1rem;
       max-width: 30ch;
       margin: 0 auto;
+    }
+
+    .override {
+      border-right: 0.5rem solid var(--app-color-state-on);
+      border-left: 0.5rem solid var(--app-color-state-on);
     }
 
     form {

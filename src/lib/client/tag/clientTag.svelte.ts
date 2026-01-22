@@ -25,6 +25,7 @@ export class Node {
   name: string;
   parentPath: string;
   type: NodeOptions["type"];
+  children?: Node[];
   constructor(options: NodeOptions) {
     const opts = Z_NodeOptions.parse(options);
     this.type = opts.type;
@@ -141,6 +142,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
       dataType: expectedDataType,
       writeable: false,
       parameters: undefined,
+      overrides: undefined,
       exposeOverOpcua: false,
     });
 

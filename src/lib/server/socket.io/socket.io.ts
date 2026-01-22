@@ -209,7 +209,9 @@ export function creatSocketIoServer(httpServer: Server) {
       );
       if (request.name === "getChildrenAsNode()") {
         callback(
-          attempt(() => tagManager.getChildrenAsNode(request.parameters.path))
+          attempt(() =>
+            tagManager.getAllChildrenAsNode(request.parameters.path)
+          )
         );
       } else if (request.name === "getDataTypeStrings()") {
         callback(await attempt(() => getAllDataTypeStrings()));

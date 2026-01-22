@@ -52,7 +52,10 @@ export const Z_BaseTypes = {
 } as const;
 
 export async function getAllDataTypeStrings() {
-  const cursor = await collections.udts.find().toArray();
+  // TD WIP USE UDT manager in future ...
+  const cursor = await collections.udts
+    .find({}, { projection: { _id: 0 } })
+    .toArray();
   return [...Object.keys(Z_BaseTypes), ...cursor.map((udt) => udt.name)];
 }
 
@@ -73,7 +76,7 @@ export interface TagOptionsInput<
 }*/
 
 const Z_NodeOptionsWithoutType = Z_NodeOptions.omit({ type: true });
-export const Z_TagOptionsInput = Z_NodeOptionsWithoutType.extend({
+const __Z_TagOptionsInput = Z_NodeOptionsWithoutType.extend({
   dataType: z.string(), // TD WIP Tighten type ?
   nodeId: z.string().optional(),
   writeable: z.boolean().optional().default(false),
@@ -81,6 +84,10 @@ export const Z_TagOptionsInput = Z_NodeOptionsWithoutType.extend({
   parameters: Z_UdtParams.optional(),
   exposeOverOpcua: z.boolean().optional().default(false),
   udtParent: z.string().optional(),
+});
+
+export const Z_TagOptionsInput = __Z_TagOptionsInput.extend({
+  overrides: z.record(z.string(), __Z_TagOptionsInput).optional(),
 });
 
 export const Z_tagOptionsInputForm = Z_TagOptionsInput.extend({
@@ -505,7 +512,7 @@ export class Tag<
       }
 
       udtDefinition
-        .buildTagFeilds(this.resolvedOptions, this.resolvedOptions)
+        .buildTagFeilds(this.resolvedOptions, this.options.overrides)
         .forEach((tagOptions) => {
           tagOptions.parentPath = this.path + ".";
           const tag = new Tag(this.opcuaServer, this.tagFolder, tagOptions);

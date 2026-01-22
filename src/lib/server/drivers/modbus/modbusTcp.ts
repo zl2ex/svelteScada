@@ -472,23 +472,26 @@ export class ModbusTCPDriver {
               const buffer = response.data.response.body.valuesAsBuffer;
 
               const offset = sub.address - batch.start;
-              let value = decode(sub, buffer, offset);
+              let decoded = attempt(() => decode(sub, buffer, offset));
+              if ("error" in decoded) {
+                tag.error = new TagError("nodeId", decoded.error.message);
+                continue;
+              }
               const oldValue = tag.driverOpcuaVarible?.readValue();
 
               if (
-                oldValue.value.value !== value ||
+                oldValue.value.value !== decoded.data ||
                 oldValue.statusCode.isBad()
               ) {
                 logger.trace(
-                  `[ModbusTCPDriver] poll() updated varible ${tag.path} = ${value}`
+                  `[ModbusTCPDriver] poll() updated varible ${tag.path} = ${decoded.data}`
                 );
-                // TD i have my own typesafety at runtime with opcuaDataType
-                //@ts-ignore
-                sub.value = value;
+
+                sub.value = decoded.data;
                 tag.driverOpcuaVarible.setValueFromSource(
                   {
                     dataType: tag.opcuaDataType,
-                    value: value,
+                    value: decoded.data,
                   },
                   StatusCodes.Good
                 );

@@ -1,17 +1,28 @@
 import { command, form, query } from "$app/server";
-import { tagManager, udtManager } from "../../server";
+import { udtManager } from "../../server";
 import { attempt } from "$lib/util/attempt";
 import { logger } from "$lib/server/pino/logger";
 import { error, invalid } from "@sveltejs/kit";
 import { TagError, Z_tagOptionsInputForm } from "$lib/server/tag/tag";
 import z from "zod";
 import { Node } from "$lib/client/tag/clientTag.svelte";
+import {
+  Z_UdtDefinitionOptions,
+  type UdtDefinitionOptions,
+} from "$lib/server/tag/udt";
 
-export const updateTag = form(Z_tagOptionsInputForm, async (data, issue) => {
+export const getUdt = query(z.string(), (name) => {
+  const result = attempt(() => udtManager.getUdt(name));
+  if ("error" in result) error(500, result.error.message);
+  if (!result.data) error(404, `Error no udt found at ${name}`);
+  return result.data.options;
+});
+
+export const updateUdt = form(Z_UdtDefinitionOptions, async (data, issue) => {
   // ... perform server-side logic with validatedData ...
   //return { success: true, message: `User ${validatedData.name} created.` };
 
-  let result = await attempt(() => tagManager.updateTag(data.path, data));
+  let result = await attempt(() => udtManager.updateUdt(data.path, data));
   if ("error" in result) {
     logger.error(result.error);
     //error(500, result.error.message);
@@ -30,22 +41,26 @@ export const updateTag = form(Z_tagOptionsInputForm, async (data, issue) => {
   return result.data?.getEmitPayload();
 });
 
-export const deleteTag = command(z.string().nonempty(), async (path) => {
-  let result = await attempt(() => tagManager.deleteTag(path));
+export const deleteUDt = command(z.string().nonempty(), async (path) => {
+  let result = await attempt(() => udtManager.delteUdt(path));
   if ("error" in result) {
     logger.error(result.error);
     error(500, result.error.message);
   }
-  // refresh tag tree
-  getAllChildrenAsNode("/").refresh();
+  // refresh udt tree
+  getAllUdtsAsNode("/").refresh();
 });
 
-export const getAllChildrenAsNode = query(z.string(), async (path) => {
-  let result = attempt(() => tagManager.getAllChildrenAsNode(path));
+export const getAllUdtsAsNode = query(z.string(), async (path) => {
+  let result = attempt(() => udtManager.getAllUdts());
   if ("error" in result) {
     logger.error(result.error);
     error(500, result.error.message);
   }
 
-  return result.data;
+  let nodes = result.data.map((udtDef) => {
+    return { name: udtDef.name, parentPath: "/udts", type: "UdtTag" };
+  });
+
+  return nodes;
 });

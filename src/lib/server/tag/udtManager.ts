@@ -1,12 +1,6 @@
-import type { OPCUAServer, UAObject } from "node-opcua";
-import { Node } from "../../client/tag/clientTag.svelte";
-import { attempt } from "../../../lib/util/attempt";
 import { collections } from "../mongodb/collections";
 import { logger } from "../pino/logger";
-import { TagFolder, type TagFolderOptions } from "./folder";
-import { Tag, type TagOptionsInput } from "./tag";
 import { UdtDefinition, type UdtDefinitionOptions } from "./udt";
-import { P } from "../../../../build/server/chunks/index2-yZtXfLL3";
 
 export class UdtManager {
   udts: Map<string, UdtDefinition>;
@@ -20,7 +14,10 @@ export class UdtManager {
     writeToDb: boolean = true
   ): Promise<UdtDefinition> {
     if (writeToDb) {
-      const existing = await collections.udts.findOne({ name: opts.name });
+      const existing = await collections.udts.findOne(
+        { name: opts.name },
+        { projection: { _id: 0 } }
+      );
       if (existing) {
         throw new Error(
           `[UdtManager] createUdt() Udt already exists at ${opts.name}`
@@ -37,9 +34,20 @@ export class UdtManager {
     return udt;
   }
 
-  async loadAllFromDb() {
-    const udts = await collections.udts.find().toArray();
+  getUdt(name: string) {
+    return this.udts.get(name);
+  }
 
+  getAllUdts() {
+    return this.udts.values().toArray();
+  }
+
+  getChildrenAsNode() {}
+
+  async loadAllFromDb() {
+    const udts = await collections.udts
+      .find({}, { projection: { _id: 0 } })
+      .toArray();
     udts.forEach((udt) => {
       // dont write to db as we are loading from it
       this.createUdt(udt, false);

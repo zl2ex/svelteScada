@@ -7,14 +7,14 @@
 
   type propsPath = {
     path: TagPaths;
-    clientTag?: ClientTag<any>;
+    clientTag?: never;
     label?: string;
     style?: string;
     onclick?: MouseEventHandler<any>;
   };
 
   type propsClientTag = {
-    path?: TagPaths;
+    path?: never;
     clientTag: ClientTag<any>;
     label?: string;
     style?: string;
@@ -46,9 +46,11 @@
     {style}
     {onclick}
     type="button"
-    class={tag.errorMessage ? "error tooltip" : "tooltip"}
+    class={tag.errorMessage || tag.statusCodeString !== "Good"
+      ? "error tooltip"
+      : "tooltip"}
   >
-    <label for="input">{label ? label : tag.options.name}</label>
+    <label for="input">{label ?? tag.options.name}</label>
     {#if typeof tag.value === "boolean"}
       <input
         type="checkbox"
@@ -130,7 +132,7 @@
       unsupported type {typeof tag.value}
     {/if}
     {#if tag.statusCodeString !== "Good"}
-      <span class="issue">{tag.statusCodeString}</span>
+      <span class="issue tooltiptext">{tag.statusCodeString}</span>
     {/if}
     {#if tag.errorMessage}
       <span class="issue tooltiptext">{tag.errorMessage}</span>

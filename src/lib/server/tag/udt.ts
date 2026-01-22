@@ -1,5 +1,11 @@
 import { DataType, OPCUAServer, type UAObject } from "node-opcua";
-import { Tag, TagOptionsResolved, type TagOptionsInput } from "./tag";
+import {
+  Tag,
+  TagOptionsResolved,
+  Z_TagOptionsInput,
+  type TagOptionsInput,
+} from "./tag";
+import z from "zod";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -71,21 +77,6 @@ type FieldDefinition = {
     initialValue: ParseDataType<K>;
   };
 }[AllDataTypeStrings];
-
-/*
-type UdtDefinitionOptions = {
-  parameters?: object;
-  fields: Record<string, FieldDefinition>;
-};*/
-
-export type UdtTypes = Record<string, UdtDefinitionOptions>;
-
-type ParsedField = {
-  name: string;
-  base: ValidBaseType;
-  size: number | undefined;
-  dataType: DataType;
-};
 
 // 2. Helper to build fixed-length arrays
 export type FixedLengthArray<
@@ -205,35 +196,51 @@ type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
 };
 */
 
-export type UdtDefinitionOptions = {
-  name: string;
-  feilds: TagOptionsInput<any>[];
-  initalValue: any;
-  parameters?: UdtParams;
-};
+//export type UdtParams = Record<string, UdtParam>;
+
+//export type UdtParams = Record<string, number | boolean | string>;
+
+export const Z_UdtParams = z.record(
+  z.string(),
+  z.union([
+    z.object({ type: z.literal("string"), default: z.string() }),
+    z.object({ type: z.literal("number"), default: z.number() }),
+    z.object({ type: z.literal("boolean"), default: z.boolean() }),
+  ])
+);
+
+export type UdtParams = z.input<typeof Z_UdtParams>;
+
+export const Z_UdtDefinitionOptions = z.object({
+  name: z.string(),
+  parameters: Z_UdtParams,
+  feilds: z.array(Z_TagOptionsInput),
+});
+
+export type UdtDefinitionOptions = z.input<typeof Z_UdtDefinitionOptions>;
 
 export class UdtDefinition {
   name: string;
-  feilds: TagOptionsInput<any>[];
-  initalValue: any;
-  parameters?: UdtParams;
+  options: UdtDefinitionOptions;
 
   constructor(opts: UdtDefinitionOptions) {
     this.name = opts.name;
-    this.parameters = opts.parameters;
-    this.feilds = opts.feilds;
-    this.initalValue = opts.initalValue;
+    console.debug(opts);
+    this.options = opts; // TD WIP ZOD Z_UdtDefinitionOptions.parse(opts);
+    //this.initalValue = opts.initalValue;
   }
 
   buildTagFeilds(
-    tagOptions: TagOptionsResolved,
-    parentTagOptions: TagOptionsResolved
+    parentTagOptions: TagOptionsResolved,
+    tagOverrideOptions?: Record<string, TagOptionsInput<any>>
   ) {
     // instance parameters overide udt parameters
 
-    let parameters = this.parameters ?? {};
-    if (this.parameters && parentTagOptions?.parameters) {
-      for (const [key, udtDefParameter] of Object.entries(this.parameters)) {
+    let parameters = this.options.parameters ?? {};
+    if (this.options.parameters && parentTagOptions?.parameters) {
+      for (const [key, udtDefParameter] of Object.entries(
+        this.options.parameters
+      )) {
         if (parentTagOptions?.parameters[key]) {
           parameters[key] = parentTagOptions?.parameters[key];
         }
@@ -241,7 +248,14 @@ export class UdtDefinition {
     }
 
     const feilds = new Map<string, TagOptionsInput<any>>();
-    for (let options of this.feilds) {
+    for (let options of this.options.feilds) {
+      let override = undefined;
+      if (tagOverrideOptions && tagOverrideOptions[options.name]) {
+        override = tagOverrideOptions[options.name];
+      }
+
+      console.debug("[Udt] buildTagFeilds() override", override);
+
       options.udtParent = this.name;
       options.parameters = parameters;
       options.exposeOverOpcua =
@@ -249,6 +263,17 @@ export class UdtDefinition {
       options.initalValue = options.initalValue ?? parentTagOptions.initalValue;
       options.nodeId = options.nodeId ?? parentTagOptions.nodeId;
       options.writeable = options.writeable ?? parentTagOptions.writeable;
+
+      if (override) {
+        for (const [key, value] of Object.entries(override)) {
+          if (key in options) {
+            options[key as keyof typeof options] = value;
+            if (!options.overrides) options.overrides = {};
+            options.overrides[key] = value;
+            console.debug(value);
+          }
+        }
+      }
 
       feilds.set(options.name, options);
     }
@@ -378,44 +403,7 @@ export function registerCustomDataTypes(addressSpace: AddressSpace, schemas: Rec
 
 
 
-*/
-import {
-  z,
-  ZodType,
-  ZodObject,
-  ZodBoolean,
-  ZodNumber,
-  ZodString,
-  object,
-} from "zod";
 
-export type UdtParam =
-  | { type: "number"; default: number }
-  | { type: "string"; default: string }
-  | { type: "boolean"; default: boolean };
-
-type UdtParamTypes = UdtParam["type"];
-
-//export type UdtParams = Record<string, UdtParam>;
-
-//export type UdtParams = Record<string, number | boolean | string>;
-
-export const Z_UdtParams = z.record(
-  z.string(),
-  z.union([
-    z.object({ type: z.literal("string"), default: z.string() }),
-    z.object({ type: z.literal("number"), default: z.number() }),
-    z.object({ type: z.literal("boolean"), default: z.boolean() }),
-  ])
-);
-
-export type UdtParams = z.input<typeof Z_UdtParams>;
-
-export type UdtOptions = {
-  name: string;
-  props: UdtParams;
-  children: TagOptionsInput<any>[]; // TD WIP
-};
 /*
 export interface TagInstanceDoc {
   _id: string;

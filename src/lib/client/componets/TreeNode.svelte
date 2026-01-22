@@ -1,23 +1,39 @@
 <script lang="ts">
   import TreeNode from "./TreeNode.svelte";
-  import { socketIoClientHandler } from "../socket.io/socket.io.svelte";
   import Label from "./scada/Label.svelte";
   import { goto } from "$app/navigation";
-  import { getChildrenAsNode } from "$lib/remote/tags.remote";
+  import { getAllChildrenAsNode } from "$lib/remote/tags.remote";
+  import type { Node } from "../tag/clientTag.svelte";
 
-  type props = {
+  type pathProvided = {
     path: string;
+    nodes?: never;
   };
 
-  let { path }: props = $props();
+  type nodesProvided = {
+    path?: never;
+    nodes: Node[];
+  };
+
+  type props = pathProvided | nodesProvided;
+
+  let { path, nodes }: props = $props();
+
+  let tree = $derived.by(async () => {
+    if (path) {
+      return getAllChildrenAsNode(path);
+    }
+    return nodes;
+  });
 </script>
 
 <svelte:boundary>
   <!--{#await socketIoClientHandler.rpc( { name: "getChildrenAsNode()", parameters: { path: path } } ) then response}-->
-  {#await getChildrenAsNode(path) then response}
+  {#await tree then response}
     <!--{#if response.error}
       <p>{response.error.message}</p>
     {:else}-->
+    <!--<pre>{JSON.stringify(response, null, 2)}</pre>-->
     {#each response as node}
       {#if node.type == "Folder"}
         <details open>
@@ -27,7 +43,10 @@
               onclick={() => goto(`?tagPath=newTag&parentPath=${node.path}`)}
               >+ new Tag</button
             >
-            <TreeNode path={node.path}></TreeNode>
+
+            {#if node.children}
+              <TreeNode nodes={node.children}></TreeNode>
+            {/if}
           </div>
         </details>
       {:else if node.type == "Tag"}
@@ -52,7 +71,11 @@
               </g>
             </svg>
             <span>{node.name}</span>
-            <Label path={node.path} onclick={(ev) => ev.stopPropagation()}
+            <Label
+              path={node.path}
+              label=""
+              onclick={(ev) => ev.stopPropagation()}
+              style="margin-left: auto"
             ></Label>
           </div>
         </summary>
@@ -88,7 +111,9 @@
             </div>
           </summary>
           <div class="indent">
-            <TreeNode path={node.path}></TreeNode>
+            {#if node.children}
+              <TreeNode nodes={node.children}></TreeNode>
+            {/if}
           </div>
         </details>
       {/if}

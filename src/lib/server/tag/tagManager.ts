@@ -1,4 +1,4 @@
-import type { OPCUAServer, UAObject, UAObjectsFolder } from "node-opcua";
+import type { OPCUAServer, UAObject } from "node-opcua";
 import { Node } from "../../client/tag/clientTag.svelte";
 import { attempt } from "../../../lib/util/attempt";
 import { collections } from "../mongodb/collections";
@@ -97,7 +97,10 @@ export class TagManager {
     let node = new Node({ ...opts, type: "Folder" });
 
     if (writeToDb) {
-      const existing = await collections.folders.findOne({ path: node.path });
+      const existing = await collections.folders.findOne(
+        { path: node.path },
+        { projection: { _id: 0 } }
+      );
       if (existing) {
         throw new Error(
           `[TagManager] createFolder() Folder already exists at ${node.path}`
@@ -129,7 +132,10 @@ export class TagManager {
     let doc: TagOptionsInput<any> = { ...opts, path: node.path };
 
     if (writeToDb) {
-      const existing = await collections.tags.findOne({ path: node.path });
+      const existing = await collections.tags.findOne(
+        { path: node.path },
+        { projection: { _id: 0 } }
+      );
       if (existing) {
         throw new Error(
           `[TagManager] createTag() Tag already exists at ${node.path}`
@@ -192,6 +198,24 @@ export class TagManager {
     });
   }
 
+  getAllChildrenAsNode(parentPath: string): Node[] {
+    const children = this.getChildrenAsNode(parentPath);
+
+    return children.map((node) => {
+      // If this node can have children, recurse
+      const grandChildren = this.getChildrenAsNode(node.path);
+
+      if (grandChildren.length > 0) {
+        return {
+          ...node,
+          children: this.getAllChildrenAsNode(node.path),
+        };
+      }
+
+      return node;
+    });
+  }
+
   getAllTags(): Tag<any>[] {
     let tags: Tag<any>[] = [];
     let children = this.getChildren("/");
@@ -221,7 +245,7 @@ export class TagManager {
     const result = await collections.folders.findOneAndUpdate(
       { path },
       { $set: updates },
-      { returnDocument: "after" }
+      { returnDocument: "after", projection: { _id: 0 } }
     );
 
     if (!result) return null;
@@ -242,6 +266,17 @@ export class TagManager {
         `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`
       );
     }
+
+    const [parentPath, propertyName] = path.split(".", 2);
+    const node = this.tree.getNode(parentPath);
+    if (propertyName && node instanceof Tag && node.type == "UdtTag") {
+      // TD WIP
+      logger.trace(
+        `[TagManager] updateTag() tried to update child of UdtTag ${parentPath}.${propertyName}`
+      );
+      return null;
+    }
+
     this.tree.removeNode(path);
     const updatedTag = new Tag(this.opcuaServer, this.tagFolder, updates);
 
@@ -255,7 +290,7 @@ export class TagManager {
     const result = await collections.tags.findOneAndUpdate(
       { path },
       { $set: updatedTag.options },
-      { returnDocument: "after", upsert: true }
+      { returnDocument: "after", upsert: true, projection: { _id: 0 } }
     );
 
     this.tree.addNode(updatedTag);
@@ -405,8 +440,8 @@ export class TagManager {
 
   async loadAllFromDb(): Promise<TreeIndex> {
     const [folders, tags] = await Promise.all([
-      await collections.folders.find().toArray(),
-      await collections.tags.find().toArray(),
+      await collections.folders.find({}, { projection: { _id: 0 } }).toArray(),
+      await collections.tags.find({}, { projection: { _id: 0 } }).toArray(),
     ]);
 
     for (const f of folders) {
