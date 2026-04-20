@@ -1,11 +1,10 @@
 import { command, form, query } from "$app/server";
-import { tagManager, udtManager } from "../../server";
+import { tagManager } from "../../server";
 import { attempt } from "$lib/util/attempt";
 import { logger } from "$lib/server/pino/logger";
 import { error, invalid } from "@sveltejs/kit";
 import { TagError, Z_tagOptionsInputForm } from "$lib/server/tag/tag";
 import z from "zod";
-import { Node } from "$lib/client/tag/clientTag.svelte";
 
 export const updateTag = form(Z_tagOptionsInputForm, async (data, issue) => {
   // ... perform server-side logic with validatedData ...
@@ -18,8 +17,8 @@ export const updateTag = form(Z_tagOptionsInputForm, async (data, issue) => {
     if (result.error instanceof TagError) {
       invalid(
         issue[result.error.feildName as keyof typeof issue](
-          result.error.message
-        )
+          result.error.message,
+        ),
       );
     } else {
       invalid(result.error.message);
@@ -27,6 +26,7 @@ export const updateTag = form(Z_tagOptionsInputForm, async (data, issue) => {
   }
 
   result.data?.triggerEmit();
+  getAllChildrenAsNode("/").refresh();
   return result.data?.getEmitPayload();
 });
 

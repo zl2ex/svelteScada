@@ -32,30 +32,18 @@
       await tag.subscribe().catch((reason) => {
         console.error(reason);
       });
-      updateTag.fields.set(newTagOptions);
+      //updateTag.fields.set(newTagOptions);
       return tag;
     } else {
       let tag = new ClientTag("any", { path: tagEditorPath });
-      await tag.subscribe();
-      updateTag.fields.set(tag.options);
+      await tag.subscribe().catch((reason) => {
+        console.error(reason);
+      });
+      //updateTag.fields.set(tag.options);
+      updateTag.fields.dataType.set(tag.options.dataType);
       return tag;
     }
   });
-
-  /*
-  $effect.pre(() => {
-    if (tagEditorPath == "newTag") {
-      let tagOptions = {
-        name: "newTag",
-        dataType: "Double",
-        parentPath: parentPath,
-      } satisfies TagOptionsInput<any>;
-      updateTag.fields.set(tagOptions.options);
-      //updateTag.fields.parentPath.set(tagOptions.parentPath);
-    } else {
-      updateTag.fields.set(newTag.options);
-    }
-  });*/
 </script>
 
 <div id="tagEditor">
@@ -65,8 +53,9 @@
         <form
           {...updateTag.enhance(async ({ form, data, submit }) => {
             await submit();
-            let node = new Node({ ...data, type: "Tag" });
-            goto(`?tagPath=${node.path}`);
+            // go to new tag url if no issues were reported
+            if (!updateTag.fields.allIssues())
+              goto(`?tagPath=${data.parentPath}${data.name}`);
             /*
             // force reload of newTag $derrived on submit
             let oldTagEditorPath = tagEditorPath;
@@ -76,8 +65,14 @@
         >
           <div class="form-item">
             <label for="name">name</label>
-            <input {...updateTag.fields.name.as("text")} />
-            {#each updateTag.fields.name.issues() as issue}
+            <input
+              {...updateTag.fields.name.as("text")}
+              value={tag.options.name}
+              class={tag.options.children && "name" in tag.options.children
+                ? "override"
+                : ""}
+            />
+            {#each updateTag.fields.name.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -85,7 +80,7 @@
           <input
             {...updateTag.fields.parentPath.as(
               "hidden",
-              tag.options.parentPath
+              tag.options.parentPath,
             )}
           />
 
@@ -107,9 +102,11 @@
             <label for="dataType">data type</label>
             <select
               {...updateTag.fields.dataType.as("select")}
-              autocomplete="on"
+              class={tag.options.children && "dataType" in tag.options.children
+                ? "override"
+                : ""}
             >
-              {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
+              {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} }, ) then options}
                 {#if options.error}
                   <span class="issue">Error {options.error.message}</span>
                 {:else}
@@ -119,7 +116,7 @@
                 {/if}
               {/await}
             </select>
-            {#each updateTag.fields.dataType.issues() as issue}
+            {#each updateTag.fields.dataType.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -128,27 +125,41 @@
             <label for="nodeId">nodeId</label>
             <input
               {...updateTag.fields.nodeId.as("text")}
-              class={tag.options.overrides && "nodeId" in tag.options.overrides
-                ? ""
-                : "override"}
+              value={tag.options.nodeId}
+              class={tag.options.children && "nodeId" in tag.options.children
+                ? "override"
+                : ""}
             />
-            {#each updateTag.fields.nodeId.issues() as issue}
+            {#each updateTag.fields.nodeId.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
 
           <div class="form-item-row">
             <label for="exposeOverOpcua">exposeOverOpcua</label>
-            <input {...updateTag.fields.exposeOverOpcua.as("checkbox")} />
-            {#each updateTag.fields.exposeOverOpcua.issues() as issue}
+            <input
+              {...updateTag.fields.exposeOverOpcua.as("checkbox")}
+              checked={tag.options.exposeOverOpcua}
+              class={tag.options.children &&
+              "exposeOverOpcua" in tag.options.children
+                ? "override"
+                : ""}
+            />
+            {#each updateTag.fields.exposeOverOpcua.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
 
           <div class="form-item-row">
             <label for="writeable">writeable</label>
-            <input {...updateTag.fields.writeable.as("checkbox")} />
-            {#each updateTag.fields.writeable.issues() as issue}
+            <input
+              {...updateTag.fields.writeable.as("checkbox")}
+              checked={tag.options.writeable}
+              class={tag.options.children && "writeable" in tag.options.children
+                ? "override"
+                : ""}
+            />
+            {#each updateTag.fields.writeable.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -166,7 +177,7 @@
           </div>
 
           <div class="form-item">
-            {#each updateTag.fields.issues() as issue}
+            {#each updateTag.fields.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
             {#if tag.errorMessage}
@@ -207,8 +218,7 @@
     }
 
     .override {
-      border-right: 0.5rem solid var(--app-color-state-on);
-      border-left: 0.5rem solid var(--app-color-state-on);
+      outline: 0.2rem solid var(--app-color-state-on);
     }
 
     form {

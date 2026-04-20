@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import Popup from "$lib/client/componets/Popup.svelte";
   import {
     getAvalibleDrivers,
@@ -43,7 +44,7 @@
       checked={default}
       />
       
-      {#each updateDeviceEnabled.fields.enabled.issues() as issue}
+      {#each updateDeviceEnabled.fields.enabled.issues() ?? [] as issue}
       <span class="issue">{issue.message}</span>
       {/each}
     </label>
@@ -57,14 +58,14 @@
         <div class="form-item">
           <label for="name">name</label>
           <input {...updateDevice.fields.name.as("text")} />
-          {#each updateDevice.fields.name.issues() as issue}
+          {#each updateDevice.fields.name.issues() ?? [] as issue}
             <span class="issue">{issue.message}</span>
           {/each}
         </div>
         <div class="form-item-row">
           <label for="enabled">enabled</label>
           <input {...updateDevice.fields.enabled.as("checkbox")} />
-          {#each updateDevice.fields.enabled.issues() as issue}
+          {#each updateDevice.fields.enabled.issues() ?? [] as issue}
             <span class="issue">{issue.message}</span>
           {/each}
         </div>
@@ -76,7 +77,7 @@
               <option value={option.id}>{option.displayName}</option>
             {/each}
           </select>
-          {#each updateDevice.fields.driverName.issues() as issue}
+          {#each updateDevice.fields.driverName.issues() ?? [] as issue}
             <span class="issue">{issue.message}</span>
           {/each}
         </div>
@@ -85,7 +86,7 @@
           <div class="form-item">
             <label for="unitId">unitId</label>
             <input {...updateDevice.fields.options.unitId.as("number")} />
-            {#each updateDevice.fields.options.unitId.issues() as issue}
+            {#each updateDevice.fields.options.unitId.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -93,7 +94,7 @@
           <div class="form-item-row">
             <label for="spanGaps">spanGaps</label>
             <input {...updateDevice.fields.options.spanGaps.as("checkbox")} />
-            {#each updateDevice.fields.options.spanGaps.issues() as issue}
+            {#each updateDevice.fields.options.spanGaps.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -101,7 +102,7 @@
           <div class="form-item">
             <label for="ip">ip</label>
             <input {...updateDevice.fields.options.ip.as("text")} />
-            {#each updateDevice.fields.options.ip.issues() as issue}
+            {#each updateDevice.fields.options.ip.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -109,7 +110,7 @@
           <div class="form-item">
             <label for="port">port</label>
             <input {...updateDevice.fields.options.port.as("number")} />
-            {#each updateDevice.fields.options.port.issues() as issue}
+            {#each updateDevice.fields.options.port.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -119,7 +120,7 @@
             <input
               {...updateDevice.fields.options.pollingIntervalMs.as("number")}
             />
-            {#each updateDevice.fields.options.pollingIntervalMs.issues() as issue}
+            {#each updateDevice.fields.options.pollingIntervalMs.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -129,7 +130,7 @@
             <input
               {...updateDevice.fields.options.reconnectInervalMs.as("number")}
             />
-            {#each updateDevice.fields.options.reconnectInervalMs.issues() as issue}
+            {#each updateDevice.fields.options.reconnectInervalMs.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -137,7 +138,7 @@
           <div class="form-item">
             <label for="startAddress">startAddress</label>
             <input {...updateDevice.fields.options.startAddress.as("number")} />
-            {#each updateDevice.fields.options.startAddress.issues() as issue}
+            {#each updateDevice.fields.options.startAddress.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -148,7 +149,7 @@
               <option value="BigEndian">Big Endian</option>
               <option value="LittleEndian">Little Endian</option>
             </select>
-            {#each updateDevice.fields.options.endian.issues() as issue}
+            {#each updateDevice.fields.options.endian.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -156,7 +157,7 @@
           <div class="form-item">
             <label for="serialPort">serial port</label>
             <input {...updateDevice.fields.options.serialPort.as("text")} />
-            {#each updateDevice.fields.options.serialPort.issues() as issue}
+            {#each updateDevice.fields.options.serialPort.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -164,7 +165,7 @@
           <div class="form-item">
             <label for="baudRate">baudRate</label>
             <input {...updateDevice.fields.options.baudRate.as("number")} />
-            {#each updateDevice.fields.options.baudRate.issues() as issue}
+            {#each updateDevice.fields.options.baudRate.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -176,7 +177,7 @@
                 <option value={option}>{option}</option>
               {/each}
             </select>
-            {#each updateDevice.fields.options.parity.issues() as issue}
+            {#each updateDevice.fields.options.parity.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -184,7 +185,7 @@
           <div class="form-item">
             <label for="unitId">unitId</label>
             <input {...updateDevice.fields.options.unitId.as("number")} />
-            {#each updateDevice.fields.options.unitId.issues() as issue}
+            {#each updateDevice.fields.options.unitId.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -192,7 +193,7 @@
           <div class="form-item-row">
             <label for="spanGaps">spanGaps</label>
             <input {...updateDevice.fields.options.spanGaps.as("checkbox")} />
-            {#each updateDevice.fields.options.spanGaps.issues() as issue}
+            {#each updateDevice.fields.options.spanGaps.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -202,7 +203,7 @@
             <input
               {...updateDevice.fields.options.pollingIntervalMs.as("number")}
             />
-            {#each updateDevice.fields.options.pollingIntervalMs.issues() as issue}
+            {#each updateDevice.fields.options.pollingIntervalMs.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -210,7 +211,7 @@
           <div class="form-item">
             <label for="startAddress">startAddress</label>
             <input {...updateDevice.fields.options.startAddress.as("number")} />
-            {#each updateDevice.fields.options.startAddress.issues() as issue}
+            {#each updateDevice.fields.options.startAddress.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -221,7 +222,7 @@
               <option value="BigEndian">Big Endian</option>
               <option value="LittleEndian">Little Endian</option>
             </select>
-            {#each updateDevice.fields.options.endian.issues() as issue}
+            {#each updateDevice.fields.options.endian.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
             {/each}
           </div>
@@ -229,7 +230,7 @@
 
         <button type="submit" class="primary">save</button>
 
-        {#each updateDevice.fields.allIssues() as issue}
+        {#each updateDevice.fields.allIssues() ?? [] as issue}
           <span class="issue">{issue.message}</span>
         {/each}
       </form>
@@ -272,12 +273,12 @@
                 />
               </label>
               
-              {#each updateDeviceEnabled.fields.enabled.issues() as issue}
+              {#each updateDeviceEnabled.fields.enabled.issues() ?? [] as issue}
               <span class="issue">{issue.message}</span>
               {/each}
             </div>
             
-            {#each updateDeviceEnabled.fields.allIssues() as issue}
+            {#each updateDeviceEnabled.fields.allIssues() ?? [] as issue}
             <span class="issue">{issue.message}</span>
             {/each}
             
@@ -295,11 +296,11 @@
             <input {...updateDevice.fields.name.as("text")} />
             name
             </label>
-            {#each updateDevice.fields.name.issues() as issue}
+            {#each updateDevice.fields.name.issues() ?? [] as issue}
             <span class="issue">{issue.message}</span>
             {/each}
             
-          {#each updateDevice.fields.allIssues() as issue}
+          {#each updateDevice.fields.allIssues() ?? [] as issue}
           <span class="issue">{issue.message}</span>
           {/each}
           </form>
@@ -307,7 +308,14 @@
       </div>
     {/each}
 
-    <button type="button" id="add-device" onclick={() => (showPopup = true)}>
+    <button
+      type="button"
+      id="add-device"
+      onclick={() => {
+        goto("devices/newDevice");
+        showPopup = true;
+      }}
+    >
       <svg viewBox="0 0 100 100">
         <g stroke-width="4px" fill="transparent">
           <rect x="10" y="10" width="80" height="80"></rect>

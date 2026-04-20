@@ -28,60 +28,30 @@
 </script>
 
 <svelte:boundary>
-  <!--{#await socketIoClientHandler.rpc( { name: "getChildrenAsNode()", parameters: { path: path } } ) then response}-->
-  {#await tree then response}
-    <!--{#if response.error}
+  <div class="treeNode">
+    <!--{#await socketIoClientHandler.rpc( { name: "getChildrenAsNode()", parameters: { path: path } } ) then response}-->
+    {#await tree then response}
+      <!--{#if response.error}
       <p>{response.error.message}</p>
-    {:else}-->
-    <!--<pre>{JSON.stringify(response, null, 2)}</pre>-->
-    {#each response as node}
-      {#if node.type == "Folder"}
-        <details open>
-          <summary>{node.name}</summary>
-          <div class="indent">
-            <button
-              onclick={() => goto(`?tagPath=newTag&parentPath=${node.path}`)}
-              >+ new Tag</button
-            >
-
-            {#if node.children}
-              <TreeNode nodes={node.children}></TreeNode>
-            {/if}
-          </div>
-        </details>
-      {:else if node.type == "Tag"}
-        <summary tabindex="0" onclick={() => goto(`?tagPath=${node.path}`)}>
-          <div class="tag-item-container">
-            <svg viewBox="0 0 100 100">
-              <g
-                stroke-width="4px"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                fill="none"
+      {:else}-->
+      <!--<pre>{JSON.stringify(response, null, 2)}</pre>-->
+      {#each response as node}
+        {#if node.type == "Folder"}
+          <details open>
+            <summary>{node.name}</summary>
+            <div class="indent">
+              <button
+                onclick={() => goto(`?tagPath=newTag&parentPath=${node.path}`)}
+                >+ new Tag</button
               >
-                <line x1="10" y1="20" x2="70" y2="20"></line>
-                <line x1="10" y1="80" x2="70" y2="80"></line>
-                <line x1="70" y1="20" x2="90" y2="40"></line>
-                <line x1="70" y1="80" x2="90" y2="60"></line>
 
-                <line x1="10" y1="20" x2="10" y2="80"></line>
-                <line x1="90" y1="40" x2="90" y2="60"></line>
-
-                <circle r="5" cx="70" cy="50"></circle>
-              </g>
-            </svg>
-            <span>{node.name}</span>
-            <Label
-              path={node.path}
-              label=""
-              onclick={(ev) => ev.stopPropagation()}
-              style="margin-left: auto"
-            ></Label>
-          </div>
-        </summary>
-      {:else if node.type == "UdtTag"}
-        <details open>
-          <summary tabindex="0">
+              {#if node.children}
+                <TreeNode nodes={node.children}></TreeNode>
+              {/if}
+            </div>
+          </details>
+        {:else if node.type == "Tag"}
+          <summary tabindex="0" onclick={() => goto(`?tagPath=${node.path}`)}>
             <div class="tag-item-container">
               <svg viewBox="0 0 100 100">
                 <g
@@ -96,41 +66,76 @@
                   <line x1="70" y1="80" x2="90" y2="60"></line>
 
                   <line x1="10" y1="20" x2="10" y2="80"></line>
-                  <line x1="20" y1="20" x2="20" y2="80"></line>
-                  <line x1="30" y1="20" x2="30" y2="80"></line>
-                  <line x1="40" y1="20" x2="40" y2="80"></line>
-
                   <line x1="90" y1="40" x2="90" y2="60"></line>
 
                   <circle r="5" cx="70" cy="50"></circle>
                 </g>
               </svg>
-              <span>
-                {node.name}
-              </span>
+              <span>{node.name}</span>
+              <Label
+                path={node.path}
+                label=""
+                onclick={(ev) => ev.stopPropagation()}
+                style="margin-left: auto"
+              ></Label>
             </div>
           </summary>
-          <div class="indent">
-            {#if node.children}
-              <TreeNode nodes={node.children}></TreeNode>
-            {/if}
-          </div>
-        </details>
-      {/if}
-    {/each}
-  {:catch error}
-    <p>async catch error {error}</p>
-  {/await}
-  {#snippet pending()}
-    <p>loading...</p>
-  {/snippet}
-  {#snippet failed(error, reset)}
-    <p>{error}</p>
-    <button onclick={reset} class="primary">oops! try again</button>
-  {/snippet}
+        {:else if node.type == "UdtTag"}
+          <details open>
+            <summary tabindex="0" onclick={() => goto(`?tagPath=${node.path}`)}>
+              <div class="tag-item-container">
+                <svg viewBox="0 0 100 100">
+                  <g
+                    stroke-width="4px"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    fill="none"
+                  >
+                    <line x1="10" y1="20" x2="70" y2="20"></line>
+                    <line x1="10" y1="80" x2="70" y2="80"></line>
+                    <line x1="70" y1="20" x2="90" y2="40"></line>
+                    <line x1="70" y1="80" x2="90" y2="60"></line>
+
+                    <line x1="10" y1="20" x2="10" y2="80"></line>
+                    <line x1="20" y1="20" x2="20" y2="80"></line>
+                    <line x1="30" y1="20" x2="30" y2="80"></line>
+                    <line x1="40" y1="20" x2="40" y2="80"></line>
+
+                    <line x1="90" y1="40" x2="90" y2="60"></line>
+
+                    <circle r="5" cx="70" cy="50"></circle>
+                  </g>
+                </svg>
+                <span>
+                  {node.name}
+                </span>
+              </div>
+            </summary>
+            <div class="indent">
+              {#if node.children}
+                <TreeNode nodes={node.children}></TreeNode>
+              {/if}
+            </div>
+          </details>
+        {/if}
+      {/each}
+    {:catch error}
+      <p>async catch error {error}</p>
+    {/await}
+    {#snippet pending()}
+      <p>loading...</p>
+    {/snippet}
+    {#snippet failed(error, reset)}
+      <p>{error}</p>
+      <button onclick={reset} class="primary">oops! try again</button>
+    {/snippet}
+  </div>
 </svelte:boundary>
 
 <style>
+  .treeNode {
+    font-size: 0.8rem;
+  }
   .indent {
     margin-left: 0.55rem;
     padding-left: 0.25rem;

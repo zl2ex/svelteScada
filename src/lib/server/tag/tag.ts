@@ -33,11 +33,7 @@ import { Z_UdtParams, type UdtParams } from "./udt";
 import { attempt } from "../../../lib/util/attempt";
 
 import vm from "node:vm";
-import {
-  Node,
-  Z_NodeOptions,
-  type NodeOptions,
-} from "../../client/tag/clientTag.svelte";
+import { Node, Z_NodeOptions } from "../../client/tag/clientTag.svelte";
 import { deleteOpcuaVariable } from "../drivers/opcua/opcuaServer";
 import { collections } from "../mongodb/collections";
 import { udtManager } from "../../../server/index";
@@ -52,11 +48,10 @@ export const Z_BaseTypes = {
 } as const;
 
 export async function getAllDataTypeStrings() {
-  // TD WIP USE UDT manager in future ...
-  const cursor = await collections.udts
-    .find({}, { projection: { _id: 0 } })
-    .toArray();
-  return [...Object.keys(Z_BaseTypes), ...cursor.map((udt) => udt.name)];
+  const udtNames = udtManager.getAllUdts().map((udt) => {
+    return udt.name;
+  });
+  return [...Object.keys(Z_BaseTypes), ...udtNames];
 }
 
 // allows each property to be a string expresstion like "${folder}/${name}"
@@ -72,7 +67,6 @@ export interface TagOptionsInput<
   initalValue?: ResolveType<DataTypeString>;
   parameters?: UdtParams;
   nodeId?: NodeIdLike | string;
-  udtParent?: NodeIdLike | string;
 }*/
 
 const Z_NodeOptionsWithoutType = Z_NodeOptions.omit({ type: true });
@@ -83,11 +77,10 @@ const __Z_TagOptionsInput = Z_NodeOptionsWithoutType.extend({
   initalValue: z.any().optional(),
   parameters: Z_UdtParams.optional(),
   exposeOverOpcua: z.boolean().optional().default(false),
-  udtParent: z.string().optional(),
 });
 
 export const Z_TagOptionsInput = __Z_TagOptionsInput.extend({
-  overrides: z.record(z.string(), __Z_TagOptionsInput).optional(),
+  children: z.record(z.string(), __Z_TagOptionsInput).optional(),
 });
 
 export const Z_tagOptionsInputForm = Z_TagOptionsInput.extend({
@@ -104,7 +97,6 @@ export const Z_TagOptionsResolved = Z_NodeOptionsWithoutType.extend({
   initalValue: z.any().optional(),
   parameters: Z_UdtParams.optional(),
   exposeOverOpcua: z.boolean().optional().default(false),
-  udtParent: z.string().optional(),
 });
 
 export type TagOptionsResolved = z.input<typeof Z_TagOptionsResolved>;
@@ -399,10 +391,9 @@ export class Tag<
     | z.ZodArray<z.ZodNumber | z.ZodString | z.ZodBoolean | z.ZodObject>
     | undefined;
   //exposeOverOpcua: boolean = false;
-  children: Map<string, Tag<any>>; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
+  childTags: Map<string, Tag<any>>; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
   exposeOpcuaVarible?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
   driverOpcuaVarible?: UAVariable; // varible that nodeId points at
-  udtParent?: NodeIdLike; // parent of Udt child if the tag is a UDT
   //parameters?: UdtParams; // parameters for building udt path's ect
 
   error?: TagError; // if any errors exist with the tag
@@ -436,7 +427,7 @@ export class Tag<
       parentPath: "",
     };
 
-    this.children = new Map();
+    this.childTags = new Map();
     const opts = attempt(() => resolveTagOptions(this.options));
 
     if ("error" in opts) {
@@ -457,7 +448,6 @@ export class Tag<
     //this.writeable = opts.data.writeable ?? false;
     // this.exposeOverOpcua = opts.data.exposeOverOpcua ?? false;
 
-    this.udtParent = opts.data.udtParent;
     //? parent
     //: this.opcuaServer.engine.addressSpace?.rootFolder;
 
@@ -512,15 +502,15 @@ export class Tag<
       }
 
       udtDefinition
-        .buildTagFeilds(this.resolvedOptions, this.options.overrides)
+        .buildTagFeilds(this.resolvedOptions, this.options.children)
         .forEach((tagOptions) => {
           tagOptions.parentPath = this.path + ".";
           const tag = new Tag(this.opcuaServer, this.tagFolder, tagOptions);
-          this.children.set(tag.name, tag);
+          this.childTags.set(tag.name, tag);
         });
 
       this.schema = z.object();
-      for (const [key, childTag] of this.children.entries()) {
+      for (const [key, childTag] of this.childTags.entries()) {
         this.schema = this.schema.extend({ [key]: childTag.schema });
       }
     }
@@ -582,7 +572,9 @@ export class Tag<
     let initalValue: any;
 
     if (opts.data.initalValue) {
-      const result = attempt(() => this.validate(opts.data.initalValue));
+      const result = attempt<unknown, any>(() =>
+        this.validate(opts.data.initalValue)
+      );
       if ("error" in result) {
         if (result.error instanceof TagError) {
           this.error = result.error;
@@ -646,7 +638,7 @@ export class Tag<
         );
       }
 
-      this.children.forEach((child) => {
+      this.childTags.forEach((child) => {
         child.dispose();
       });
     } catch (error) {
@@ -696,7 +688,7 @@ export class Tag<
 
     const device = deviceManager.getDeviceFromPath(resolvedPath.deviceName);
 
-    const variable = device.tagSubscribed(this); // TD WIP Parent //this.udtParent);
+    const variable = device.tagSubscribed(this);
 
     if (!variable)
       throw new Error(
@@ -808,12 +800,13 @@ export class Tag<
         name: this.name,
         path: this.path,
         options: this.options,
-        parameters: this.parameters,
         value: this.value,
         statusCodeString: this.statusCode.name,
         errorMessage: this.error?.message,
-        children: this.children
-          ? Array.from(this.children).map(([path, tag]) => tag.getEmitPayload())
+        childTags: this.childTags
+          ? Array.from(this.childTags).map(([path, tag]) =>
+              tag.getEmitPayload()
+            )
           : undefined,
       },
     };

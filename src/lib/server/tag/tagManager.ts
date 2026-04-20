@@ -25,7 +25,6 @@ export class TreeIndex {
       this.children.set(node.parentPath, new Set());
     }
     this.children.get(node.parentPath)!.add(node.path);
-    console.debug(this.children);
   }
 
   getNode(path: string): Tag<any> | TagFolder | undefined {
@@ -165,7 +164,7 @@ export class TagManager {
     const node = this.tree.getNode(parentPath);
     if (!(node instanceof Tag)) return undefined;
     if (propertyName && node.type == "UdtTag") {
-      return node.children.get(propertyName);
+      return node.childTags.get(propertyName);
     }
     return node;
   }
@@ -179,15 +178,12 @@ export class TagManager {
   getChildren(parentPath: string): (Tag<any> | TagFolder)[] {
     const node = this.tree.getNode(parentPath);
     if (node instanceof Tag && node.type == "UdtTag") {
-      return node.children.values().toArray();
+      return node.childTags.values().toArray();
     }
     return this.tree.getChildren(parentPath);
   }
 
   getChildrenAsNode(parentPath: string): Node[] {
-    logger.trace(
-      `[TagManager] getChildrenAsNode() at parentPath ${parentPath}`
-    );
     return this.getChildren(parentPath).map((child) => {
       return {
         name: child.name,
@@ -258,23 +254,38 @@ export class TagManager {
   }
 
   async updateTag(
-    path: string,
-    updates: TagOptionsInput<any>
+    tagPath: string,
+    tagUpdates: TagOptionsInput<any>
   ): Promise<Tag<any> | null> {
     if (!this.opcuaServer || !this.tagFolder) {
       throw new Error(
-        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`
+        `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`
       );
     }
+
+    let path = tagPath;
+    let updates = tagUpdates;
 
     const [parentPath, propertyName] = path.split(".", 2);
     const node = this.tree.getNode(parentPath);
     if (propertyName && node instanceof Tag && node.type == "UdtTag") {
       // TD WIP
+
+      // update the parent udt not the property
+      path = parentPath;
+      let udtParentTag = this.getTag(path);
+      if (!(udtParentTag instanceof Tag))
+        throw new Error(
+          `[TagManager] updateTag() UdtTag ${parentPath} does not exist`
+        );
+
+      updates = udtParentTag.options; // copy all properties of udtParentTag
+      if (!updates.children) updates.children = {};
+      updates.children[tagUpdates.name] = tagUpdates; // only copy overrides as that is the only thing we can edit
+
       logger.trace(
-        `[TagManager] updateTag() tried to update child of UdtTag ${parentPath}.${propertyName}`
+        `[TagManager] updateTag() child of UdtTag ${parentPath}.${propertyName} update overrides ${updates.children}`
       );
-      return null;
     }
 
     this.tree.removeNode(path);

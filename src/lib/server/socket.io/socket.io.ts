@@ -16,39 +16,12 @@ import { string } from "zod";
 // emits the whole tag object
 export type EmitPayload = {
   path: TagPaths;
-  value: Pick<
-    Tag<any>,
-    "path" | "name" | "options" | "parameters" | "value"
-  > & {
+  value: Pick<Tag<any>, "path" | "name" | "options" | "value"> & {
     statusCodeString: string;
     errorMessage?: string;
-    children?: EmitPayload[];
+    childTags?: EmitPayload[];
   };
 };
-
-/*
-Omit<
-    Tag<any> & { statusCodeString: string },
-    | "ocpuaServer"
-    | "opcuaDataType"
-    | "isArray"
-    | "arrayLength"
-    | "schema"
-    | "exposeOpcuaVarible"
-    | "driverOpcuaVarible"
-    | "children"
-    | "opcuaParent"
-    | "udtParent"
-    | "update"
-    | "subscribeToDriver"
-    | "unsubscribeToDriver"
-    | "triggerEmit"
-    | "getEmitPayload"
-    | "dispose"
-    | "statusCode"
-    | "[Symbol.dispose]"
-  >;
-  */
 
 // write just to the value property of the tag
 export type WritePayload = {
@@ -154,7 +127,7 @@ export function creatSocketIoServer(httpServer: Server) {
           let currentSubsCount = subs.get(path)?.valueOf() ?? 0;
           currentSubsCount++;
           subs.set(path, currentSubsCount);
-          logger.info(
+          logger.debug(
             `[Socket.io] client ${socket.id} subscribed to: ${path} count: ${currentSubsCount}`
           );
           return tagManager.getTag(path)?.getEmitPayload();
@@ -178,7 +151,7 @@ export function creatSocketIoServer(httpServer: Server) {
         }
 
         subs.set(path, currentSubsCount);
-        logger.info(
+        logger.debug(
           `[Socket.io] client ${socket.id} unsubscribed from: ${path} count: ${currentSubsCount}`
         );
       }

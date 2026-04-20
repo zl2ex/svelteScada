@@ -40,6 +40,7 @@ export interface TagSubscription extends ParsedModbusPath {
   opcuaDataType: DataType;
   driverOpcuaVarible: UAVariable;
   value: number | boolean | string;
+  dataView: DataView;
   tags: Map<string, Tag<any>>;
 }
 
@@ -154,7 +155,7 @@ export class ModbusTCPDriver {
     // already waiting to try again
     if (this.reconnectAttempt === false) return;
     logger.warn(
-      `[ModbusTCPDriver] failed to connect to device at ${this.ip}:${this.port} retry in ${this.reconnectInervalMs} ms`
+      `[ModbusTCPDriver] failed to connect to device at ${this.ip}:${this.port} retry in ${this.reconnectInervalMs} ms`,
     );
     this.reconnectAttempt = false;
     this.setAllOpcuaVaribleStatus(StatusCodes.BadNotConnected);
@@ -180,7 +181,7 @@ export class ModbusTCPDriver {
           dataType: sub.opcuaDataType,
           value: sub.value,
         },
-        status
+        status,
       );
       //sub.sub.update(sub.value)
       sub.tags.forEach((tag) => tag.triggerEmit()); // emit new status to client
@@ -191,7 +192,7 @@ export class ModbusTCPDriver {
     this.socket.connect(this.port, this.ip, () => {
       if (this.connected === true) return;
       logger.info(
-        `[ModbusTCPDriver] Connected to Modbus device at ${this.ip}:${this.port}`
+        `[ModbusTCPDriver] Connected to Modbus device at ${this.ip}:${this.port}`,
       );
       this.connected = true;
       this.startPolling();
@@ -204,7 +205,7 @@ export class ModbusTCPDriver {
     this.setAllOpcuaVaribleStatus(StatusCodes.BadConditionDisabled);
     this.socket.destroy();
     logger.info(
-      `[ModbusTCPDriver] Disconnected from Modbus device at ${this.ip}:${this.port}`
+      `[ModbusTCPDriver] Disconnected from Modbus device at ${this.ip}:${this.port}`,
     );
   }
 
@@ -215,7 +216,7 @@ export class ModbusTCPDriver {
   subscribeByTag(tag: Tag<any>, parent?: NodeIdLike): UAVariable | undefined {
     if (!tag.resolvedOptions.nodeId) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByTag() no node id provided for tag ${tag.path}`
+        `[ModbusTCPDriver] subscribeByTag() no node id provided for tag ${tag.path}`,
       );
     }
     const nodeId = tag.resolvedOptions.nodeId;
@@ -223,20 +224,20 @@ export class ModbusTCPDriver {
 
     if (!resolvedPath.tagPath) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByTag() empty tag nodeId for nodeId ${nodeId}`
+        `[ModbusTCPDriver] subscribeByTag() empty tag nodeId for nodeId ${nodeId}`,
       );
     }
     const parsed = this.parsePath(resolvedPath.tagPath);
     if (!parsed) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByTag() Invalid Modbus path: ${nodeId}`
+        `[ModbusTCPDriver] subscribeByTag() Invalid Modbus path: ${nodeId}`,
       );
     }
 
     let opcuaParent = parent ?? tag.tagFolder;
     if (!opcuaParent) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByTag() tag ${nodeId} cannot subscribe because parent or root folder is not provided`
+        `[ModbusTCPDriver] subscribeByTag() tag ${nodeId} cannot subscribe because parent or root folder is not provided`,
       );
     }
 
@@ -245,12 +246,12 @@ export class ModbusTCPDriver {
     if (monitoredCount >= 1) {
       this.subscriptions[nodeId].tags.set(tag.path, tag);
       logger.trace(
-        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.resolvedOptions.nodeId} returning varible already set up to tag ${tag.path}`
+        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.resolvedOptions.nodeId} returning varible already set up to tag ${tag.path}`,
       );
 
       if (this.subscriptions[nodeId].opcuaDataType !== tag.opcuaDataType) {
         throw new Error(
-          `[ModbusTcpDriver] subscribeByTag() varible tag ${tag.path} dataType ${this.subscriptions[nodeId].dataType} is not equal to ${tag.options.dataType}`
+          `[ModbusTcpDriver] subscribeByTag() varible tag ${tag.path} dataType ${this.subscriptions[nodeId].dataType} is not equal to ${tag.options.dataType}`,
         );
       }
       return this.subscriptions[nodeId].driverOpcuaVarible;
@@ -260,7 +261,7 @@ export class ModbusTCPDriver {
       !Object.values(DataType).includes(parsed.dataType as unknown as DataType)
     ) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByTag() dataType ${parsed.dataType} is not supported by the internal OPCUA Server`
+        `[ModbusTCPDriver] subscribeByTag() dataType ${parsed.dataType} is not supported by the internal OPCUA Server`,
       );
     }
 
@@ -270,7 +271,7 @@ export class ModbusTCPDriver {
 
     if (dataType !== tag.opcuaDataType) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByTag() dataType does not match that of tag that it refereneces`
+        `[ModbusTCPDriver] subscribeByTag() dataType does not match that of tag that it refereneces`,
       );
     }
 
@@ -281,6 +282,22 @@ export class ModbusTCPDriver {
       dataType: dataType,
     });
 
+    const subscription: TagSubscription = {
+      dataType: parsed.dataType,
+      opcuaDataType: dataType,
+      driverOpcuaVarible: driverOpcuaVarible,
+      address: parsed.address,
+      registerType: parsed.registerType,
+      registerLength: parsed.registerLength,
+      endian: parsed.endian,
+      swapWords: parsed.swapWords,
+      arrayLength: parsed.arrayLength,
+      bit: parsed.bit,
+      tags: new Map().set(tag.path, tag),
+      value: typeHandlers[parsed.dataType].default,
+      dataView: new DataView(new ArrayBuffer(0)),
+    };
+
     // write to modbusDevice when opcuaVarible is changed
     driverOpcuaVarible.on("value_changed", async (newValue) => {
       const sub = this.subscriptions[nodeId];
@@ -290,10 +307,10 @@ export class ModbusTCPDriver {
 
       if (sub.value !== newValue.value.value) {
         logger.trace(
-          `[ModbusTCPDriver] valueChanged ${sub.address} = ${newValue.value.value} : ${newValue.statusCode.toString()}`
+          `[ModbusTCPDriver] valueChanged ${sub.address} = ${newValue.value.value} : ${newValue.statusCode.toString()}`,
         );
         try {
-          await this.writeModbus(parsed, newValue.value.value);
+          await this.writeModbus(subscription, newValue.value.value);
           sub.value = newValue.value.value;
         } catch (error) {
           let opcuaStatus = StatusCodes.BadNotConnected;
@@ -310,26 +327,11 @@ export class ModbusTCPDriver {
       }
     });
 
-    const subscription: TagSubscription = {
-      dataType: parsed.dataType,
-      opcuaDataType: dataType,
-      driverOpcuaVarible: driverOpcuaVarible,
-      address: parsed.address,
-      registerType: parsed.registerType,
-      registerLength: parsed.registerLength,
-      endian: parsed.endian,
-      swapWords: parsed.swapWords,
-      arrayLength: parsed.arrayLength,
-      bit: parsed.bit,
-      tags: new Map().set(tag.path, tag),
-      value: typeHandlers[parsed.dataType].default,
-    };
-
     //this.setOpcuaVaribleStatus(subscription, StatusCodes.BadConditionDisabled);
 
     this.subscriptions[nodeId] = subscription;
     logger.debug(
-      `[ModbusTCPDriver] subscribeByTag() Created OPCUA node and subscription for ${nodeId}`
+      `[ModbusTCPDriver] subscribeByTag() Created OPCUA node and subscription for ${nodeId}`,
     );
     return driverOpcuaVarible;
   }
@@ -340,7 +342,7 @@ export class ModbusTCPDriver {
     this.subscriptions[tag.resolvedOptions.nodeId].tags.delete(tag.path);
     if (this.subscriptions[tag.resolvedOptions.nodeId].tags.size > 0) {
       logger.debug(
-        `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId} monitored count ${this.subscriptions[tag.resolvedOptions.nodeId].tags.size} not removing varible node`
+        `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId} monitored count ${this.subscriptions[tag.resolvedOptions.nodeId].tags.size} not removing varible node`,
       );
       return; // dont remove if there are more insances looking at the varible
     }
@@ -348,30 +350,30 @@ export class ModbusTCPDriver {
 
     if (!resolvedPath.tagPath) {
       throw new Error(
-        `[ModbusTCPDriver] unsubscribeByTag() empty tag nodeId for path ${tag}`
+        `[ModbusTCPDriver] unsubscribeByTag() empty tag nodeId for path ${tag}`,
       );
     }
     const parsed = this.parsePath(resolvedPath.tagPath);
     if (!parsed) {
       throw new Error(
-        `[ModbusTCPDriver] unsubscribeByTag() Invalid Modbus path: ${tag}`
+        `[ModbusTCPDriver] unsubscribeByTag() Invalid Modbus path: ${tag}`,
       );
     }
 
     if (!this.opcuaServer.engine.addressSpace) {
       throw new Error(
-        `[ModbusTCPDriver] unsubscribeByTag() pcuaServer.engine.addressSpace not defined, cannot remove opcua varible at ${tag.resolvedOptions.nodeId}`
+        `[ModbusTCPDriver] unsubscribeByTag() pcuaServer.engine.addressSpace not defined, cannot remove opcua varible at ${tag.resolvedOptions.nodeId}`,
       );
     }
 
     deleteOpcuaVariable(
       this.opcuaServer.engine.addressSpace,
-      this.subscriptions[tag.resolvedOptions.nodeId].driverOpcuaVarible
+      this.subscriptions[tag.resolvedOptions.nodeId].driverOpcuaVarible,
     );
 
     delete this.subscriptions[tag.resolvedOptions.nodeId]; // remove the subscription entirely
     logger.debug(
-      `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId}`
+      `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId}`,
     );
   }
 
@@ -379,10 +381,10 @@ export class ModbusTCPDriver {
     if (this.pollTimer) return;
     this.pollTimer = setInterval(
       () => this.pollModbus(),
-      this.pollingIntervalMs
+      this.pollingIntervalMs,
     );
     logger.info(
-      `[ModbusTCPDriver] Started Modbus polling at ${this.pollingIntervalMs} ms interval`
+      `[ModbusTCPDriver] Started Modbus polling at ${this.pollingIntervalMs} ms interval`,
     );
   }
 
@@ -409,10 +411,9 @@ export class ModbusTCPDriver {
     }
 
     for (const [type, subs] of groups.entries()) {
-      subs.sort((a, b) => a.address - b.address);
-
       let batches: Array<{ start: number; end: number }> = [];
       if (this.spanGaps) {
+        subs.sort((a, b) => a.address - b.address);
         const start = subs[0].address;
         const end =
           subs[subs.length - 1].address + subs[subs.length - 1].registerLength; // TD WIP ArrayLength
@@ -421,11 +422,13 @@ export class ModbusTCPDriver {
         batches = this.splitIntoBatches(subs);
       }
 
+      logger.trace(batches);
+
       for (const batch of batches) {
         const length = batch.end - batch.start;
         if (length <= 0 || batch.start < 0 || batch.start >= 65535) {
           logger.error(
-            `[ModbusTCPDriver] poll() batch address out of range  start: ${batch.start}  end: ${batch.end}`
+            `[ModbusTCPDriver] poll() batch address out of range  start: ${batch.start}  end: ${batch.end}`,
           );
           // TD WIP Send this error to client
           continue;
@@ -434,22 +437,22 @@ export class ModbusTCPDriver {
         switch (type) {
           case "hr":
             response = await attempt(() =>
-              this.client.readHoldingRegisters(batch.start, length)
+              this.client.readHoldingRegisters(batch.start, length),
             );
             break;
           case "ir":
             response = await attempt(() =>
-              this.client.readInputRegisters(batch.start, length)
+              this.client.readInputRegisters(batch.start, length),
             );
             break;
           case "co":
             response = await attempt(() =>
-              this.client.readCoils(batch.start, length)
+              this.client.readCoils(batch.start, length),
             );
             break;
           case "di":
             response = await attempt(() =>
-              this.client.readDiscreteInputs(batch.start, length)
+              this.client.readDiscreteInputs(batch.start, length),
             );
             break;
           default:
@@ -469,14 +472,35 @@ export class ModbusTCPDriver {
                 continue;
               }
 
-              const buffer = response.data.response.body.valuesAsBuffer;
+              sub.dataView = new DataView(
+                BuffertoArrayBuffer(response.data.response.body.valuesAsBuffer),
+              );
+
+              if (sub.swapWords && sub.dataView.buffer.byteLength > 2) {
+                swapWords16(sub.dataView);
+              }
 
               const offset = sub.address - batch.start;
-              let decoded = attempt(() => decode(sub, buffer, offset));
+
+              let decoded = attempt(() =>
+                typeHandlers[sub.dataType].decode({
+                  view: sub.dataView,
+                  offset: offset * 2,
+                  littleEndian: sub.endian === "LittleEndian",
+                  length: typeHandlers[sub.dataType].size,
+                  bit: sub.bit,
+                }),
+              );
               if ("error" in decoded) {
+                logger.error(decoded.error);
+                console.debug(batch);
+                console.debug(batches);
+                console.debug(sub.dataView);
+                console.debug(offset);
                 tag.error = new TagError("nodeId", decoded.error.message);
                 continue;
               }
+
               const oldValue = tag.driverOpcuaVarible?.readValue();
 
               if (
@@ -484,7 +508,7 @@ export class ModbusTCPDriver {
                 oldValue.statusCode.isBad()
               ) {
                 logger.trace(
-                  `[ModbusTCPDriver] poll() updated varible ${tag.path} = ${decoded.data}`
+                  `[ModbusTCPDriver] poll() updated varible ${tag.path} = ${decoded.data}`,
                 );
 
                 sub.value = decoded.data;
@@ -493,7 +517,7 @@ export class ModbusTCPDriver {
                     dataType: tag.opcuaDataType,
                     value: decoded.data,
                   },
-                  StatusCodes.Good
+                  StatusCodes.Good,
                 );
                 tag.error = undefined;
               }
@@ -509,7 +533,7 @@ export class ModbusTCPDriver {
   }
 
   private splitIntoBatches(
-    subs: TagSubscription[]
+    subs: TagSubscription[],
   ): Array<{ start: number; end: number }> {
     const batches: Array<{ start: number; end: number }> = [];
 
@@ -519,53 +543,76 @@ export class ModbusTCPDriver {
     subs.sort((a, b) => a.address - b.address);
 
     let start = subs[0].address;
-    let prev = start + subs[0].registerLength; // TD WIP ArrayLength
+    let end = start + subs[0].registerLength; // TD WIP ArrayLength
+    let maxRegLength = 0; // for multiple subscriptions of the same address with different lengths take the maximum
+    let currAddr = start;
 
-    for (let i = 1; i < subs.length; i++) {
-      const curr = subs[i].address;
-      if (curr >= prev + subs[i].registerLength) {
-        batches.push({ start, end: prev });
-        start = curr;
+    for (let i = 0; i < subs.length; i++) {
+      if (currAddr !== subs[i].address) maxRegLength = 0;
+      currAddr = subs[i].address;
+      if (subs[i].registerLength > maxRegLength) {
+        maxRegLength = subs[i].registerLength;
       }
-      prev = curr + subs[i].registerLength;
+
+      if (currAddr >= end + maxRegLength) {
+        batches.push({ start, end });
+        start = currAddr;
+      }
+      end = currAddr + maxRegLength;
     }
-    batches.push({ start, end: prev });
+    // push last batch when end of subscritions reached
+    batches.push({ start, end });
     return batches;
   }
 
-  private async writeModbus(modbusInfo: ParsedModbusPath, value: number) {
-    ///let data = new DataView(5, );
-    /*let multiplier = modbusInfo.arrayLength ?? 1;
-    const buffer = Buffer.alloc(modbusInfo.registerLength * 2 * multiplier);
-
-    const data = new DataView(
-      buffer.buffer,
-      buffer.byteOffset,
-      buffer.byteLength
-    );*/
-
+  private async writeModbus(modbusInfo: TagSubscription, value: number) {
     try {
-      let buffer = encode(modbusInfo, value);
+      const handler = typeHandlers[modbusInfo.dataType];
+
+      if (!handler)
+        throw new DriverStatusError(
+          StatusCodes.BadConfigurationError,
+          `[ModbusTCPDriver] DataType ${modbusInfo.dataType} not supported`,
+        );
+
+      handler.encode({
+        view: modbusInfo.dataView,
+        offset: 0,
+        value,
+        littleEndian: modbusInfo.endian === "LittleEndian",
+        bit: modbusInfo.bit,
+      });
+
+      if (modbusInfo.swapWords && handler.size && handler.size > 2) {
+        swapWords16(modbusInfo.dataView);
+      }
 
       if (modbusInfo.registerType === "hr") {
-        await this.client.writeMultipleRegisters(modbusInfo.address, buffer);
+        await this.client.writeMultipleRegisters(
+          modbusInfo.address,
+          Buffer.from(
+            modbusInfo.dataView.buffer,
+            modbusInfo.dataView.byteOffset,
+            modbusInfo.dataView.byteLength,
+          ),
+        );
       } else if (modbusInfo.registerType === "co") {
         if (modbusInfo.dataType !== "Boolean")
           throw new DriverStatusError(
             StatusCodes.BadConfigurationError,
-            `[ModbusTCPDriver] invalid dataType ${modbusInfo.dataType} for writing to Coil at address ${modbusInfo.address}`
+            `[ModbusTCPDriver] invalid dataType ${modbusInfo.dataType} for writing to Coil at address ${modbusInfo.address}`,
           );
         await this.client.writeSingleCoil(modbusInfo.address, value !== 0);
       } else {
         throw new DriverStatusError(
           StatusCodes.BadConfigurationError,
-          `[ModbusTCPDriver] Write not supported for Modbus type: ${modbusInfo.registerType}`
+          `[ModbusTCPDriver] Write not supported for Modbus type: ${modbusInfo.registerType}`,
         );
       }
     } catch (error) {
       logger.error(
         error,
-        `[ModbusTCPDriver] Failed to write Modbus ${modbusInfo.registerType} address ${modbusInfo.address}:`
+        `[ModbusTCPDriver] Failed to write Modbus ${modbusInfo.registerType} address ${modbusInfo.address}:`,
       );
       if (error instanceof DriverStatusError) {
         throw error;
@@ -591,7 +638,7 @@ export class ModbusTCPDriver {
 
     if (!typeHandlers[dataType].size) {
       throw new Error(
-        `[ModbusTCPDriver] dataType ${dataType} not supported or implimented yet`
+        `[ModbusTCPDriver] dataType ${dataType} not supported or implimented yet`,
       );
     }
 
@@ -622,119 +669,17 @@ export class ModbusTCPDriver {
     };
   }
 }
-/*
-const typeHandlers = {
-  Boolean: {
-    size: 2,
-    read: (view: DataView, offset: number, bit: number): boolean => {
-      let data = view.getUint16(offset);
-      return data && 1 << bit ? true : false;
-    },
-    write: (view: DataView, offset: number, bit: number, value: boolean) => {
-      let val: number = value ? 1 : 0;
-      let data: number = val << bit;
-      view.setUint16(offset, data);
-    },
-  },
-  SByte: {
-    size: 1,
-    read: (view: DataView, offset: number, bit: number) => view.getInt8(offset),
-    write: (view: DataView, offset: number, bit: number, value: number) =>
-      view.setInt8(offset, value),
-  },
-  Byte: {
-    size: 1,
-    read: (view: DataView, offset: number, bit: number) =>
-      view.getUint8(offset),
-    write: (view: DataView, offset: number, bit: number, value: number) =>
-      view.setUint8(offset, value),
-  },
-  Int16: {
-    size: 2,
-    read: (view: DataView, offset: number, littleEndian: boolean) =>
-      view.getInt16(offset, littleEndian),
-    write: (
-      view: DataView,
-      offset: number,
-      value: number,
-      littleEndian: boolean
-    ) => view.setInt16(offset, value, littleEndian),
-  },
-  UInt16: {
-    size: 2,
-    read: (view: DataView, offset: number, littleEndian: boolean) =>
-      view.getUint16(offset, littleEndian),
-    write: (
-      view: DataView,
-      offset: number,
-      value: number,
-      littleEndian: boolean
-    ) => view.setUint16(offset, value, littleEndian),
-  },
-  Int32: {
-    size: 4,
-    read: (view: DataView, offset: number, littleEndian: boolean) =>
-      view.getInt32(offset, littleEndian),
-    write: (
-      view: DataView,
-      offset: number,
-      value: number,
-      littleEndian: boolean
-    ) => view.setInt32(offset, value, littleEndian),
-  },
-  UInt32: {
-    size: 4,
-    read: (view: DataView, offset: number, littleEndian: boolean) =>
-      view.getUint32(offset, littleEndian),
-    write: (
-      view: DataView,
-      offset: number,
-      value: number,
-      littleEndian: boolean
-    ) => view.setUint32(offset, value, littleEndian),
-  },
-  Float: {
-    size: 4,
-    read: (view: DataView, offset: number, littleEndian: boolean) =>
-      view.getFloat32(offset, littleEndian),
-    write: (
-      view: DataView,
-      offset: number,
-      value: number,
-      littleEndian: boolean
-    ) => view.setFloat32(offset, value, littleEndian),
-  },
-  Double: {
-    size: 8,
-    read: (view: DataView, offset: number, littleEndian: boolean) =>
-      view.getFloat64(offset, littleEndian),
-    write: (
-      view: DataView,
-      offset: number,
-      value: number,
-      littleEndian: boolean
-    ) => view.setFloat64(offset, value, littleEndian),
-  },
-  String: {
-    size: undefined, // variable length
-    read: (
-      view: DataView,
-      offset: number,
-      littleEndian: boolean,
-      length: number
-    ) => {
-      const bytes = new Uint8Array(view.buffer, offset, length);
-      return new TextDecoder().decode(bytes);
-    },
-    write: (view: DataView, offset: number, value: string) => {
-      const bytes = new TextEncoder().encode(value);
-      new Uint8Array(view.buffer).set(bytes, offset);
-    },
-  },
-} as const;
-*/
 
-export type ReadWriteOptions = {
+function swapWords16(dataView: DataView) {
+  for (let i = 0; i < dataView.byteLength - 2; i += 2) {
+    const word0 = dataView.getUint16(i);
+    const word1 = dataView.getUint16(i + 2);
+    dataView.setUint16(i + 2, word0);
+    dataView.setUint16(i, word1);
+  }
+}
+
+export type TypeHandlerOptions = {
   view: DataView;
   offset: number;
   littleEndian?: boolean;
@@ -745,17 +690,17 @@ export type ReadWriteOptions = {
 export const typeHandlers = {
   Boolean: {
     size: 2,
-    read: ({ view, offset, bit }: ReadWriteOptions): boolean => {
+    decode: ({ view, offset, bit }: TypeHandlerOptions): boolean => {
       const data = view.getUint16(offset);
-      if (!bit) return data ? true : false;
+      if (bit == undefined) return data ? true : false;
       return (data & (1 << bit)) !== 0;
     },
-    write: ({
+    encode: ({
       view,
       offset,
       bit = 0,
       value,
-    }: ReadWriteOptions & { value: boolean }) => {
+    }: TypeHandlerOptions & { value: boolean }) => {
       let data = view.getUint16(offset);
       if (value) {
         data |= 1 << bit;
@@ -768,103 +713,107 @@ export const typeHandlers = {
   },
   SByte: {
     size: 1,
-    read: ({ view, offset }: ReadWriteOptions) => view.getInt8(offset),
-    write: ({ view, offset, value }: ReadWriteOptions & { value: number }) =>
+    encode: ({ view, offset }: TypeHandlerOptions) => view.getInt8(offset),
+    decode: ({ view, offset, value }: TypeHandlerOptions & { value: number }) =>
       view.setInt8(offset, value),
     default: 0,
   },
   Byte: {
     size: 1,
-    read: ({ view, offset }: ReadWriteOptions) => view.getUint8(offset),
-    write: ({ view, offset, value }: ReadWriteOptions & { value: number }) =>
+    encode: ({ view, offset }: TypeHandlerOptions) => view.getUint8(offset),
+    decode: ({ view, offset, value }: TypeHandlerOptions & { value: number }) =>
       view.setUint8(offset, value),
     default: 0,
   },
   Int16: {
     size: 2,
-    read: ({ view, offset, littleEndian = false }: ReadWriteOptions) =>
+    decode: ({ view, offset, littleEndian = false }: TypeHandlerOptions) =>
       view.getInt16(offset, littleEndian),
-    write: ({
+    encode: ({
       view,
       offset,
       value,
       littleEndian = false,
-    }: ReadWriteOptions & { value: number }) =>
+    }: TypeHandlerOptions & { value: number }) =>
       view.setInt16(offset, value, littleEndian),
     default: 0,
   },
   UInt16: {
     size: 2,
-    read: ({ view, offset, littleEndian = false }: ReadWriteOptions) =>
+    encode: ({ view, offset, littleEndian = false }: TypeHandlerOptions) =>
       view.getUint16(offset, littleEndian),
-    write: ({
+    decode: ({
       view,
       offset,
       value,
       littleEndian = false,
-    }: ReadWriteOptions & { value: number }) =>
+    }: TypeHandlerOptions & { value: number }) =>
       view.setUint16(offset, value, littleEndian),
     default: 0,
   },
   Int32: {
     size: 4,
-    read: ({ view, offset, littleEndian = false }: ReadWriteOptions) =>
+    decode: ({ view, offset, littleEndian = false }: TypeHandlerOptions) =>
       view.getInt32(offset, littleEndian),
-    write: ({
+    encode: ({
       view,
       offset,
       value,
       littleEndian = false,
-    }: ReadWriteOptions & { value: number }) =>
+    }: TypeHandlerOptions & { value: number }) =>
       view.setInt32(offset, value, littleEndian),
     default: 0,
   },
   UInt32: {
     size: 4,
-    read: ({ view, offset, littleEndian = false }: ReadWriteOptions) =>
+    encode: ({ view, offset, littleEndian = false }: TypeHandlerOptions) =>
       view.getUint32(offset, littleEndian),
-    write: ({
+    decode: ({
       view,
       offset,
       value,
       littleEndian = false,
-    }: ReadWriteOptions & { value: number }) =>
+    }: TypeHandlerOptions & { value: number }) =>
       view.setUint32(offset, value, littleEndian),
     default: 0,
   },
   Float: {
     size: 4,
-    read: ({ view, offset, littleEndian = false }: ReadWriteOptions) =>
+    encode: ({ view, offset, littleEndian = false }: TypeHandlerOptions) =>
       view.getFloat32(offset, littleEndian),
-    write: ({
+    decode: ({
       view,
       offset,
       value,
       littleEndian = false,
-    }: ReadWriteOptions & { value: number }) =>
+    }: TypeHandlerOptions & { value: number }) =>
       view.setFloat32(offset, value, littleEndian),
     default: 0,
   },
   Double: {
     size: 8,
-    read: ({ view, offset, littleEndian = false }: ReadWriteOptions) =>
+    decode: ({ view, offset, littleEndian = false }: TypeHandlerOptions) =>
       view.getFloat64(offset, littleEndian),
-    write: ({
+    encode: ({
       view,
       offset,
       value,
       littleEndian = false,
-    }: ReadWriteOptions & { value: number }) =>
+    }: TypeHandlerOptions & { value: number }) =>
       view.setFloat64(offset, value, littleEndian),
     default: 0,
   },
   String: {
     size: undefined as number | undefined, // variable length
-    read: ({ view, offset, length = 0 }: ReadWriteOptions): string => {
+    decode: ({ view, offset, length = 0 }: TypeHandlerOptions): string => {
       const bytes = new Uint8Array(view.buffer, offset, length);
       return new TextDecoder().decode(bytes);
     },
-    write: ({ view, offset, value }: ReadWriteOptions & { value: string }) => {
+    encode: ({
+      view,
+      offset,
+      value,
+    }: TypeHandlerOptions & { value: string }) => {
       const bytes = new TextEncoder().encode(value);
       new Uint8Array(view.buffer, offset, bytes.length).set(bytes);
     },
@@ -872,65 +821,11 @@ export const typeHandlers = {
   },
 } as const;
 
-function decode(
-  parsed: ParsedModbusPath,
-  buffer: Buffer,
-  addressOffset: number
-): number | boolean | string {
-  const littleEndian = parsed.endian === "LittleEndian";
-  const handler = typeHandlers[parsed.dataType];
-  const view = new DataView(
-    buffer.buffer,
+// convert nodejs Buffer to ArrayBuffer with correct offset for shared 8K buffers
+function BuffertoArrayBuffer(buffer: Buffer) {
+  // Use byteOffset and byteLength to get the correct slice from the underlying ArrayBuffer
+  return buffer.buffer.slice(
     buffer.byteOffset,
-    buffer.byteLength
+    buffer.byteOffset + buffer.byteLength,
   );
-
-  let value = handler.read({
-    view,
-    offset: addressOffset * 2,
-    littleEndian,
-    length: buffer.length,
-    bit: parsed.bit,
-  });
-
-  // Swap words if needed
-  if (parsed.swapWords && buffer.length > 2) {
-    const swapped = new Uint8Array(buffer);
-    for (let i = 0; i < swapped.length; i += 2) {
-      [swapped[i], swapped[i + 1]] = [swapped[i + 1], swapped[i]];
-    }
-    const swappedView = new DataView(swapped.buffer);
-    value = handler.read({
-      view: swappedView,
-      offset: addressOffset * 2,
-      littleEndian,
-      length: buffer.length,
-      bit: parsed.bit,
-    });
-  }
-  //logger.debug(`[ModbusTCPDriver] decode value ${value}`);
-
-  return value;
-}
-
-function encode(parsed: ParsedModbusPath, value: any): Buffer {
-  const handler = typeHandlers[parsed.dataType];
-  const size = handler.size ?? (typeof value === "string" ? value.length : 0);
-  const buffer = Buffer.alloc(size);
-  const view = new DataView(
-    buffer.buffer,
-    buffer.byteOffset,
-    buffer.byteLength
-  );
-
-  const littleEndian = parsed.endian === "LittleEndian";
-  handler.write({ view, offset: 0, value, littleEndian, bit: parsed.bit });
-
-  if (parsed.swapWords && size > 2) {
-    for (let i = 0; i < buffer.length; i += 2) {
-      [buffer[i], buffer[i + 1]] = [buffer[i + 1], buffer[i]];
-    }
-  }
-
-  return buffer;
 }

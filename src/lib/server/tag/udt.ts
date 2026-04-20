@@ -1,11 +1,12 @@
 import { DataType, OPCUAServer, type UAObject } from "node-opcua";
 import {
   Tag,
-  TagOptionsResolved,
+  type TagOptionsResolved,
   Z_TagOptionsInput,
   type TagOptionsInput,
 } from "./tag";
 import z from "zod";
+import { logger } from "../pino/logger";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -225,7 +226,6 @@ export class UdtDefinition {
 
   constructor(opts: UdtDefinitionOptions) {
     this.name = opts.name;
-    console.debug(opts);
     this.options = opts; // TD WIP ZOD Z_UdtDefinitionOptions.parse(opts);
     //this.initalValue = opts.initalValue;
   }
@@ -254,23 +254,25 @@ export class UdtDefinition {
         override = tagOverrideOptions[options.name];
       }
 
-      console.debug("[Udt] buildTagFeilds() override", override);
-
-      options.udtParent = this.name;
+      // inheritable options from parent tag if not defined
       options.parameters = parameters;
       options.exposeOverOpcua =
         options.exposeOverOpcua ?? parentTagOptions.exposeOverOpcua;
-      options.initalValue = options.initalValue ?? parentTagOptions.initalValue;
-      options.nodeId = options.nodeId ?? parentTagOptions.nodeId;
       options.writeable = options.writeable ?? parentTagOptions.writeable;
 
+      // instance overrides take priroity
+      options.children = undefined;
       if (override) {
         for (const [key, value] of Object.entries(override)) {
+          // only accept valid property names
           if (key in options) {
-            options[key as keyof typeof options] = value;
-            if (!options.overrides) options.overrides = {};
-            options.overrides[key] = value;
-            console.debug(value);
+            // only accept the override if it acutally different from computed values
+            if (options[key as keyof typeof options] !== value) {
+              options[key as keyof typeof options] = value;
+              if (!options.children) options.children = {};
+              options.children[key] = value;
+              logger.trace(`[udt] buildTagFeilds() override ${key} ${value}`);
+            }
           }
         }
       }
@@ -412,19 +414,6 @@ export interface TagInstanceDoc {
 }*/
 
 // Build Zod schema from UDT
-function buildPropsSchema(udtProps: UdtParams) {
-  const shape: Record<UdtParamTypes, z.ZodType> = {
-    number: z.number(),
-    string: z.string(),
-    boolean: z.boolean(),
-  };
-
-  let schema: Record<string, z.ZodType> = {};
-  for (const [key, def] of Object.entries(udtProps)) {
-    schema[key] = shape[def.type].default(def.default);
-  }
-  return z.object(schema);
-}
 
 /*
 // === Expression Evaluator ===

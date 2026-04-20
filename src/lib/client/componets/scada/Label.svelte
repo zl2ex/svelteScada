@@ -26,9 +26,13 @@
   let { path, clientTag, label, style, onclick }: props = $props();
 
   // either provided client tag or create a new instance with the path
-  let tag = clientTag ?? new ClientTag("any", { path });
-  //subscribe to updates from the server over socket.io
-  tag.subscribe();
+  let tag = $derived.by(() => {
+    let tag = clientTag ?? new ClientTag("any", { path: path ?? "" });
+
+    //subscribe to updates from the server over socket.io
+    tag?.subscribe();
+    return tag;
+  });
 
   let isFocus = $state(false);
 

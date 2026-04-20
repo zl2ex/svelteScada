@@ -13,7 +13,12 @@ import type { Socket } from "socket.io-client";
 import z from "zod";
 
 export const Z_NodeOptions = z.object({
-  name: z.string(),
+  name: z
+    .string()
+    .regex(
+      /^[a-zA-Z0-9/_-]+$/,
+      "Only alphanumeric characters are allowed and - _ /",
+    ),
   parentPath: z.string(),
   type: z.union([z.literal("Tag"), z.literal("UdtTag"), z.literal("Folder")]),
 });
@@ -31,22 +36,12 @@ export class Node {
     this.type = opts.type;
     this.name = opts.name;
 
-    /*if (this.type == "UdtTag") {
-      this.parentPath = opts.parentPath + ".";
-    } else if (
-      opts.parentPath.endsWith("/") == false &&
-      opts.parentPath.length > 1
-    ) {
-      this.parentPath = opts.parentPath + "/";
-    } else {*/
     this.parentPath = opts.parentPath;
-    //}
     let path = `${this.parentPath}${this.name}`;
 
     if (this.type == "Folder" && path.endsWith("/") == false) {
       path = path + "/";
     }
-
     this.path = path;
   }
 }
@@ -59,24 +54,24 @@ export class TypedEventTarget<T extends EventMap> {
   addEventListener<K extends keyof T>(
     type: K,
     listener: (ev: T[K]) => void,
-    options?: boolean | AddEventListenerOptions
+    options?: boolean | AddEventListenerOptions,
   ): void {
     this.target.addEventListener(
       type as string,
       listener as EventListener,
-      options
+      options,
     );
   }
 
   removeEventListener<K extends keyof T>(
     type: K,
     listener: (ev: T[K]) => void,
-    options?: boolean | EventListenerOptions
+    options?: boolean | EventListenerOptions,
   ): void {
     this.target.removeEventListener(
       type as string,
       listener as EventListener,
-      options
+      options,
     );
   }
 
@@ -119,10 +114,10 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     ClientTag.socket.on("tag:update", (payload) => {
       //ClientTag.tags[path]?.update({ path, value });
       console.debug(
-        `tag.update:${payload.path} = ${payload.value.value} ${payload.value.statusCodeString}`
+        `tag.update:${payload.path} = ${payload.value.value} ${payload.value.statusCodeString}`,
       );
       ClientTag.events.dispatchEvent(
-        new CustomEvent(`tag:update:${payload.path}`, { detail: payload })
+        new CustomEvent(`tag:update:${payload.path}`, { detail: payload }),
       );
     });
   }
@@ -130,7 +125,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   constructor(expectedDataType: DataTypeString, opts: ClientTagOptions) {
     if (!ClientTag.socket) {
       throw new Error(
-        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before creating any instances`
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before creating any instances`,
       );
     }
 
@@ -166,7 +161,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this.unsubscribe();
     ClientTag.events.removeEventListener(
       `tag:update:${this.path}`,
-      this.update
+      this.update,
     );
     console.trace(`[ClientTag] dispose() ${this.path}`);
     //delete ClientTag.tags[this.path];
@@ -178,7 +173,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
 
     if (path != this.path)
       throw new Error(
-        `[Client Tag]  tag:update  path ${path} does not match requested path ${this.path}`
+        `[Client Tag]  tag:update  path ${path} does not match requested path ${this.path}`,
       );
 
     // TD WIP Validate datatype of tag vs datatype of clientTag
@@ -191,8 +186,8 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this._value = payload.value;
     this.statusCodeString = payload.statusCodeString;
     this.errorMessage = payload.errorMessage;
-    if (payload.children) {
-      payload.children.forEach((child) => {
+    if (payload.childTags) {
+      payload.childTags.forEach((child) => {
         this.children?.set(child.path, new ClientTag("any", child));
       });
     }
@@ -209,7 +204,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   async write(value: ResolveType<DataTypeString>) {
     if (!ClientTag.socket) {
       throw new Error(
-        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling write()`
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling write()`,
       );
     }
 
@@ -231,7 +226,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
             this.errorMessage = undefined;
             resolve({ data: this, error: undefined });
           }
-        }
+        },
       );
     });
   }
@@ -239,11 +234,11 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   async subscribe(): Promise<Result<ClientTag<any>, Error>> {
     if (!ClientTag.socket) {
       throw new Error(
-        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling subscribe()`
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling subscribe()`,
       );
     }
     //ClientTag.socket.emit("tag:subscribe", this.path);
-    console.debug(`[ClientTag] attempt to subscribe tag ${this.path}`);
+    //console.debug(`[ClientTag] attempt to subscribe tag ${this.path}`);
 
     return new Promise((resolve, reject) => {
       ClientTag.socket?.emit("tag:subscribe", this.path, (response) => {
@@ -263,7 +258,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   unsubscribe() {
     if (!ClientTag.socket) {
       throw new Error(
-        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling unsubscribe()`
+        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before calling unsubscribe()`,
       );
     }
     ClientTag.socket.emit("tag:unsubscribe", this.path);

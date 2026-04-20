@@ -62,7 +62,7 @@
       <div class="form-item">
         <label for="name">name</label>
         <input {...updateTag.fields.name.as("text")} />
-        {#each updateTag.fields.name.issues() as issue}
+        {#each updateTag.fields.name.issues() ?? [] as issue}
           <span class="issue">{issue.message}</span>
         {/each}
       </div>
@@ -98,7 +98,7 @@
             {/if}
           {/await}
         </select>
-        {#each updateTag.fields.dataType.issues() as issue}
+        {#each updateTag.fields.dataType.issues() ?? [] as issue}
           <span class="issue">{issue.message}</span>
         {/each}
       </div>
@@ -106,7 +106,7 @@
       <div class="form-item">
         <label for="nodeId">nodeId</label>
         <input {...updateTag.fields.nodeId.as("text")} />
-        {#each updateTag.fields.nodeId.issues() as issue}
+        {#each updateTag.fields.nodeId.issues() ?? [] as issue}
           <span class="issue">{issue.message}</span>
         {/each}
       </div>
@@ -114,7 +114,7 @@
       <div class="form-item-row">
         <label for="exposeOverOpcua">exposeOverOpcua</label>
         <input {...updateTag.fields.exposeOverOpcua.as("checkbox")} />
-        {#each updateTag.fields.exposeOverOpcua.issues() as issue}
+        {#each updateTag.fields.exposeOverOpcua.issues() ?? [] as issue}
           <span class="issue">{issue.message}</span>
         {/each}
       </div>
@@ -122,7 +122,7 @@
       <div class="form-item-row">
         <label for="writeable">writeable</label>
         <input {...updateTag.fields.writeable.as("checkbox")} />
-        {#each updateTag.fields.writeable.issues() as issue}
+        {#each updateTag.fields.writeable.issues() ?? [] as issue}
           <span class="issue">{issue.message}</span>
         {/each}
       </div>
