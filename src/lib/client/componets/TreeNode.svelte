@@ -3,27 +3,41 @@
   import Label from "./scada/Label.svelte";
   import { goto } from "$app/navigation";
   import { getAllChildrenAsNode } from "$lib/remote/tags.remote";
-  import type { Node } from "../tag/clientTag.svelte";
+  import type { TagNode } from "../tag/clientTag.svelte";
+  import type { Snippet } from "svelte";
 
   type pathProvided = {
     path: string;
     nodes?: never;
+    getChildren?: (node: TagNode) => Promise<TagNode[]>;
+    s?: {
+      folder: { details?: Snippet<[TagNode]>; summary?: Snippet<[TagNode]> };
+      tag: { details?: Snippet<[TagNode]>; summary?: Snippet<[TagNode]> };
+      udtTag: { details?: Snippet<[TagNode]>; summary?: Snippet<[TagNode]> };
+    };
   };
 
   type nodesProvided = {
     path?: never;
-    nodes: Node[];
+    nodes: TagNode[];
+    getChildren?: (node: TagNode) => Promise<TagNode[]>;
+    s?: {
+      folder: { details?: Snippet<[TagNode]>; summary?: Snippet<[TagNode]> };
+      tag: { details?: Snippet<[TagNode]>; summary?: Snippet<[TagNode]> };
+      udtTag: { details?: Snippet<[TagNode]>; summary?: Snippet<[TagNode]> };
+    };
   };
 
   type props = pathProvided | nodesProvided;
 
-  let { path, nodes }: props = $props();
+  let { path, nodes, s, getChildren }: props = $props();
 
   let tree = $derived.by(async () => {
     if (path) {
-      return getAllChildrenAsNode(path);
+      return await getAllChildrenAsNode(path);
+    } else {
+      return nodes;
     }
-    return nodes;
   });
 </script>
 
@@ -31,6 +45,7 @@
   <div class="treeNode">
     <!--{#await socketIoClientHandler.rpc( { name: "getChildrenAsNode()", parameters: { path: path } } ) then response}-->
     {#await tree then response}
+      <!--<pre>{JSON.stringify(nodes, null, 2)}</pre>-->
       <!--{#if response.error}
       <p>{response.error.message}</p>
       {:else}-->
@@ -38,15 +53,17 @@
       {#each response as node}
         {#if node.type == "Folder"}
           <details open>
-            <summary>{node.name}</summary>
+            <summary>
+              {node.name}
+              {@render s.folder.summary?.(node)}
+            </summary>
             <div class="indent">
-              <button
-                onclick={() => goto(`?tagPath=newTag&parentPath=${node.path}`)}
-                >+ new Tag</button
-              >
-
+              {@render s.folder.details?.(node)}
               {#if node.children}
-                <TreeNode nodes={node.children}></TreeNode>
+                <TreeNode nodes={node.children} {s} {getChildren}></TreeNode>
+              {:else if getChildren}
+                <TreeNode nodes={await getChildren(node)} {s} {getChildren}
+                ></TreeNode>
               {/if}
             </div>
           </details>
@@ -72,14 +89,9 @@
                 </g>
               </svg>
               <span>{node.name}</span>
-              <Label
-                path={node.path}
-                label=""
-                onclick={(ev) => ev.stopPropagation()}
-                style="margin-left: auto"
-              ></Label>
-            </div>
-          </summary>
+              {@render s.tag.summary?.(node)}
+            </div></summary
+          >
         {:else if node.type == "UdtTag"}
           <details open>
             <summary tabindex="0" onclick={() => goto(`?tagPath=${node.path}`)}>
@@ -113,7 +125,10 @@
             </summary>
             <div class="indent">
               {#if node.children}
-                <TreeNode nodes={node.children}></TreeNode>
+                <TreeNode nodes={node.children} {s} {getChildren}></TreeNode>
+              {:else if getChildren}
+                <TreeNode nodes={await getChildren(node)} {s} {getChildren}
+                ></TreeNode>
               {/if}
             </div>
           </details>
@@ -137,9 +152,8 @@
     font-size: 0.8rem;
   }
   .indent {
-    margin-left: 0.55rem;
-    padding-left: 0.25rem;
-    border-left: 0.1rem solid var(--app-text-color);
+    padding-left: 1rem;
+    /*border-left: 0.1rem solid var(--app-text-color);*/
   }
 
   details {
@@ -148,7 +162,8 @@
   }
 
   summary {
-    padding: 0.25rem;
+    padding: 0.1rem;
+    border-radius: 0.2rem;
     /*list-style-position: outside;*/
   }
 

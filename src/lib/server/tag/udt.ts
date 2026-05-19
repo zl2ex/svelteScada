@@ -1,12 +1,8 @@
 import { DataType, OPCUAServer, type UAObject } from "node-opcua";
-import {
-  Tag,
-  type TagOptionsResolved,
-  Z_TagOptionsInput,
-  type TagOptionsInput,
-} from "./tag";
+import { type TagOptionsResolved, type TagOptionsInput } from "./tag";
 import z from "zod";
 import { logger } from "../pino/logger";
+import { Z_UdtParams, Z_UdtDefinitionOptions } from "./zodSchema";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -201,22 +197,7 @@ type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
 
 //export type UdtParams = Record<string, number | boolean | string>;
 
-export const Z_UdtParams = z.record(
-  z.string(),
-  z.union([
-    z.object({ type: z.literal("string"), default: z.string() }),
-    z.object({ type: z.literal("number"), default: z.number() }),
-    z.object({ type: z.literal("boolean"), default: z.boolean() }),
-  ])
-);
-
 export type UdtParams = z.input<typeof Z_UdtParams>;
-
-export const Z_UdtDefinitionOptions = z.object({
-  name: z.string(),
-  parameters: Z_UdtParams,
-  feilds: z.array(Z_TagOptionsInput),
-});
 
 export type UdtDefinitionOptions = z.input<typeof Z_UdtDefinitionOptions>;
 
@@ -232,14 +213,14 @@ export class UdtDefinition {
 
   buildTagFeilds(
     parentTagOptions: TagOptionsResolved,
-    tagOverrideOptions?: Record<string, TagOptionsInput<any>>
+    tagOverrideOptions?: Record<string, TagOptionsInput<any>>,
   ) {
     // instance parameters overide udt parameters
 
     let parameters = this.options.parameters ?? {};
     if (this.options.parameters && parentTagOptions?.parameters) {
       for (const [key, udtDefParameter] of Object.entries(
-        this.options.parameters
+        this.options.parameters,
       )) {
         if (parentTagOptions?.parameters[key]) {
           parameters[key] = parentTagOptions?.parameters[key];

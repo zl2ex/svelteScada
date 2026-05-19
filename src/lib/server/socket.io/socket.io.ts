@@ -9,7 +9,7 @@ import {
   type TagPaths,
 } from "../tag/tag";
 import { tagManager } from "../../../server";
-import type { Node } from "../../client/tag/clientTag.svelte";
+import type { TagNode } from "../../client/tag/clientTag.svelte";
 import { attempt, type Result } from "../../../lib/util/attempt";
 import { string } from "zod";
 
@@ -35,7 +35,7 @@ export interface RpcMap {
   };
   "getChildrenAsNode()": {
     parameters: { path: string };
-    response: Result<Node[], Error>;
+    response: Result<TagNode[], Error>;
   };
   "createTag()": {
     parameters: { options: TagOptionsInput<any> };

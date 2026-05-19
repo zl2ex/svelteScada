@@ -1,17 +1,7 @@
 <script lang="ts">
-  import { browser } from "$app/environment";
-  import { setTheme, type Theme } from "$lib/client/theme";
-  import "./styles.css";
-  let { children } = $props();
+  import "./layout.css";
 
-  if (browser) {
-    // On load, restore saved preference for light or dark theme
-    let savedTheme: Theme = localStorage.getItem("theme") as Theme;
-    if (!savedTheme) {
-      savedTheme = "system";
-    }
-    setTheme(savedTheme);
-  }
+  let { children } = $props();
 </script>
 
 {@render children()}

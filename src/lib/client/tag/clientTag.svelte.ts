@@ -17,7 +17,7 @@ export const Z_NodeOptions = z.object({
     .string()
     .regex(
       /^[a-zA-Z0-9/_-]+$/,
-      "Only alphanumeric characters are allowed and - _ /",
+      "Only alphanumeric characters and - _ / are allowed",
     ),
   parentPath: z.string(),
   type: z.union([z.literal("Tag"), z.literal("UdtTag"), z.literal("Folder")]),
@@ -25,12 +25,12 @@ export const Z_NodeOptions = z.object({
 
 export type NodeOptions = z.input<typeof Z_NodeOptions>;
 
-export class Node {
+export class TagNode {
   path: string;
   name: string;
   parentPath: string;
   type: NodeOptions["type"];
-  children?: Node[];
+  children?: TagNode[];
   constructor(options: NodeOptions) {
     const opts = Z_NodeOptions.parse(options);
     this.type = opts.type;

@@ -3,13 +3,10 @@ import { udtManager } from "../../server";
 import { attempt } from "$lib/util/attempt";
 import { logger } from "$lib/server/pino/logger";
 import { error, invalid } from "@sveltejs/kit";
-import { TagError, Z_tagOptionsInputForm } from "$lib/server/tag/tag";
+import { TagError } from "$lib/server/tag/tag";
 import z from "zod";
-import { Node } from "$lib/client/tag/clientTag.svelte";
-import {
-  Z_UdtDefinitionOptions,
-  type UdtDefinitionOptions,
-} from "$lib/server/tag/udt";
+import { TagNode } from "$lib/client/tag/clientTag.svelte";
+import { Z_UdtDefinitionOptions } from "$lib/server/tag/udt";
 
 export const getUdt = query(z.string(), (name) => {
   const result = attempt(() => udtManager.getUdt(name));
@@ -29,8 +26,8 @@ export const updateUdt = form(Z_UdtDefinitionOptions, async (data, issue) => {
     if (result.error instanceof TagError) {
       invalid(
         issue[result.error.feildName as keyof typeof issue](
-          result.error.message
-        )
+          result.error.message,
+        ),
       );
     } else {
       invalid(result.error.message);

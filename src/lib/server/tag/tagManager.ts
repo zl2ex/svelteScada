@@ -1,5 +1,5 @@
 import type { OPCUAServer, UAObject } from "node-opcua";
-import { Node } from "../../client/tag/clientTag.svelte";
+import { TagNode } from "../../client/tag/clientTag.svelte";
 import { attempt } from "../../../lib/util/attempt";
 import { collections } from "../mongodb/collections";
 import { logger } from "../pino/logger";
@@ -17,7 +17,7 @@ export class TreeIndex {
   addNode(node: Tag<any> | TagFolder) {
     if (this.nodes.get(node.path))
       throw new Error(
-        `[TreeIndex] addNode() Node at ${node.path} already exists`
+        `[TreeIndex] addNode() Node at ${node.path} already exists`,
       );
     this.nodes.set(node.path, node);
 
@@ -91,18 +91,18 @@ export class TagManager {
 
   async createFolder(
     opts: TagFolderOptions,
-    writeToDb: boolean = true
+    writeToDb: boolean = true,
   ): Promise<TagFolder> {
-    let node = new Node({ ...opts, type: "Folder" });
+    let node = new TagNode({ ...opts, type: "Folder" });
 
     if (writeToDb) {
       const existing = await collections.folders.findOne(
         { path: node.path },
-        { projection: { _id: 0 } }
+        { projection: { _id: 0 } },
       );
       if (existing) {
         throw new Error(
-          `[TagManager] createFolder() Folder already exists at ${node.path}`
+          `[TagManager] createFolder() Folder already exists at ${node.path}`,
         );
       }
 
@@ -119,25 +119,25 @@ export class TagManager {
 
   async createTag(
     opts: TagOptionsInput<any>,
-    writeToDb: boolean = true
+    writeToDb: boolean = true,
   ): Promise<Tag<any>> {
     if (!this.opcuaServer || !this.tagFolder) {
       throw new Error(
-        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`
+        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
     }
 
-    let node = new Node({ ...opts, type: "Tag" });
+    let node = new TagNode({ ...opts, type: "Tag" });
     let doc: TagOptionsInput<any> = { ...opts, path: node.path };
 
     if (writeToDb) {
       const existing = await collections.tags.findOne(
         { path: node.path },
-        { projection: { _id: 0 } }
+        { projection: { _id: 0 } },
       );
       if (existing) {
         throw new Error(
-          `[TagManager] createTag() Tag already exists at ${node.path}`
+          `[TagManager] createTag() Tag already exists at ${node.path}`,
         );
       }
       await collections.tags.insertOne(doc);
@@ -183,7 +183,7 @@ export class TagManager {
     return this.tree.getChildren(parentPath);
   }
 
-  getChildrenAsNode(parentPath: string): Node[] {
+  getChildrenAsNode(parentPath: string): TagNode[] {
     return this.getChildren(parentPath).map((child) => {
       return {
         name: child.name,
@@ -194,7 +194,7 @@ export class TagManager {
     });
   }
 
-  getAllChildrenAsNode(parentPath: string): Node[] {
+  getAllChildrenAsNode(parentPath: string): TagNode[] {
     const children = this.getChildrenAsNode(parentPath);
 
     return children.map((node) => {
@@ -236,12 +236,12 @@ export class TagManager {
 
   async updateFolder(
     path: string,
-    updates: TagFolderOptions
+    updates: TagFolderOptions,
   ): Promise<TagFolder | null> {
     const result = await collections.folders.findOneAndUpdate(
-      { path },
+      { path: path },
       { $set: updates },
-      { returnDocument: "after", projection: { _id: 0 } }
+      { returnDocument: "after", projection: { _id: 0 } },
     );
 
     if (!result) return null;
@@ -255,11 +255,11 @@ export class TagManager {
 
   async updateTag(
     tagPath: string,
-    tagUpdates: TagOptionsInput<any>
+    tagUpdates: TagOptionsInput<any>,
   ): Promise<Tag<any> | null> {
     if (!this.opcuaServer || !this.tagFolder) {
       throw new Error(
-        `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`
+        `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
     }
 
@@ -276,7 +276,7 @@ export class TagManager {
       let udtParentTag = this.getTag(path);
       if (!(udtParentTag instanceof Tag))
         throw new Error(
-          `[TagManager] updateTag() UdtTag ${parentPath} does not exist`
+          `[TagManager] updateTag() UdtTag ${parentPath} does not exist`,
         );
 
       updates = udtParentTag.options; // copy all properties of udtParentTag
@@ -284,7 +284,7 @@ export class TagManager {
       updates.children[tagUpdates.name] = tagUpdates; // only copy overrides as that is the only thing we can edit
 
       logger.trace(
-        `[TagManager] updateTag() child of UdtTag ${parentPath}.${propertyName} update overrides ${updates.children}`
+        `[TagManager] updateTag() child of UdtTag ${parentPath}.${propertyName} update overrides ${updates.children}`,
       );
     }
 
@@ -301,7 +301,7 @@ export class TagManager {
     const result = await collections.tags.findOneAndUpdate(
       { path },
       { $set: updatedTag.options },
-      { returnDocument: "after", upsert: true, projection: { _id: 0 } }
+      { returnDocument: "after", upsert: true, projection: { _id: 0 } },
     );
 
     this.tree.addNode(updatedTag);
@@ -320,7 +320,7 @@ export class TagManager {
   async moveTag(
     oldPath: string,
     newParentPath: string,
-    newName?: string
+    newName?: string,
   ): Promise<Tag<any> | null> {
     const oldTag = this.tree.getNode(oldPath);
     if (!(oldTag instanceof Tag)) return null;
@@ -331,7 +331,7 @@ export class TagManager {
     // Update DB
     const updated = await collections.tags.updateOne(
       { path: oldPath },
-      { $set: { path: newPath, parentPath: newParentPath, name } }
+      { $set: { path: newPath, parentPath: newParentPath, name } },
     );
 
     // Update memory
@@ -347,7 +347,7 @@ export class TagManager {
   async moveFolder(
     oldPath: string,
     newParentPath: string,
-    newName?: string
+    newName?: string,
   ): Promise<TagFolder | null> {
     const oldFolder = this.tree.getNode(oldPath);
     if (!(oldFolder instanceof TagFolder)) return null;
@@ -358,12 +358,12 @@ export class TagManager {
     // 1. Update folder itself in DB
     await collections.folders.updateOne(
       { path: oldPath },
-      { $set: { path: newPath, parentPath: newParentPath, name } }
+      { $set: { path: newPath, parentPath: newParentPath, name } },
     );
 
     // 2. Update descendants
     const descendants = Array.from(this.tree.nodes.values()).filter((n) =>
-      n.path.startsWith(oldPath + "/")
+      n.path.startsWith(oldPath + "/"),
     );
 
     for (const d of descendants) {
@@ -374,7 +374,7 @@ export class TagManager {
       if (d instanceof TagFolder) {
         await collections.folders.updateOne(
           { path: d.path },
-          { $set: { path: updatedPath, parentPath: newParent } }
+          { $set: { path: updatedPath, parentPath: newParent } },
         );
 
         this.tree.removeNode(d.path);
@@ -384,7 +384,7 @@ export class TagManager {
       } else if (d instanceof Tag) {
         await collections.tags.updateOne(
           { path: d.path },
-          { $set: { path: updatedPath, parentPath: newParent } }
+          { $set: { path: updatedPath, parentPath: newParent } },
         );
 
         this.tree.removeNode(d.path);
@@ -425,7 +425,7 @@ export class TagManager {
 
     // Find all descendants (tags + folders)
     const descendants = Array.from(this.tree.nodes.values()).filter((n) =>
-      n.path.startsWith(path + "/")
+      n.path.startsWith(path + "/"),
     );
 
     // Delete descendants from DB
@@ -439,7 +439,7 @@ export class TagManager {
     }
 
     // Delete folder itself
-    await collections.folders.deleteOne({ path });
+    await collections.folders.deleteOne({ path: path });
     this.tree.removeNode(path);
 
     return true;

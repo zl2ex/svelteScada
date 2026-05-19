@@ -1,14 +1,11 @@
 import express from "express";
 import { createServer, Server } from "http";
-import { handler } from "../../build/handler";
 import { creatSocketIoServer } from "../lib/server/socket.io/socket.io";
-import {
-  createOPCUAServer,
-  startOPCUAClient,
-} from "../lib/server/drivers/opcua/opcuaServer";
+import { createOPCUAServer } from "../lib/server/drivers/opcua/opcuaServer";
 import { DeviceManager } from "../lib/server/drivers/driver";
 import { TagManager } from "../lib/server/tag/tagManager";
 import { UdtManager } from "../lib/server/tag/udtManager";
+import { handler } from "../../build/handler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -41,8 +38,6 @@ export async function main(httpServer: Server) {
   await deviceManager.loadAllFromDb();
   await udtManager.loadAllFromDb();
   await tagManager.loadAllFromDb();
-
-  startOPCUAClient();
 }
 
 const mode = "dev";

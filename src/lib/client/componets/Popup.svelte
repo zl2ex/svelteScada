@@ -66,12 +66,7 @@
         </svg>
       </button>
     </header>
-
-    {#if children}
-      {@render children()}
-    {:else}
-      <h1>popup</h1>
-    {/if}
+    {@render children?.()}
   </div>
 
   {#snippet pending()}

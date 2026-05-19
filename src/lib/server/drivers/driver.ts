@@ -1,9 +1,5 @@
 import type { NodeIdLike, OPCUAServer, StatusCode } from "node-opcua";
-import {
-  ModbusTCPDriver,
-  Z_ModbusTCPDriverOptions,
-  type TagSubscription,
-} from "./modbus/modbusTcp";
+import { ModbusTCPDriver, Z_ModbusTCPDriverOptions } from "./modbus/modbusTcp";
 import { Z_ModbusRTUDriverOptions } from "./modbus/modbusRtu";
 import { z } from "zod";
 import { logger } from "../pino/logger";
@@ -11,24 +7,10 @@ import { collections } from "../mongodb/collections";
 import { attempt } from "../../../lib/util/attempt";
 import { resolveOpcuaPath, Tag } from "../tag/tag";
 import { tagManager } from "../../../server";
-
-export type AvalibleDriver = {
-  id: string; // internal name must match class name
-  displayName: string; // UI string
-};
-
-// Single source of truth
-export const avalibeDrivers: AvalibleDriver[] = [
-  { id: "ModbusTCPDriver", displayName: "Modbus TCP/IP Driver" },
-  { id: "otherDriver", displayName: "Other Protocol" },
-] as const;
-
-// Extract the type of valid driver IDsdevice
-export type DriverId = (typeof avalibeDrivers)[number]["id"];
-
-export function isValidDriver(id: string): id is DriverId {
-  return avalibeDrivers.some((driver) => driver.id === id);
-}
+import {
+  OpcuaClientDriver,
+  Z_OpcuaClientDriverOptions,
+} from "./opcua/opcuaClient";
 
 export class DriverStatusError extends Error {
   opcuaStatus: StatusCode;
@@ -40,27 +22,84 @@ export class DriverStatusError extends Error {
   }
 }
 
+// list of all avalible drivers
 export const Z_DeviceOptions = z.discriminatedUnion("driverName", [
   z.object({
     driverName: z.literal("ModbusTCPDriver"),
+    displayName: z.literal("Modbus TCP/IP Driver").optional(),
     name: z.string().nonempty(),
     options: Z_ModbusTCPDriverOptions,
     enabled: z.coerce.boolean<boolean>(),
   }),
   z.object({
     driverName: z.literal("ModbusRTUDriver"),
+    displayName: z.literal("Modbus RTU Driver").optional(),
     name: z.string().nonempty(),
     options: Z_ModbusRTUDriverOptions,
     enabled: z.coerce.boolean<boolean>(),
   }),
+  z.object({
+    driverName: z.literal("opcuaClientDriver"),
+    displayName: z.literal("Opcua Client Driver").optional(),
+    name: z.string().nonempty(),
+    options: Z_OpcuaClientDriverOptions,
+    enabled: z.coerce.boolean<boolean>(),
+  }),
 ]);
+
+export type AvalibleDriver = {
+  id: string; // internal name must match class name
+  displayName: string; // UI string
+};
+
+export const avalibeDrivers: AvalibleDriver[] = Z_DeviceOptions.options.map(
+  (obj) => {
+    return {
+      id: obj.shape.driverName.value,
+      displayName: obj.shape.displayName.unwrap().value,
+    };
+  },
+);
+
+// Extract the type of valid driver IDsdevice
+export type DriverId = (typeof avalibeDrivers)[number]["id"];
+
+export function isValidDriver(id: string): id is DriverId {
+  return avalibeDrivers.some((driver) => driver.id === id);
+}
+
+export function Z_getDefaults<Schema extends z.ZodObject>(schema: Schema) {
+  return Object.fromEntries(
+    Object.entries(schema.shape).map(([key, value]) => {
+      if (value instanceof z.ZodDefault) return [key, value.def.defaultValue];
+      return [key, undefined];
+    }),
+  );
+}
+
+function fromEntries<T extends readonly [PropertyKey, any]>(
+  entries: Iterable<T>,
+) {
+  return Object.fromEntries(entries) as {
+    [K in T[0]]: Extract<T, [K, any]>[1];
+  };
+}
+
+export function getDefaultOptions() {
+  return fromEntries(
+    Z_DeviceOptions.options.map((obj) => [
+      obj.shape.driverName.value,
+      Z_getDefaults(obj.shape.options),
+    ]),
+  );
+}
 
 export type DeviceOptions = z.input<typeof Z_DeviceOptions>;
 
 export type DeviceStatus = "Connected" | "Reconnecting" | "Disabled";
 export class Device {
   name: string;
-  driver: ModbusTCPDriver;
+  driver: ModbusTCPDriver | OpcuaClientDriver;
   options: DeviceOptions;
 
   constructor(opcuaServer: OPCUAServer, opts: DeviceOptions) {
@@ -73,6 +112,8 @@ export class Device {
       this.driver = new ModbusTCPDriver(opcuaServer, config.options);
     } else if (config.driverName === "ModbusRTUDriver") {
       throw new Error("[Device] ModbusRTU driver Not implimented yet");
+    } else if (config.driverName === "opcuaClientDriver") {
+      this.driver = new OpcuaClientDriver(opcuaServer, config.options);
     } else {
       throw new Error(`[Device] invalid driver name`);
     }
@@ -108,6 +149,11 @@ export class Device {
     }
   }
 
+  getOptionsAndStatus() {
+    const status = this.status;
+    return { ...this.options, status };
+  }
+
   tagSubscribed(tag: Tag<any>, parent?: NodeIdLike) {
     return this.driver.subscribeByTag(tag, parent);
   }
@@ -134,7 +180,7 @@ export class DeviceManager {
 
     if (!this.opcuaServer) {
       throw new Error(
-        `[DeviceManager] loadAllFromDb() failed, no opcuaServer defined  please call initOpcuaServer() first`
+        `[DeviceManager] loadAllFromDb() failed, no opcuaServer defined  please call initOpcuaServer() first`,
       );
     }
 
@@ -142,8 +188,7 @@ export class DeviceManager {
       const { _id, ...deviceWithoutId } = device;
       // TD typscript error about this.opcuaServer possibly being undefined because im using attempt(() => {})
       const { data, error } = await attempt(() =>
-        // @ts-ignore
-        this.addDevice(new Device(this.opcuaServer, deviceWithoutId), false)
+        this.addDevice(new Device(this.opcuaServer, deviceWithoutId), false),
       );
       if (error) logger.error(error);
     }
@@ -156,8 +201,8 @@ export class DeviceManager {
         collections.devices.updateOne(
           { name: device.name },
           { $set: { ...device.options } },
-          { upsert: true }
-        )
+          { upsert: true },
+        ),
       );
       if (error) {
         logger.error(error);
@@ -172,7 +217,7 @@ export class DeviceManager {
     oldDevice?.dispose();
     this.devices.delete(deviceName);
     const { error, data } = await attempt(() =>
-      collections.devices.deleteOne({ name: deviceName })
+      collections.devices.deleteOne({ name: deviceName }),
     );
     if (error) {
       logger.error(error);
@@ -188,12 +233,12 @@ export class DeviceManager {
 
     if (!this.opcuaServer) {
       throw new Error(
-        `[DeviceManager] updateDevice() this.opcuaServer undefined, please call initOpcuaServer() first`
+        `[DeviceManager] updateDevice() this.opcuaServer undefined, please call initOpcuaServer() first`,
       );
     }
     const newDevice = await this.addDevice(
       new Device(this.opcuaServer, deviceOptions),
-      writeToDb
+      writeToDb,
     );
 
     for (const tag of tagManager.getAllTags()) {

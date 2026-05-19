@@ -35,7 +35,7 @@
   ///////////////////////////////////////
 </script>
 
-<NumberDisplay path="/demo/test" faultFlash></NumberDisplay>
+<NumberDisplay path="/demo/nest/newTagInt32hr1" faultFlash></NumberDisplay>
 <NumberDisplay path="/demo/test1" faultFlash></NumberDisplay>
 <NumberDisplay path="/testTag" faultFlash></NumberDisplay>
 

@@ -1,12 +1,8 @@
-import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
-
-import { mainServer } from './src/server/serverPluginVite';
+import tailwindcss from "@tailwindcss/vite";
+import { sveltekit } from "@sveltejs/kit/vite";
+import { defineConfig } from "vite";
+import { mainServer } from "./src/server/serverPluginVite";
 
 export default defineConfig({
-	plugins: [
-		sveltekit(), 
-		mainServer
-	]
+  plugins: [tailwindcss(), sveltekit(), mainServer],
 });
-

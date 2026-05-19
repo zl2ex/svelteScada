@@ -4,4 +4,4 @@
 
 <h1>Home</h1>
 
-<Label path="/demo/digitalIn"></Label>
+<Label path="/demo/nest/newTagInt32hr1"></Label>

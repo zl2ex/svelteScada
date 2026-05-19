@@ -48,7 +48,7 @@ export const Z_Endian = z.literal(["BigEndian", "LittleEndian"]);
 export type Endian = z.infer<typeof Z_Endian>;
 
 export const Z_ModbusTCPDriverOptions = z.object({
-  ip: z.ipv4(),
+  ip: z.ipv4().default("127.0.0.1"),
   port: z.number().int().min(1).max(65535).optional().default(502),
   unitId: z.number().int().min(1).optional().default(1),
   pollingIntervalMs: z.number().int().min(500).optional().default(1000),

@@ -2,14 +2,12 @@
   import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
   import {
     ClientTag,
-    Node,
     type ClientTagOptions,
   } from "$lib/client/tag/clientTag.svelte";
   import { deleteTag, updateTag } from "$lib/remote/tags.remote";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import Label from "$lib/client/componets/scada/Label.svelte";
-  import { json } from "zod";
 
   let tagEditorPath = $derived(page.url.searchParams.get("tagPath") ?? "/");
   let parentPath = $derived(page.url.searchParams.get("parentPath") ?? "/");

@@ -1,0 +1,38 @@
+@import "tailwindcss";
+@import "@skeletonlabs/skeleton";
+@import "@skeletonlabs/skeleton-svelte";
+
+/* Import your chosen theme (e.g., cerberus, crimson, etc.) */
+@import "@skeletonlabs/skeleton/themes/cerberus";
+
+@plugin "@tailwindcss/forms";
+
+/* https://github.com/skeletonlabs/skeleton/issues/3993 */
+.select,
+.input,
+.textarea,
+.input-group {
+  background-color: var(--color-surface-50-950);
+  color: var(--color-surface-950-50);
+}
+
+html,
+body {
+  @apply h-full;
+}
+
+@custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"]*));
+
+.issue {
+  color: var(--color-warning-700-300);
+}
+
+/* Remove arrows on number input */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}

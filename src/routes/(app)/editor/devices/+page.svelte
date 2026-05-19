@@ -245,7 +245,7 @@
           <h4>{device.name}</h4>
           -->
         <h2>{device.name}</h2>
-        <h4>{device.options.driverName}</h4>
+        <h4>{device.driverName}</h4>
         <div class="status">
           <svg viewBox="0 0 100 100" class={device.status}>
             <g stroke-width="2%">

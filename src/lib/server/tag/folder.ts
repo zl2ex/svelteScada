@@ -1,10 +1,10 @@
-import { Node } from "../../client/tag/clientTag.svelte";
+import { TagNode } from "../../client/tag/clientTag.svelte";
 import { logger } from "../pino/logger";
 import type { Tag } from "./tag";
 
-export interface TagFolderOptions extends Omit<Node, "type"> {}
+export interface TagFolderOptions extends Omit<TagNode, "type"> {}
 
-export class TagFolder extends Node {
+export class TagFolder extends TagNode {
   children: Map<string, TagFolder | Tag<any>> = new Map();
 
   constructor(opts: Omit<TagFolderOptions, "path">) {
