@@ -13,37 +13,25 @@
     }}
     method="POST"
     action="?/register"
+    class="max-w-80 m-auto p-2 space-y-2"
   >
-    <h2>Register</h2>
-    <div class="form-item">
-      <label for="email">Email</label>
-      <input name="email" type="email" />
+    <h3 class="h3">Register</h3>
+    <div>
+      <label for="email" class="label">Email</label>
+      <input name="email" type="email" class="input" />
     </div>
-    <div class="form-item">
-      <label for="password">Password</label>
-      <input name="password" type="password" />
+    <div>
+      <label for="password" class="label">Password</label>
+      <input name="password" type="password" class="input" />
     </div>
-    <div class="form-item">
-      <button class="primary" type="submit">Register</button>
+    <div>
+      <button class="btn preset-filled" type="submit">Register</button>
     </div>
 
     <div class="form-item">
       {#if form?.sucsess == false}
-        <p class="issue">{form?.message}</p>
+        <p class="text-error-950-50">{form?.message}</p>
       {/if}
     </div>
   </form>
 </div>
-
-<style>
-  #register {
-    display: flex;
-    justify-content: center;
-  }
-
-  form {
-    display: grid;
-    gap: 1rem;
-    width: clamp(250px, 30%, 300px);
-  }
-</style>

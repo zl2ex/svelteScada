@@ -1,7 +1,7 @@
 <script>
-  import Label from "$lib/client/componets/scada/Label.svelte";
+  import TagInput from "$lib/client/componets/scada/TagInput.svelte";
 </script>
 
 <h1>Home</h1>
 
-<Label path="/demo/nest/newTagInt32hr1"></Label>
+<TagInput path="/demo/nest/newTagInt32hr1"></TagInput>

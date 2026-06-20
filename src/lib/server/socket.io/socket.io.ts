@@ -64,17 +64,17 @@ export interface SocketIOServerToClientEvents {
 export interface SocketIOClientToServerEvents {
   "tag:write": (
     payload: WritePayload,
-    callback: (payload: Result<EmitPayload, Error | unknown>) => void
+    callback: (payload: Result<EmitPayload, Error | unknown>) => void,
   ) => void;
   "tag:subscribe": (
     path: TagPaths,
-    callback: (payload: Result<EmitPayload, Error | unknown>) => void
+    callback: (payload: Result<EmitPayload, Error | unknown>) => void,
   ) => void;
   "tag:unsubscribe": (path: TagPaths) => void;
 
   rpc: (
     request: RpcRequest<RpcName>,
-    callback: (response: RpcResponse<RpcName>) => void
+    callback: (response: RpcResponse<RpcName>) => void,
   ) => void;
 }
 
@@ -103,7 +103,7 @@ export function creatSocketIoServer(httpServer: Server) {
 
   io.on("connection", (socket) => {
     logger.info(
-      `[Socket.io] socket.io client connected with id of ${socket.id}`
+      `[Socket.io] socket.io client connected with id of ${socket.id}`,
     );
 
     socketClientSubscriptions.set(socket.id, new Map());
@@ -114,13 +114,13 @@ export function creatSocketIoServer(httpServer: Server) {
         if (!subs) {
           throw new TagError(
             "",
-            `[Socket.io] subscribe() failed, no client found`
+            `[Socket.io] subscribe() failed, no client found`,
           );
         } else {
           if (!tagManager.getTag(path)) {
             throw new TagError(
               "",
-              `[Socket.io] subscribe failed no tag exists at ${path}`
+              `[Socket.io] subscribe failed no tag exists at ${path}`,
             );
           }
 
@@ -128,8 +128,13 @@ export function creatSocketIoServer(httpServer: Server) {
           currentSubsCount++;
           subs.set(path, currentSubsCount);
           logger.debug(
-            `[Socket.io] client ${socket.id} subscribed to: ${path} count: ${currentSubsCount}`
+            `[Socket.io] client ${socket.id} subscribed to: ${path} count: ${currentSubsCount}`,
           );
+          if (currentSubsCount > 5) {
+            logger.error(
+              `[Socket.io] Too many subscriptions !! client ${socket.id} subscribed to: ${path} count: ${currentSubsCount}`,
+            );
+          }
           return tagManager.getTag(path)?.getEmitPayload();
         }
       });
@@ -152,7 +157,7 @@ export function creatSocketIoServer(httpServer: Server) {
 
         subs.set(path, currentSubsCount);
         logger.debug(
-          `[Socket.io] client ${socket.id} unsubscribed from: ${path} count: ${currentSubsCount}`
+          `[Socket.io] client ${socket.id} unsubscribed from: ${path} count: ${currentSubsCount}`,
         );
       }
     });
@@ -163,43 +168,43 @@ export function creatSocketIoServer(httpServer: Server) {
           const tag = tagManager.getTag(path);
           if (!tag) {
             throw new Error(
-              `[Socket.io] tag write failed, tag ${path} does not exist`
+              `[Socket.io] tag write failed, tag ${path} does not exist`,
             );
           }
 
           tag.update(value);
           logger.info(
-            `[Socket.io] client ${socket.id} wrote to tag ${path} = ${value}`
+            `[Socket.io] client ${socket.id} wrote to tag ${path} = ${value}`,
           );
           return tag.getEmitPayload();
-        })
+        }),
       );
     });
 
     socket.on("rpc", async (request, callback) => {
       logger.debug(
-        `[Socket.io] rpc() client ${socket.id} requested ${request.name} Params ${request.parameters}`
+        `[Socket.io] rpc() client ${socket.id} requested ${request.name} Params ${request.parameters}`,
       );
       if (request.name === "getChildrenAsNode()") {
         callback(
           attempt(() =>
-            tagManager.getAllChildrenAsNode(request.parameters.path)
-          )
+            tagManager.getAllChildrenAsNode(request.parameters.path),
+          ),
         );
       } else if (request.name === "getDataTypeStrings()") {
         callback(await attempt(() => getAllDataTypeStrings()));
       } else if (request.name === "createTag()") {
         callback(
-          await attempt(() => tagManager.createTag(request.parameters.options))
+          await attempt(() => tagManager.createTag(request.parameters.options)),
         );
       } else if (request.name === "updateTag()") {
         callback(
           await attempt(() =>
             tagManager.updateTag(
               request.parameters.path,
-              request.parameters.options
-            )
-          )
+              request.parameters.options,
+            ),
+          ),
         );
       }
     });

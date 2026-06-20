@@ -29,7 +29,7 @@
     at throwUnhandledRejectionsMode (node:internal/process/promises:392:7)
     at processPromiseRejections (node:internal/process/promises:475:17)
     at processTicksAndRejections (node:internal/process/task_queues:106:32)*/
-    })) ?? newUdtOptions
+    })) ?? newUdtOptions,
   );
 </script>
 
@@ -50,7 +50,7 @@
             value={udtDefinition.name}
           />
           {#each updateUdt.fields.name.issues() ?? [] as issue}
-            <span class="issue">{issue.message}</span>
+            <span class="text-error-600-400">{issue.message}</span>
           {/each}
         </div>
 
@@ -63,7 +63,7 @@
                 value={feild.name}
               />
               {#each updateUdt.fields.feilds[0].name.issues() ?? [] as issue}
-                <span class="issue">{issue.message}</span>
+                <span class="text-error-600-400">{issue.message}</span>
               {/each}
             </div>
 
@@ -96,9 +96,11 @@
                 value={feild.dataType}
                 autocomplete="on"
               >
-                {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
+                {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} }, ) then options}
                   {#if options.error}
-                    <span class="issue">Error {options.error.message}</span>
+                    <span class="text-error-600-400"
+                      >Error {options.error.message}</span
+                    >
                   {:else}
                     {#each options.data as option}
                       <option value={option}>{option}</option>
@@ -107,7 +109,7 @@
                 {/await}
               </select>
               {#each updateUdt.fields.feilds[0].dataType.issues() ?? [] as issue}
-                <span class="issue">{issue.message}</span>
+                <span class="text-error-600-400">{issue.message}</span>
               {/each}
             </div>
 
@@ -118,7 +120,7 @@
                 value={feild.nodeId}
               />
               {#each updateUdt.fields.feilds[0].nodeId.issues() ?? [] as issue}
-                <span class="issue">{issue.message}</span>
+                <span class="text-error-600-400">{issue.message}</span>
               {/each}
             </div>
 
@@ -129,7 +131,7 @@
                 checked={feild.exposeOverOpcua}
               />
               {#each updateUdt.fields.feilds[0].exposeOverOpcua.issues() ?? [] as issue}
-                <span class="issue">{issue.message}</span>
+                <span class="text-error-600-400">{issue.message}</span>
               {/each}
             </div>
 
@@ -140,7 +142,7 @@
                 checked={feild.writeable}
               />
               {#each updateUdt.fields.feilds[0].writeable.issues() ?? [] as issue}
-                <span class="issue">{issue.message}</span>
+                <span class="text-error-600-400">{issue.message}</span>
               {/each}
             </div>
 
@@ -157,7 +159,7 @@
 
             <div class="form-item">
               {#each updateUdt.fields.feilds[0].issues() ?? [] as issue}
-                <span class="issue">{issue.message}</span>
+                <span class="text-error-600-400">{issue.message}</span>
               {/each}
             </div>
           </div>

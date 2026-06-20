@@ -29,21 +29,21 @@ export const Z_DeviceOptions = z.discriminatedUnion("driverName", [
     displayName: z.literal("Modbus TCP/IP Driver").optional(),
     name: z.string().nonempty(),
     options: Z_ModbusTCPDriverOptions,
-    enabled: z.coerce.boolean<boolean>(),
+    enabled: z.boolean().default(false),
   }),
   z.object({
     driverName: z.literal("ModbusRTUDriver"),
     displayName: z.literal("Modbus RTU Driver").optional(),
     name: z.string().nonempty(),
     options: Z_ModbusRTUDriverOptions,
-    enabled: z.coerce.boolean<boolean>(),
+    enabled: z.boolean().default(false),
   }),
   z.object({
     driverName: z.literal("opcuaClientDriver"),
     displayName: z.literal("Opcua Client Driver").optional(),
     name: z.string().nonempty(),
     options: Z_OpcuaClientDriverOptions,
-    enabled: z.coerce.boolean<boolean>(),
+    enabled: z.boolean().default(false),
   }),
 ]);
 

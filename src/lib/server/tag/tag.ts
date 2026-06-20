@@ -40,7 +40,7 @@ import {
   Z_BaseTypes,
   Z_TagOptionsInput,
   Z_TagOptionsResolved,
-} from "./zodSchema";
+} from "../../client/tag/zodSchema";
 
 export type TagOptionsInput<T> = z.input<typeof Z_TagOptionsInput>;
 

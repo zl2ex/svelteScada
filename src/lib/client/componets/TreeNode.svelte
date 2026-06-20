@@ -1,6 +1,5 @@
 <script lang="ts">
   import TreeNode from "./TreeNode.svelte";
-  import Label from "./scada/Label.svelte";
   import { goto } from "$app/navigation";
   import { getAllChildrenAsNode } from "$lib/remote/tags.remote";
   import type { TagNode } from "../tag/clientTag.svelte";

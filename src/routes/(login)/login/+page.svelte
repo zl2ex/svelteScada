@@ -16,38 +16,26 @@
     }}
     method="POST"
     action="?/login&{redirect}"
+    class="max-w-80 m-auto p-2 space-y-2"
   >
-    <h2>Login</h2>
-    <div class="form-item">
-      <label for="email">Email</label>
-      <input name="email" type="email" autocomplete="on" />
+    <h3 class="h3">Login</h3>
+    <div>
+      <label for="email" class="label">Email</label>
+      <input name="email" type="email" autocomplete="on" class="input" />
     </div>
-    <div class="form-item">
-      <label for="password">Password</label>
-      <input name="password" type="password" autocomplete="on" />
+    <div>
+      <label for="password" class="label">Password</label>
+      <input name="password" type="password" autocomplete="on" class="input" />
     </div>
-    <div class="form-item-row">
-      <button class="primary" type="submit">Login</button>
-      <a href="/register">register</a>
+    <div class="flex justify-between items-center">
+      <button class="btn preset-filled" type="submit">Login</button>
+      <a href="/register" class="anchor">register</a>
     </div>
 
-    <div class="form-item">
+    <div>
       {#if form?.sucsess == false}
-        <p class="issue">{form?.message}</p>
+        <p class="text-error-950-50">{form?.message}</p>
       {/if}
     </div>
   </form>
 </div>
-
-<style>
-  #login {
-    display: flex;
-    justify-content: center;
-  }
-
-  form {
-    display: grid;
-    gap: 1rem;
-    width: clamp(250px, 30%, 300px);
-  }
-</style>

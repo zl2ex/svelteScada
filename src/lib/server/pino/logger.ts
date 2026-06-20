@@ -2,8 +2,8 @@ import pino from "pino";
 import pretty from "pino-pretty";
 import pinoCaller from "pino-caller";
 
-//export const logger = pinoCaller(pino({ level: "debug" }, pretty()));
-export const logger = pino({ level: "info" }, pretty());
+export const logger = pino({ level: "debug" }, pretty());
+//export const logger = pino({ level: "info" }, pretty());
 
 /*export const logger = pino({
       // ... other pino options (e.g., level, redact)

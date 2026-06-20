@@ -1,5 +1,5 @@
 import z from "zod";
-import { Z_NodeOptions } from "../../../lib/client/tag/clientTag.svelte";
+import { Z_NodeOptions } from "./clientTag.svelte";
 
 // Base schemas for primitives
 export const Z_BaseTypes = {
@@ -16,7 +16,7 @@ const __Z_TagOptionsInput = Z_NodeOptionsWithoutType.extend({
   nodeId: z.string().optional(),
   writeable: z.boolean().optional().default(false),
   initalValue: z.any().optional(),
-  parameters: z.object(), //Z_UdtParams.optional(), //TD UDT PARAM WIP
+  parameters: z.object().optional(), //Z_UdtParams.optional(), //TD UDT PARAM WIP
   exposeOverOpcua: z.boolean().optional().default(false),
 });
 

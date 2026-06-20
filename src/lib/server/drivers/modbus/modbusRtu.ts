@@ -21,7 +21,7 @@ export const Z_ModbusRTUDriverOptions = z.object({
   baudRate: z.number().int().default(9600),
   parity: z.enum(["none", "even", "odd"]).default("none"),
   unitId: z.number().int().optional().default(1),
-  spanGaps: z.coerce.boolean<boolean>().default(false),
+  spanGaps: z.boolean().default(false),
   pollingIntervalMs: z.number().int().min(500).optional().default(1000),
   startAddress: z.number().min(0).max(1).optional().default(0),
   endian: Z_Endian.optional().default("LittleEndian"),

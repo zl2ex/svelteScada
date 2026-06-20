@@ -52,11 +52,11 @@ export const Z_ModbusTCPDriverOptions = z.object({
   port: z.number().int().min(1).max(65535).optional().default(502),
   unitId: z.number().int().min(1).optional().default(1),
   pollingIntervalMs: z.number().int().min(500).optional().default(1000),
-  spanGaps: z.coerce.boolean<boolean>().default(false),
+  spanGaps: z.boolean().default(false),
   reconnectInervalMs: z.number().min(500).optional().default(5000),
   startAddress: z.number().min(0).max(1).optional().default(0),
   endian: Z_Endian.optional().default("LittleEndian"),
-  swapWords: z.coerce.boolean<boolean>().default(false),
+  swapWords: z.boolean().default(false),
 });
 
 export type ModbusTCPDriverOptions = z.input<typeof Z_ModbusTCPDriverOptions>;

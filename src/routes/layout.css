@@ -2,29 +2,32 @@
 @import "@skeletonlabs/skeleton";
 @import "@skeletonlabs/skeleton-svelte";
 
-/* Import your chosen theme (e.g., cerberus, crimson, etc.) */
+/* Import your chosen theme (e.g., cerberus, seafoam, etc.) */
 @import "@skeletonlabs/skeleton/themes/cerberus";
 
 @plugin "@tailwindcss/forms";
+
+/*@custom-variant dark (&:where([color-scheme="dark"]));*/
+:root[color-scheme="dark"] {
+  color-scheme: dark;
+}
+
+:root[color-scheme="light"] {
+  color-scheme: light;
+}
 
 /* https://github.com/skeletonlabs/skeleton/issues/3993 */
 .select,
 .input,
 .textarea,
 .input-group {
-  background-color: var(--color-surface-50-950);
+  background-color: var(--color-surface-100-900);
   color: var(--color-surface-950-50);
 }
 
 html,
 body {
   @apply h-full;
-}
-
-@custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"]*));
-
-.issue {
-  color: var(--color-warning-700-300);
 }
 
 /* Remove arrows on number input */

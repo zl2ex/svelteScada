@@ -133,7 +133,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
     this.expectedDataType = expectedDataType;
     this.options = $state({
       name: opts.name ?? "",
-      parentPath: opts.parentPath ?? "",
+      parentPath: opts.parentPath ?? "/",
       dataType: expectedDataType,
       writeable: false,
       parameters: undefined,

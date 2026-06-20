@@ -63,7 +63,7 @@
         <label for="name">name</label>
         <input {...updateTag.fields.name.as("text")} />
         {#each updateTag.fields.name.issues() ?? [] as issue}
-          <span class="issue">{issue.message}</span>
+          <span class="text-error-600-400">{issue.message}</span>
         {/each}
       </div>
       <input {...updateTag.fields.path.as("hidden", tag.options.path)} />
@@ -88,7 +88,7 @@
       <div class="form-item">
         <label for="dataType">data type</label>
         <select {...updateTag.fields.dataType.as("select")} autocomplete="on">
-          {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} } ) then options}
+          {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} }, ) then options}
             {#if options.error}
               <p>Error {options.error.message}</p>
             {:else}
@@ -99,7 +99,7 @@
           {/await}
         </select>
         {#each updateTag.fields.dataType.issues() ?? [] as issue}
-          <span class="issue">{issue.message}</span>
+          <span class="text-error-600-400">{issue.message}</span>
         {/each}
       </div>
 
@@ -107,7 +107,7 @@
         <label for="nodeId">nodeId</label>
         <input {...updateTag.fields.nodeId.as("text")} />
         {#each updateTag.fields.nodeId.issues() ?? [] as issue}
-          <span class="issue">{issue.message}</span>
+          <span class="text-error-600-400">{issue.message}</span>
         {/each}
       </div>
 
@@ -115,7 +115,7 @@
         <label for="exposeOverOpcua">exposeOverOpcua</label>
         <input {...updateTag.fields.exposeOverOpcua.as("checkbox")} />
         {#each updateTag.fields.exposeOverOpcua.issues() ?? [] as issue}
-          <span class="issue">{issue.message}</span>
+          <span class="text-error-600-400">{issue.message}</span>
         {/each}
       </div>
 
@@ -123,7 +123,7 @@
         <label for="writeable">writeable</label>
         <input {...updateTag.fields.writeable.as("checkbox")} />
         {#each updateTag.fields.writeable.issues() ?? [] as issue}
-          <span class="issue">{issue.message}</span>
+          <span class="text-error-600-400">{issue.message}</span>
         {/each}
       </div>
 
