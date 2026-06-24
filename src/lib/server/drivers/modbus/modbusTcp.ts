@@ -20,7 +20,7 @@ import {
 import { logger } from "../../pino/logger";
 import { attempt } from "../../../../lib/util/attempt";
 import { DriverStatusError } from "../driver";
-import { deleteOpcuaVariable } from "../opcua/opcuaServer";
+import { gatewayOpcua } from "../../../../hooks.server";
 
 type ModbusRegisterType = "hr" | "ir" | "co" | "di";
 
@@ -366,7 +366,7 @@ export class ModbusTCPDriver {
       );
     }
 
-    deleteOpcuaVariable(
+    gatewayOpcua.deleteOpcuaVariable(
       this.opcuaServer.engine.addressSpace,
       this.subscriptions[tag.resolvedOptions.nodeId].driverOpcuaVarible,
     );

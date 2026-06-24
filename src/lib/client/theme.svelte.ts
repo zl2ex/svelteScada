@@ -1,7 +1,6 @@
 import { browser } from "$app/environment";
 
-export type Theme = (typeof ThemeManager.themes)[number];
-
+export type Theme = (typeof themeManager.themes)[number];
 export class ThemeManager {
   themes = ["system", "light", "dark"] as const;
   theme: Theme = $state("system");

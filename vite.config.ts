@@ -1,8 +1,9 @@
 import tailwindcss from "@tailwindcss/vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 import { defineConfig } from "vite";
-import { mainServer } from "./src/server/serverPluginVite";
+import uws from "svelte-adapter-uws/vite";
+import realtime from "svelte-realtime/vite";
 
 export default defineConfig({
-  plugins: [tailwindcss(), sveltekit(), mainServer],
+  plugins: [sveltekit(), uws(), realtime(), tailwindcss()],
 });

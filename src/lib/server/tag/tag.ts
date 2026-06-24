@@ -26,21 +26,18 @@ import {
   type UAObject,
 } from "node-opcua";
 import { emitToSubscribers, type EmitPayload } from "../socket.io/socket.io";
-import { deviceManager } from "../../../server";
 import z, { ZodObject } from "zod";
 import { type UdtParams } from "./udt";
 import { attempt } from "../../../lib/util/attempt";
 
 import vm from "node:vm";
 import { TagNode } from "../../client/tag/clientTag.svelte";
-import { deleteOpcuaVariable } from "../drivers/opcua/opcuaServer";
-import { collections } from "../mongodb/collections";
-import { udtManager } from "../../../server/index";
 import {
   Z_BaseTypes,
   Z_TagOptionsInput,
   Z_TagOptionsResolved,
 } from "../../client/tag/zodSchema";
+import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 
 export type TagOptionsInput<T> = z.input<typeof Z_TagOptionsInput>;
 
@@ -576,7 +573,7 @@ export class Tag<
             `[Tag] dispose() this.opcuaServer.engine.addressSpace undefined`,
           );
         }
-        deleteOpcuaVariable(
+        gatewayOpcua.deleteOpcuaVariable(
           this.opcuaServer.engine.addressSpace,
           this.exposeOpcuaVarible,
         );

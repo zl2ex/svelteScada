@@ -25,15 +25,18 @@
     Navigation,
   } from "@skeletonlabs/skeleton-svelte";
   import { themeManager } from "$lib/client/theme.svelte.js";
+  import { logout } from "$lib/remote/user.remote.js";
+  import { goto } from "$app/navigation";
 
   const { children, data } = $props();
 
+  /*
   const socket = io();
   socket.on("connect", () => {
     console.log("[+layout.svelte] socketIO Connected");
   });
 
-  ClientTag.initSocketIo(socket);
+  ClientTag.initSocketIo(socket);*/
 </script>
 
 <div id="app">
@@ -62,7 +65,7 @@
                 <Popover.Content class="card p-4 bg-surface-100-900 shadow-xl">
                   <header class="flex justify-between">
                     <Popover.Title class="text-lg font-bold"
-                      >{data.user?.email}</Popover.Title
+                      >{data.user?.name}</Popover.Title
                     >
                     <Popover.CloseTrigger
                       class="btn-icon hover:preset-tonal self-start"
@@ -74,15 +77,14 @@
                   <Popover.Description></Popover.Description>
                   <div class="">
                     <div>
-                      <form
-                        id="logout"
-                        action="/api/logout?/logout"
-                        method="POST"
+                      <button
+                        onclick={async () => {
+                          await logout();
+                          goto("/login");
+                        }}
+                        class="btn preset-filled">logout</button
                       >
-                        <button type="submit" class="btn preset-filled"
-                          >logout</button
-                        >
-                      </form>
+
                       <a class="anchor block" href="/editor">editor</a>
                       <nav class="btn-group preset-outlined-surface-300-700">
                         {#each themeManager.themes as theme}

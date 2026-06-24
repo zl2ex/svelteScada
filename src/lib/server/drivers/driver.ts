@@ -2,11 +2,10 @@ import type { NodeIdLike, OPCUAServer, StatusCode } from "node-opcua";
 import { ModbusTCPDriver, Z_ModbusTCPDriverOptions } from "./modbus/modbusTcp";
 import { Z_ModbusRTUDriverOptions } from "./modbus/modbusRtu";
 import { z } from "zod";
-import { logger } from "../pino/logger";
+import { logger } from "$lib/server/pino/logger";
 import { collections } from "../mongodb/collections";
-import { attempt } from "../../../lib/util/attempt";
-import { resolveOpcuaPath, Tag } from "../tag/tag";
-import { tagManager } from "../../../server";
+import { attempt } from "$lib/util/attempt";
+import { resolveOpcuaPath, Tag } from "$lib/server/tag/tag";
 import {
   OpcuaClientDriver,
   Z_OpcuaClientDriverOptions,

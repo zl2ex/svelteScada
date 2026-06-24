@@ -1,14 +1,8 @@
+import { authenticateUser } from "$lib/server/auth/auth";
 import type { RequestEvent } from "./$types";
 import { redirect } from "@sveltejs/kit";
-import { loginUser } from "$lib/server/auth/auth";
 
 export async function load(event: RequestEvent) {
-  const user = event.cookies.get("user");
+  const user = await authenticateUser(event.cookies.get("token") ?? "");
   if (user) redirect(302, event.url.searchParams.get("redirect") || "/");
 }
-
-export const actions = {
-  login: async (event: RequestEvent) => {
-    return loginUser(event);
-  },
-};

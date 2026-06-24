@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ClientTag } from "../tag/clientTag.svelte";
+  import type { ClientTag } from "../tag/clientTag.svelte";
 
   type props = {
     path: string;

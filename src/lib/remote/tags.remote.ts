@@ -6,10 +6,11 @@ import { error, invalid } from "@sveltejs/kit";
 import { TagError } from "$lib/server/tag/tag";
 import z from "zod";
 import { Z_tagOptionsInputForm } from "$lib/client/tag/zodSchema";
+import { tryCatch } from "$lib/util/tryCatch";
 
 export const updateTagCommand = command(Z_tagOptionsInputForm, async (data) => {
-  let result = await attempt(() => tagManager.updateTag(data.path, data));
-  if ("error" in result) {
+  let result = await tryCatch(tagManager.updateTag, data.path, data);
+  if (result.error) {
     logger.error(result.error);
     error(500, result.error.message);
   }

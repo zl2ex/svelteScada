@@ -1,37 +1,37 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
-
-  let { form } = $props();
+  import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm";
+  import { register } from "$lib/remote/user.remote.js";
 </script>
 
 <div id="register">
-  <form
-    use:enhance={() => {
-      return async ({ update }) => {
-        update({ reset: false });
-      };
-    }}
-    method="POST"
-    action="?/register"
-    class="max-w-80 m-auto p-2 space-y-2"
-  >
+  <form class="max-w-80 m-auto p-2 space-y-2" {...register}>
     <h3 class="h3">Register</h3>
-    <div>
-      <label for="email" class="label">Email</label>
-      <input name="email" type="email" class="input" />
-    </div>
-    <div>
-      <label for="password" class="label">Password</label>
-      <input name="password" type="password" class="input" />
-    </div>
+
+    <RemoteForm feild={register.fields.name}>
+      <RemoteForm.Label>Name</RemoteForm.Label>
+      <RemoteForm.Input as="text" />
+      <RemoteForm.Issue />
+    </RemoteForm>
+
+    <RemoteForm feild={register.fields.email}>
+      <RemoteForm.Label>Email</RemoteForm.Label>
+      <RemoteForm.Input as="email" />
+      <RemoteForm.Issue />
+    </RemoteForm>
+
+    <RemoteForm feild={register.fields.password}>
+      <RemoteForm.Label>Password</RemoteForm.Label>
+      <RemoteForm.Input as="password" />
+      <RemoteForm.Issue />
+    </RemoteForm>
     <div>
       <button class="btn preset-filled" type="submit">Register</button>
     </div>
 
-    <div class="form-item">
-      {#if form?.sucsess == false}
-        <p class="text-error-950-50">{form?.message}</p>
-      {/if}
+    <div>
+      {#each register.fields.allIssues() ?? [] as issue}
+        <p class="text-error-300-700">{issue.message}</p>
+      {/each}
     </div>
   </form>
 </div>

@@ -8,10 +8,10 @@ import {
   type TagOptionsInput,
   type TagPaths,
 } from "../tag/tag";
-import { tagManager } from "../../../server";
 import type { TagNode } from "../../client/tag/clientTag.svelte";
 import { attempt, type Result } from "../../../lib/util/attempt";
 import { string } from "zod";
+import { tagManager } from "../../../hooks.server";
 
 // emits the whole tag object
 export type EmitPayload = {

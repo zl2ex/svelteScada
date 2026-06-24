@@ -1,5 +1,5 @@
 <script lang="ts">
-  import RemoteForm from "$lib/client/componets/remoteFormElements/remoteForm/index";
+  import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index";
   import SelectInput from "$lib/client/componets/remoteFormElements/SelectInput.svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
@@ -29,11 +29,16 @@
     createTreeViewCollection,
     type TreeViewRootProps,
   } from "@skeletonlabs/skeleton-svelte";
+  import { tree } from "$live/counter";
 
   let { children } = $props();
 
+  let tre = tree.rune();
+
+  type Tree = typeof tre.current;
+
   let collection = $derived(
-    createTreeViewCollection<TagNode>({
+    createTreeViewCollection<Tree>({
       nodeToValue: (node) => node.path,
       nodeToString: (node) => node.name,
       rootNode: {

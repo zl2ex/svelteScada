@@ -1,41 +1,35 @@
 <script lang="ts">
-  import { enhance } from "$app/forms";
   import { page } from "$app/state";
-
-  let { form } = $props();
+  import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index.js";
+  import { login } from "$lib/remote/user.remote";
 
   const redirect = page.url.searchParams.get("redirect");
 </script>
 
 <div id="login">
-  <form
-    use:enhance={() => {
-      return async ({ update }) => {
-        update({ reset: false });
-      };
-    }}
-    method="POST"
-    action="?/login&{redirect}"
-    class="max-w-80 m-auto p-2 space-y-2"
-  >
+  <form {...login} class="max-w-80 m-auto p-2 space-y-2">
     <h3 class="h3">Login</h3>
-    <div>
-      <label for="email" class="label">Email</label>
-      <input name="email" type="email" autocomplete="on" class="input" />
-    </div>
-    <div>
-      <label for="password" class="label">Password</label>
-      <input name="password" type="password" autocomplete="on" class="input" />
-    </div>
+    <RemoteForm feild={login.fields.email}>
+      <RemoteForm.Label>Email</RemoteForm.Label>
+      <RemoteForm.Input as="email" />
+      <RemoteForm.Issue />
+    </RemoteForm>
+
+    <RemoteForm feild={login.fields.password}>
+      <RemoteForm.Label>Password</RemoteForm.Label>
+      <RemoteForm.Input as="password" />
+      <RemoteForm.Issue />
+    </RemoteForm>
+
     <div class="flex justify-between items-center">
       <button class="btn preset-filled" type="submit">Login</button>
       <a href="/register" class="anchor">register</a>
     </div>
 
     <div>
-      {#if form?.sucsess == false}
-        <p class="text-error-950-50">{form?.message}</p>
-      {/if}
+      {#each login.fields.allIssues() ?? [] as issue}
+        <p class="text-error-300-700">{issue.message}</p>
+      {/each}
     </div>
   </form>
 </div>

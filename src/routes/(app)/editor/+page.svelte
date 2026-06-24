@@ -6,7 +6,7 @@
   } from "$lib/client/tag/clientTag.svelte";
   import { updateTag } from "$lib/remote/tags.remote";
   import { page } from "$app/state";
-  import RemoteForm from "$lib/client/componets/remoteFormElements/remoteForm/index";
+  import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index";
 
   let tagEditorPath = $derived(page.url.searchParams.get("tagPath") ?? "/");
   let parentPath = $derived(page.url.searchParams.get("parentPath") ?? "/");
