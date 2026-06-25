@@ -26,7 +26,8 @@ export const register = form(z_insertUser, async (newUser, issue) => {
   const hashedPassword = await bcrypt.hash(newUser.password, salt);
   newUser.password = hashedPassword;
 
-  db.insert(tables.user).values(newUser).run();
+  let [insertedUser] = await db.insert(tables.user).values(newUser).returning();
+  db.insert(tables.user_permissions).values({ userId: insertedUser.id }).run();
   redirect(302, "/login");
 });
 
@@ -35,7 +36,7 @@ export const login = form(z_loginUser, async (loginUser, issue) => {
 
   const user = await db.query.user.findFirst({
     where: {
-      id: loginUser.id,
+      email: loginUser.email,
     },
   });
 

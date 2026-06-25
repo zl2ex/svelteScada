@@ -7,7 +7,7 @@ declare module '$live/counter' {
 
   export const increment: () => Promise<any>;
   export const counter: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
-  export const tree: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
+  export const tree: StreamStore<ClosureTableNode | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<ClosureTableNode> };
   export const empty: Readable<undefined>;
 }
 

@@ -4,15 +4,15 @@ import * as schema from "./index";
 export const relationsConfig = defineRelations(schema, (r) => ({
   user: {
     permissions: r.one.user_permissions({
-      from: r.user.permissionsFk,
+      from: r.user.id,
       to: r.user_permissions.id,
     }),
   },
 
   user_permissions: {
-    users: r.many.user({
+    users: r.one.user({
       from: r.user_permissions.id,
-      to: r.user.permissionsFk,
+      to: r.user.id,
     }),
   },
 

@@ -1,13 +1,9 @@
 import { db } from "$lib/server/sqlite/db";
-import { tables } from "$lib/server/sqlite/tables";
 import {
-  getNestedFolderTree,
-  getSubTree,
-  getTagTree,
-} from "$lib/server/sqlite/tag-tree";
-import { eq } from "drizzle-orm";
+  tagClosureTable,
+  type ClosureTableNode,
+} from "$lib/server/sqlite/tagClosureTable";
 import { live } from "svelte-realtime/server";
-import { transform } from "zod";
 
 let count = 0;
 
@@ -29,9 +25,9 @@ let folderId = "";
 
 export const tree = live.stream(
   "tag-tree",
-  async (ctx) => {
+  async (ctx): ClosureTableNode => {
     //return await getSubTree("root");
-    return await getNestedFolderTree("");
+    return await tagClosureTable.getTree();
 
     // 	SELECT n.*, t.depth
     // FROM nodes n

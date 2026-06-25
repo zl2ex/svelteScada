@@ -14,6 +14,9 @@ export async function authenticateUser(token: string) {
       where: {
         id: jwtUser.id,
       },
+      with: {
+        permissions: true,
+      },
     });
 
     return user;

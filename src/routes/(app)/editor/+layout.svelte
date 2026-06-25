@@ -11,7 +11,6 @@
     updateTagCommand,
   } from "$lib/remote/tags.remote";
   import type { TagOptionsInput } from "$lib/server/tag/tag";
-  import { Z_tagOptionsInputForm } from "$lib/client/tag/zodSchema";
   import {
     Copy,
     FileIcon,
@@ -30,23 +29,23 @@
     type TreeViewRootProps,
   } from "@skeletonlabs/skeleton-svelte";
   import { tree } from "$live/counter";
+  import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
+  import { tryCatch } from "$lib/util/tryCatch";
+  import z from "zod";
 
   let { children } = $props();
 
   let tre = tree.rune();
 
-  type Tree = typeof tre.current;
-
   let collection = $derived(
-    createTreeViewCollection<Tree>({
-      nodeToValue: (node) => node.path,
+    createTreeViewCollection<ClosureTableNode>({
+      nodeToValue: (node) => node.id,
       nodeToString: (node) => node.name,
       rootNode: {
-        path: "root",
+        id: "root",
         name: "",
-        parentPath: "/",
-        type: "Folder",
-        children: await getAllChildrenAsNode("/"),
+        tags: [],
+        children: tre.current,
       },
     }),
   );
@@ -70,6 +69,11 @@
     copyToClipboard(JSON.stringify(tag.options));
   }
 
+  async function folderCopy(folder: ClosureTableNode | undefined) {
+    if (!folder) return;
+    copyToClipboard(JSON.stringify(folder));
+  }
+
   async function tagCut(tag: ClientTag<any> | undefined) {
     if (!tag) return;
 
@@ -77,51 +81,59 @@
     await deleteTag(tag.path);
   }
 
+  async function folderCut(folder: ClosureTableNode | undefined) {
+    if (!folder) return;
+    copyToClipboard(JSON.stringify(folder));
+
+    // TD WIP Delete Folder
+  }
+
   async function tagPaste(tagOptions: TagOptionsInput<any>) {}
 
-  async function handlePaste(e: ClipboardEvent, node: TagNode) {
+  async function handlePaste(e: ClipboardEvent, node: ClosureTableNode) {
     const text = e.clipboardData?.getData("text/plain");
     e.stopPropagation();
     if (!text) return;
-    try {
-      let json = JSON.parse(text);
-      let options = Z_tagOptionsInputForm.parse(json);
-      console.debug(options);
-      options.parentPath = node.path; // put into folder user pasted into
-      console.debug(
-        collection.getNodeChildren(node).map((child) => child.name),
-      );
 
-      let incrimentName = 0;
-
-      while (
-        collection
-          .getNodeChildren(node)
-          .map((child) => child.name)
-          .includes(options.name)
-      ) {
-        let rename = options.name + incrimentName.toString();
-        console.debug(
-          `folder ${options.parentPath} contains tag ${options.name}  rename -> ${rename}`,
-        );
-        options.name = rename;
-        incrimentName++;
-      }
-
-      options.path = new TagNode({ ...options, type: "Tag" }).path;
-
-      // collection.insertAfter(indexPath, [
-      //   new TagNode({ ...options, type: "Tag" }),
-      // ]);
-
-      updateTagCommand(options);
-    } catch (e) {
-      console.error(e.message);
+    let json = await tryCatch(JSON.parse, text);
+    if (json.error) {
+      console.error(json.error.message);
+      return;
     }
+    // TD WIP import Zod from $lib/server
+    let options = await tryCatch(z.object().parse, json.data);
+    throw Error(" handlePaste() TD WIP import Zod from $lib/server");
+    console.debug(options);
+    options.parentPath = node.path; // put into folder user pasted into
+    console.debug(collection.getNodeChildren(node).map((child) => child.name));
+
+    let incrimentName = 0;
+
+    while (
+      collection
+        .getNodeChildren(node)
+        .map((child) => child.name)
+        .includes(options.name)
+    ) {
+      let rename = options.name + incrimentName.toString();
+      console.debug(
+        `folder ${options.parentPath} contains tag ${options.name}  rename -> ${rename}`,
+      );
+      options.name = rename;
+      incrimentName++;
+    }
+
+    options.path = new TagNode({ ...options, type: "Tag" }).path;
+
+    // collection.insertAfter(indexPath, [
+    //   new TagNode({ ...options, type: "Tag" }),
+    // ]);
+
+    updateTagCommand(options);
   }
 </script>
 
-{#snippet treeNode(node: TagNode, indexPath: number[])}
+{#snippet treeNode(node: ClosureTableNode, indexPath: number[])}
   {@const update = updateTag.for(node.path)}
   {@const tag =
     node.type !== "Folder"
@@ -129,27 +141,80 @@
       : undefined}
 
   <TreeView.NodeProvider value={{ node, indexPath }}>
-    {#if node.children || node.type == "Folder" || node.type == "UdtTag"}
+    {#if node.children}
       <TreeView.Branch onpaste={(e) => handlePaste(e, node)}>
-        <TreeView.BranchControl>
-          <TreeView.BranchIndicator class="data-loading:hidden" />
-          <TreeView.BranchIndicator
-            class="hidden data-loading:inline animate-spin"
-          >
-            <LoaderIcon class="size-4" />
-          </TreeView.BranchIndicator>
-          {#if node.type === "UdtTag"}
-            <TreeView.BranchText class="truncate">
-              <TagsIcon class="size-4 shrink-0" />
-              {node.name}
-            </TreeView.BranchText>
-          {:else if node.type === "Folder"}
-            <TreeView.BranchText class="truncate">
-              <FolderIcon class="size-4 shrink-0" />
-              {node.name}
-            </TreeView.BranchText>
-          {/if}
-        </TreeView.BranchControl>
+        <Menu>
+          <Menu.ContextTrigger>
+            <TreeView.BranchControl>
+              <TreeView.BranchIndicator class="data-loading:hidden" />
+              <TreeView.BranchIndicator
+                class="hidden data-loading:inline animate-spin"
+              >
+                <LoaderIcon class="size-4" />
+              </TreeView.BranchIndicator>
+              {#if node.type === "UdtTag"}
+                <TreeView.BranchText class="truncate">
+                  <TagsIcon class="size-4 shrink-0" />
+                  {node.name}
+                </TreeView.BranchText>
+              {/if}
+              <TreeView.BranchText class="truncate">
+                <FolderIcon class="size-4 shrink-0" />
+                {node.name}
+              </TreeView.BranchText>
+            </TreeView.BranchControl>
+          </Menu.ContextTrigger>
+          <Portal>
+            <Menu.Positioner>
+              <Menu.Content class="min-w-auto">
+                <Menu.Item value="cut">
+                  <Menu.ItemText>
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      onclick={() => folderCut(node)}
+                    >
+                      <Scissors class="size-4" />
+                      <span>Cut</span>
+                      <span class="text-xs text-neutral-500 ml-auto"
+                        >Ctrl+X</span
+                      >
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item value="copy">
+                  <Menu.ItemText>
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      onclick={() => folderCopy(node)}
+                    >
+                      <Copy class="size-4" />
+                      <span>Copy</span>
+                      <span class="text-xs text-neutral-500 ml-auto"
+                        >Ctrl+C</span
+                      >
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Separator />
+                <Menu.Item value="delete">
+                  <Menu.ItemText>
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      onclick={async () => {
+                        if (tag?.path) await deleteTag(tag.path);
+                      }}
+                    >
+                      <Trash2 class="size-4" />
+                      Delete
+                      <span class="text-xs text-neutral-500 ml-auto">Del</span
+                      ></button
+                    ></Menu.ItemText
+                  >
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Positioner>
+          </Portal>
+        </Menu>
         <TreeView.BranchContent>
           <TreeView.BranchIndentGuide />
           {#each node.children ?? [] as childNode, childIndex (childNode)}

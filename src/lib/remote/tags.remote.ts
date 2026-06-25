@@ -1,5 +1,4 @@
 import { command, form, query } from "$app/server";
-import { tagManager } from "../../server";
 import { attempt } from "$lib/util/attempt";
 import { logger } from "$lib/server/pino/logger";
 import { error, invalid } from "@sveltejs/kit";
@@ -7,6 +6,7 @@ import { TagError } from "$lib/server/tag/tag";
 import z from "zod";
 import { Z_tagOptionsInputForm } from "$lib/client/tag/zodSchema";
 import { tryCatch } from "$lib/util/tryCatch";
+import { tagManager } from "../../hooks.server";
 
 export const updateTagCommand = command(Z_tagOptionsInputForm, async (data) => {
   let result = await tryCatch(tagManager.updateTag, data.path, data);
