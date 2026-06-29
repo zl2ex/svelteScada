@@ -1,10 +1,11 @@
 import { user } from "./user";
-import { tag } from "./tag";
+import { tag, z_insertTag } from "./tag";
 import { devices } from "./devices";
 import { displays } from "./displays";
 import { user_permissions } from "./user-permissions";
 import { tag_folders } from "./tag-folders";
 import { tag_folder_paths } from "./tag-folder-paths";
+
 export {
   user,
   user_permissions,

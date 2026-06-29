@@ -1,7 +1,6 @@
 <script lang="ts">
   import { ClientTag } from "$lib/client/tag/clientTag.svelte";
   import type { TagPaths } from "$lib/server/tag/tag";
-  import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
   import { updateTag } from "$lib/remote/tags.remote";
 
   type props = {

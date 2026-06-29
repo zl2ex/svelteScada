@@ -3,13 +3,13 @@ import { ModbusTCPDriver, Z_ModbusTCPDriverOptions } from "./modbus/modbusTcp";
 import { Z_ModbusRTUDriverOptions } from "./modbus/modbusRtu";
 import { z } from "zod";
 import { logger } from "$lib/server/pino/logger";
-import { collections } from "../mongodb/collections";
 import { attempt } from "$lib/util/attempt";
 import { resolveOpcuaPath, Tag } from "$lib/server/tag/tag";
 import {
   OpcuaClientDriver,
   Z_OpcuaClientDriverOptions,
 } from "./opcua/opcuaClient";
+import { tagManager } from "../../../hooks.server";
 
 export class DriverStatusError extends Error {
   opcuaStatus: StatusCode;
@@ -175,7 +175,9 @@ export class DeviceManager {
   }
 
   async loadAllFromDb() {
-    let devices = await collections.devices.find().toArray();
+    // SQLITE WIP
+    let devices = {};
+    //let devices = await collections.devices.find().toArray();
 
     if (!this.opcuaServer) {
       throw new Error(
@@ -196,12 +198,15 @@ export class DeviceManager {
   async addDevice(device: Device, writeToDb: boolean = true) {
     this.devices.set(device.name, device);
     if (writeToDb) {
-      const { error, data } = await attempt(() =>
-        collections.devices.updateOne(
-          { name: device.name },
-          { $set: { ...device.options } },
-          { upsert: true },
-        ),
+      const { error, data } = attempt(
+        () =>
+          // SQLITE WIP
+          false,
+        // collections.devices.updateOne(
+        //   { name: device.name },
+        //   { $set: { ...device.options } },
+        //   { upsert: true },
+        // ),
       );
       if (error) {
         logger.error(error);
@@ -215,8 +220,12 @@ export class DeviceManager {
     const oldDevice = this.devices.get(deviceName);
     oldDevice?.dispose();
     this.devices.delete(deviceName);
-    const { error, data } = await attempt(() =>
-      collections.devices.deleteOne({ name: deviceName }),
+    const { error, data } = await attempt(
+      () =>
+        // SQLITE WIP
+
+        false,
+      //collections.devices.deleteOne({ name: deviceName }),
     );
     if (error) {
       logger.error(error);

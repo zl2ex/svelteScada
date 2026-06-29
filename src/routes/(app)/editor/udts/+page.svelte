@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
   import { deleteUDt, getUdt, updateUdt } from "$lib/remote/udts.remote";
   import type { UdtDefinitionOptions } from "$lib/server/tag/udt";
 

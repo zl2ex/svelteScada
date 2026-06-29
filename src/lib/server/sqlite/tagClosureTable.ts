@@ -194,7 +194,7 @@ export class ClosureTable {
     });
   }
 
-  async getTree(parentId: string | null = null) {
+  async getTree(parentId: string | null = null): Promise<ClosureTableNode[]> {
     let folders = await db.query.tag_folders.findMany({
       ...(parentId !== null && {
         where: { ancestorPaths: { ancestor: { eq: parentId } } },

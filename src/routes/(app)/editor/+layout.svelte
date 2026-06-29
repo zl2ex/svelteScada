@@ -2,7 +2,6 @@
   import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index";
   import SelectInput from "$lib/client/componets/remoteFormElements/SelectInput.svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
-  import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
   import { ClientTag, TagNode } from "$lib/client/tag/clientTag.svelte";
   import {
     deleteTag,
@@ -31,13 +30,18 @@
   import { tree } from "$live/counter";
   import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
   import { tryCatch } from "$lib/util/tryCatch";
-  import z from "zod";
+  import {
+    z_shared_insertTag,
+    z_shared_insertTagFolder,
+  } from "$lib/validation/zod";
 
   let { children } = $props();
 
   let tre = tree.rune();
 
-  let collection = $derived(
+  let folders: ClosureTableNode[] = $derived(tre.current);
+
+  let collection = $state(
     createTreeViewCollection<ClosureTableNode>({
       nodeToValue: (node) => node.id,
       nodeToString: (node) => node.name,
@@ -45,16 +49,97 @@
         id: "root",
         name: "",
         tags: [],
-        children: tre.current,
+        children: [
+          {
+            id: "test",
+            name: "test",
+            tags: [],
+            children: [],
+          },
+        ],
       },
     }),
   );
 
+  $inspect(collection.rootNode);
+
+  const loadChildren: TreeViewRootProps["loadChildren"] = async (details) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.debug(folders);
+    return folders;
+    return [
+      {
+        id: "1",
+        name: "test",
+        tags: [],
+        children: [],
+      },
+    ];
+  };
+
   const onLoadChildrenComplete: TreeViewRootProps["onLoadChildrenComplete"] = (
     details,
   ) => {
+    console.debug(details);
     collection = details.collection;
   };
+
+  function patchNode(
+    node: ClosureTableNode,
+    targetId: string,
+    newChild: ClosureTableNode,
+  ): ClosureTableNode {
+    if (node.id === targetId) {
+      // Only this node gets a new object — its branch re-renders
+      return { ...node, children: [...(node.children ?? []), newChild] };
+    }
+    if (!node.children) return node; // same reference — Svelte skips it
+    const patchedChildren = node.children.map((c) =>
+      patchNode(c, targetId, newChild),
+    );
+    // Only create new object if a child actually changed
+    const changed = patchedChildren.some((c, i) => c !== node.children[i]);
+    return changed ? { ...node, children: patchedChildren } : node;
+  }
+
+  function createNode(parentId: string, node: ClosureTableNode) {
+    const newNode = { id: crypto.randomUUID(), ...node, children: [] };
+    collection = createTreeViewCollection({
+      nodeToValue: (n) => n.id,
+      nodeToString: (n) => n.name,
+      rootNode: patchNode(collection.rootNode, parentId, newNode),
+    });
+  }
+
+  // Remove a node
+  function removeNode(node, targetId) {
+    if (!node.children) return node;
+    const filteredChildren = node.children.filter((c) => c.id !== targetId);
+    const changed = filteredChildren.length !== node.children.length;
+    if (!changed) {
+      const patchedChildren = node.children.map((c) => removeNode(c, targetId));
+      const deepChanged = patchedChildren.some(
+        (c, i) => c !== node.children[i],
+      );
+      return deepChanged ? { ...node, children: patchedChildren } : node;
+    }
+    return { ...node, children: filteredChildren };
+  }
+
+  // Move a node
+  function moveNode(root, targetId, newParentId) {
+    const nodeToMove = findNode(root, targetId);
+    const withRemoved = removeNode(root, targetId);
+    return patchNode(withRemoved, newParentId, nodeToMove);
+  }
+
+  function findNode(node, targetId) {
+    if (node.id === targetId) return node;
+    return node.children?.reduce(
+      (found, c) => found ?? findNode(c, targetId),
+      null,
+    );
+  }
 
   async function copyToClipboard(text: string) {
     try {
@@ -90,46 +175,68 @@
 
   async function tagPaste(tagOptions: TagOptionsInput<any>) {}
 
-  async function handlePaste(e: ClipboardEvent, node: ClosureTableNode) {
+  async function handlePaste(
+    e: ClipboardEvent,
+    node: ClosureTableNode,
+    indexPath: number[],
+  ) {
     const text = e.clipboardData?.getData("text/plain");
     e.stopPropagation();
     if (!text) return;
 
     let json = await tryCatch(JSON.parse, text);
     if (json.error) {
-      console.error(json.error.message);
+      console.error(json.error);
       return;
     }
-    // TD WIP import Zod from $lib/server
-    let options = await tryCatch(z.object().parse, json.data);
-    throw Error(" handlePaste() TD WIP import Zod from $lib/server");
-    console.debug(options);
-    options.parentPath = node.path; // put into folder user pasted into
-    console.debug(collection.getNodeChildren(node).map((child) => child.name));
 
-    let incrimentName = 0;
-
-    while (
-      collection
-        .getNodeChildren(node)
-        .map((child) => child.name)
-        .includes(options.name)
-    ) {
-      let rename = options.name + incrimentName.toString();
-      console.debug(
-        `folder ${options.parentPath} contains tag ${options.name}  rename -> ${rename}`,
+    let tag = await tryCatch(z_shared_insertTag.parse, json.data);
+    let folder = await tryCatch(z_shared_insertTagFolder.parse, json.data);
+    if (tag.error && folder.error) {
+      throw Error(
+        `handlePaste() parse into tag or folder failed, wrong format ${json.data}`,
       );
-      options.name = rename;
-      incrimentName++;
     }
 
-    options.path = new TagNode({ ...options, type: "Tag" }).path;
+    if (folder.data) {
+      console.debug(folder.data);
+      console.debug(indexPath);
 
-    // collection.insertAfter(indexPath, [
-    //   new TagNode({ ...options, type: "Tag" }),
-    // ]);
+      //createNode();
 
-    updateTagCommand(options);
+      //console.debug(collection.getParentNode(indexPath));
+      //console.debug(collection.insertAfter(indexPath, [folder.data]));
+
+      //folders.children.forEach((f) => {});
+    } else if (tag.data) {
+      alert(`TD WIP add folder ${folder.data}`);
+      let options = tag.data;
+      console.debug(options);
+      options.parentPath = node.path; // put into folder user pasted into
+      console.debug(
+        collection.getNodeChildren(node).map((child) => child.name),
+      );
+
+      let incrimentName = 0;
+
+      while (
+        collection
+          .getNodeChildren(node)
+          .map((child) => child.name)
+          .includes(options.name)
+      ) {
+        let rename = options.name + incrimentName.toString();
+        console.debug(
+          `folder ${options.parentPath} contains tag ${options.name}  rename -> ${rename}`,
+        );
+        options.name = rename;
+        incrimentName++;
+      }
+
+      options.path = new TagNode({ ...options, type: "Tag" }).path;
+
+      updateTagCommand(options);
+    }
   }
 </script>
 
@@ -142,7 +249,11 @@
 
   <TreeView.NodeProvider value={{ node, indexPath }}>
     {#if node.children}
-      <TreeView.Branch onpaste={(e) => handlePaste(e, node)}>
+      <TreeView.Branch
+        onpaste={(e) => handlePaste(e, node, indexPath)}
+        oncopy={() => folderCopy(node)}
+        oncut={() => folderCut(node)}
+      >
         <Menu>
           <Menu.ContextTrigger>
             <TreeView.BranchControl>
@@ -449,10 +560,15 @@
   <div class="text-xs w-100">
     <!--<input type="text" bind:value={tagEditorPath} />-->
     <svelte:boundary>
-      <TreeView {collection} {onLoadChildrenComplete} selectionMode="multiple">
+      <TreeView
+        {collection}
+        {loadChildren}
+        {onLoadChildrenComplete}
+        selectionMode="multiple"
+      >
         <!--<TreeView.Label>File System</TreeView.Label>-->
         <TreeView.Tree class="w-full">
-          {#each collection.rootNode.children || [] as node, index (node)}
+          {#each collection.rootNode.children ?? [] as node, index (node)}
             {@render treeNode(node, [index])}
           {/each}
         </TreeView.Tree>
@@ -468,5 +584,5 @@
     </svelte:boundary>
   </div>
 
-  {@render children()}
+  {@render children?.()}
 </div>

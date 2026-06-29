@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { socketIoClientHandler } from "$lib/client/socket.io/socket.io.svelte";
   import {
     ClientTag,
     type ClientTagOptions,

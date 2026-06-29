@@ -25,7 +25,6 @@ import {
   StatusCode,
   type UAObject,
 } from "node-opcua";
-import { emitToSubscribers, type EmitPayload } from "../socket.io/socket.io";
 import z, { ZodObject } from "zod";
 import { type UdtParams } from "./udt";
 import { attempt } from "../../../lib/util/attempt";
@@ -734,7 +733,7 @@ export class Tag<
     );
   }
 
-  getEmitPayload(): EmitPayload {
+  getEmitPayload() {
     return {
       path: this.path,
       value: {
@@ -746,7 +745,8 @@ export class Tag<
         errorMessage: this.error?.message,
         childTags: this.childTags
           ? Array.from(this.childTags).map(([path, tag]) =>
-              tag.getEmitPayload(),
+              //tag.getEmitPayload(),
+              {},
             )
           : undefined,
       },
@@ -754,6 +754,6 @@ export class Tag<
   }
 
   triggerEmit() {
-    emitToSubscribers(this.getEmitPayload());
+    //emitToSubscribers(this.getEmitPayload());
   }
 }

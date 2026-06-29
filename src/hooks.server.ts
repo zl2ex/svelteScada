@@ -1,7 +1,6 @@
 import { redirect, type Handle, type ServerInit } from "@sveltejs/kit";
 import { authenticateUser } from "$lib/server/auth/auth";
 import { logger } from "$lib/server/pino/logger";
-import { connectToDatabase } from "$lib/server/mongodb/db";
 import { DeviceManager } from "$lib/server/drivers/driver";
 import { UdtManager } from "$lib/server/tag/udtManager";
 import { TagManager } from "$lib/server/tag/tagManager";

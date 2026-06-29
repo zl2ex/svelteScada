@@ -1,4 +1,3 @@
-import { collections } from "../mongodb/collections";
 import { logger } from "../pino/logger";
 import { UdtDefinition, type UdtDefinitionOptions } from "./udt";
 
@@ -11,19 +10,22 @@ export class UdtManager {
 
   async createUdt(
     opts: UdtDefinitionOptions,
-    writeToDb: boolean = true
+    writeToDb: boolean = true,
   ): Promise<UdtDefinition> {
     if (writeToDb) {
-      const existing = await collections.udts.findOne(
-        { name: opts.name },
-        { projection: { _id: 0 } }
-      );
+      // SQLITE WIP
+      const existing = {};
+      // await collections.udts.findOne(
+      //   { name: opts.name },
+      //   { projection: { _id: 0 } }
+
       if (existing) {
         throw new Error(
-          `[UdtManager] createUdt() Udt already exists at ${opts.name}`
+          `[UdtManager] createUdt() Udt already exists at ${opts.name}`,
         );
       }
-      await collections.udts.insertOne(opts);
+      // SQLITE WIP
+      //await collections.udts.insertOne(opts);
     }
 
     const udt = new UdtDefinition(opts);
@@ -45,9 +47,12 @@ export class UdtManager {
   getChildrenAsNode() {}
 
   async loadAllFromDb() {
-    const udts = await collections.udts
-      .find({}, { projection: { _id: 0 } })
-      .toArray();
+    // SQLITE WIP
+
+    const udts = [];
+    // await collections.udts
+    //   .find({}, { projection: { _id: 0 } })
+    //   .toArray();
     udts.forEach((udt) => {
       // dont write to db as we are loading from it
       this.createUdt(udt, false);

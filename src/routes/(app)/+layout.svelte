@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { io } from "socket.io-client";
-  import { ClientTag } from "$lib/client/tag/clientTag.svelte.js";
-
   import {
     CircleUserIcon,
     MenuIcon,

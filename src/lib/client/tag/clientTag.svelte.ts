@@ -1,15 +1,9 @@
 import type {
-  EmitPayload,
-  SocketIOClientToServerEvents,
-  SocketIOServerToClientEvents,
-} from "$lib/server/socket.io/socket.io";
-import type {
   ResolveType,
   TagOptionsInput,
   TagPaths,
 } from "$lib/server/tag/tag";
 import type { Result } from "$lib/util/attempt";
-import type { Socket } from "socket.io-client";
 import z from "zod";
 
 export const Z_NodeOptions = z.object({
@@ -95,10 +89,6 @@ export type ClientDataTypeStrings = "number" | "boolean" | "string" | "any";
 
 //export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
 export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
-  private static socket?: Socket<
-    SocketIOServerToClientEvents,
-    SocketIOClientToServerEvents
-  >;
   //static tags: Record<TagPaths, ClientTag<any>> = []; // TD WIP REMOVE ??
   static events = new TypedEventTarget<TagEvents>();
   private _value: ResolveType<DataTypeString>;

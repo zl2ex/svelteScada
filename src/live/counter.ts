@@ -25,7 +25,7 @@ let folderId = "";
 
 export const tree = live.stream(
   "tag-tree",
-  async (ctx): ClosureTableNode => {
+  async (ctx): Promise<ClosureTableNode[]> => {
     //return await getSubTree("root");
     return await tagClosureTable.getTree();
 
