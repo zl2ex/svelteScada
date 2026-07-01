@@ -2,14 +2,21 @@ import { produceWithPatches, applyPatches, enablePatches } from "immer";
 import type { Patch } from "immer";
 import { applyMutation } from "$live/editor";
 import { squashPatches } from "$lib/client/versioning/patches";
-import type { Collections, CollectionName } from "$lib/types";
 import type { Tag, Device, Display } from "$lib/server/sqlite/schema";
+import type {
+  CollectionName,
+  Collections,
+  MutationSchema,
+} from "../../../live/editor";
+import { tryCatch } from "$lib/util/tryCatch";
+import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
 
 enablePatches();
 
 const SAVE_MARKER = Symbol("SAVE_MARKER");
 
 interface HistoryEntry {
+  collection: MutationSchema["collection"];
   patches: Patch[];
   inversePatches: Patch[];
 }
@@ -23,45 +30,46 @@ interface CollectionStack {
 
 export class EditorState {
   tags = $state<Record<string, Tag>>({});
-  devices = $state<Record<string, Device>>({});
-  displays = $state<Record<string, Display>>({});
+  folders = $state<ClosureTableNode[]>([]);
   syncError = $state<string | null>(null);
 
-  #history: Record<CollectionName, CollectionStack> = {
-    tags: { past: [], future: [] },
-    devices: { past: [], future: [] },
-    displays: { past: [], future: [] },
-  };
-
-  // Debounce timers — all collections use 300ms debounce before sending
-  #debounce = new Map<CollectionName, ReturnType<typeof setTimeout>>();
-
-  // Pending patches per collection accumulated during debounce window
-  #pending = new Map<CollectionName, Patch[]>();
+  // TD WIP DEV $state only for dev
+  history: CollectionStack = $state({
+    past: [SAVE_MARKER],
+    future: [SAVE_MARKER],
+  });
 
   constructor(initial: Collections) {
     this.tags = initial.tags;
-    this.devices = initial.devices;
-    this.displays = initial.displays;
+    this.folders = initial.folders;
   }
 
   // --- Mutations ---
 
-  mutate<K extends CollectionName>(
+  async mutate<K extends CollectionName>(
     collection: K,
     recipe: (draft: Collections[K]) => void,
-  ): void {
-    const current = this[collection] as Collections[K];
+  ) {
+    const current = $state.snapshot(this[collection]) as Collections[K];
     const [next, patches, inversePatches] = produceWithPatches(current, recipe);
 
-    this.#history[collection].past.push({ patches, inversePatches });
-    this.#history[collection].future = [];
+    this.history.past.push({
+      collection,
+      patches,
+      inversePatches,
+    });
+
+    console.debug(this.history.past);
+    this.history.future = [];
     (this[collection] as Collections[K]) = next;
 
-    this.#scheduleSend(collection, patches);
+    const squashed = squashPatches(patches);
+    // applyMutation is a live.validated remote function —
+    // called like a local async function, runs on server via WebSocket
+    const result = await applyMutation({ collection, patches: squashed });
   }
 
-  deleteTag(id: string): void {
+  tagDelete(id: string): void {
     this.mutate("tags", (draft) => {
       delete draft[id];
     });
@@ -75,64 +83,6 @@ export class EditorState {
     this.mutate("displays", (draft) => {
       delete draft[id];
     });
-  }
-
-  // --- Debounced send ---
-
-  #scheduleSend(collection: CollectionName, patches: Patch[]): void {
-    // Accumulate patches during the debounce window
-    const accumulated = this.#pending.get(collection) ?? [];
-    this.#pending.set(collection, [...accumulated, ...patches]);
-
-    clearTimeout(this.#debounce.get(collection));
-    this.#debounce.set(
-      collection,
-      setTimeout(() => void this.#flush(collection), 300),
-    );
-  }
-
-  async #flush(collection: CollectionName): Promise<void> {
-    const patches = this.#pending.get(collection) ?? [];
-    if (patches.length === 0) return;
-    this.#pending.delete(collection);
-
-    const squashed = squashPatches(patches);
-
-    try {
-      // applyMutation is a live.validated remote function —
-      // called like a local async function, runs on server via WebSocket
-      const result = await applyMutation({ collection, patches: squashed });
-
-      // For tags: server returns enriched patches (resolved OPC-UA values etc.)
-      // Merge them back without creating a history entry
-      if (result?.patches && collection === "tags") {
-        this.#mergeServerResponse("tags", result.patches);
-      }
-
-      this.syncError = null;
-    } catch (err) {
-      this.syncError = `Sync failed: ${(err as Error).message}`;
-
-      // Roll back all history entries that haven't been confirmed
-      // by working backwards through the patches we just tried to send
-      for (const patch of squashed.slice().reverse()) {
-        const stack = this.#history[collection];
-        const entry = stack.past.findLast(
-          (e) =>
-            e !== SAVE_MARKER &&
-            (e as HistoryEntry).patches.some(
-              (p) => p.path.join("/") === patch.path.join("/"),
-            ),
-        ) as HistoryEntry | undefined;
-
-        if (entry) {
-          (this[collection] as Collections[typeof collection]) = applyPatches(
-            this[collection] as Collections[typeof collection],
-            entry.inversePatches,
-          ) as Collections[typeof collection];
-        }
-      }
-    }
   }
 
   // Merge server-returned patches without touching undo history
@@ -173,67 +123,71 @@ export class EditorState {
 
   // --- Undo / Redo ---
 
-  async undo(collection: CollectionName): Promise<void> {
-    const stack = this.#history[collection];
+  async undo(): Promise<void> {
+    const stack = this.history;
     const entry = stack.past.pop();
     if (!entry) return;
 
     if (entry === SAVE_MARKER) {
       stack.future.push(SAVE_MARKER);
-      return this.undo(collection);
+      return this.undo();
     }
 
     stack.future.push(entry);
-    (this[collection] as Collections[typeof collection]) = applyPatches(
-      this[collection] as Collections[typeof collection],
-      (entry as HistoryEntry).inversePatches,
-    ) as Collections[typeof collection];
+    (this[entry.collection] as Collections[typeof entry.collection]) =
+      applyPatches(
+        this[entry.collection] as Collections[typeof entry.collection],
+        (entry as HistoryEntry).inversePatches,
+      ) as Collections[typeof entry.collection];
 
     // Send inverse patches to server immediately — no debounce on undo
     const squashed = squashPatches((entry as HistoryEntry).inversePatches);
     try {
-      await applyMutation({ collection, patches: squashed });
+      await applyMutation({ collection: entry.collection, patches: squashed });
       this.syncError = null;
     } catch (err) {
       this.syncError = `Undo sync failed: ${(err as Error).message}`;
     }
   }
 
-  async redo(collection: CollectionName): Promise<void> {
-    const stack = this.#history[collection];
+  async redo(): Promise<void> {
+    const stack = this.history;
     const entry = stack.future.pop();
     if (!entry) return;
 
     if (entry === SAVE_MARKER) {
       stack.past.push(SAVE_MARKER);
-      return this.redo(collection);
+      return this.redo();
     }
 
     stack.past.push(entry);
-    (this[collection] as Collections[typeof collection]) = applyPatches(
-      this[collection] as Collections[typeof collection],
-      (entry as HistoryEntry).patches,
-    ) as Collections[typeof collection];
+    (this[entry.collection] as Collections[typeof entry.collection]) =
+      applyPatches(
+        this[entry.collection] as Collections[typeof entry.collection],
+        (entry as HistoryEntry).patches,
+      ) as Collections[typeof entry.collection];
 
     const squashed = squashPatches((entry as HistoryEntry).patches);
-    try {
-      await applyMutation({ collection, patches: squashed });
-      this.syncError = null;
-    } catch (err) {
-      this.syncError = `Redo sync failed: ${(err as Error).message}`;
-    }
+
+    const mutation = await tryCatch(applyMutation, {
+      collection: entry.collection,
+      patches: squashed,
+    });
+    this.syncError = null;
+    if (mutation.error)
+      this.syncError = `Redo sync failed: ${mutation.error.message}`;
   }
 
   // --- Derived state ---
 
   get canUndo(): boolean {
-    return Object.values(this.#history).some((s) =>
+    return Object.values(this.history).some((s) =>
       s.past.some((e) => e !== SAVE_MARKER),
     );
   }
 
   get canRedo(): boolean {
-    return Object.values(this.#history).some((s) =>
+    return Object.values(this.history).some((s) =>
       s.future.some((e) => e !== SAVE_MARKER),
     );
   }

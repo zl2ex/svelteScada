@@ -21,8 +21,6 @@ export const counter = live.stream(
   { merge: "set" },
 );
 
-let folderId = "";
-
 export const tree = live.stream(
   "tag-tree",
   async (ctx): Promise<ClosureTableNode[]> => {

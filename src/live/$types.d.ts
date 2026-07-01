@@ -16,8 +16,6 @@ declare module '$live/editor' {
   import type { Readable } from 'svelte/store';
 
   export const applyMutation: ({ collection, patches }) => Promise<any>;
-  export const tagsStream: StreamStore<Record<string, TagSelect> | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<Record<string, TagSelect>> };
-  export const devicesStream: StreamStore<Record<string, Device> | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<Record<string, Device>> };
-  export const displaysStream: StreamStore<Record<string, Display> | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<Record<string, Display>> };
+  export const foldersStream: StreamStore<ClosureTableNode[] | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<ClosureTableNode[]> };
   export const empty: Readable<undefined>;
 }

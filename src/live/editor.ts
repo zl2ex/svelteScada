@@ -2,12 +2,15 @@ import { live } from "svelte-realtime/server";
 import { z } from "zod";
 import { applyPatches, enablePatches } from "immer";
 import type { Patch } from "immer";
-import type { CollectionName } from "$lib/types";
 import { patchMerge, squashPatches } from "$lib/client/versioning/patches";
 import { db } from "$lib/server/sqlite/db";
 import { tag as tags, devices, displays } from "$lib/server/sqlite/tables";
 import type { TagSelect, Device, Display } from "$lib/server/sqlite/tables";
 import { eq, gt, sql } from "drizzle-orm";
+import {
+  tagClosureTable,
+  type ClosureTableNode,
+} from "$lib/server/sqlite/tagClosureTable";
 
 enablePatches();
 
@@ -18,38 +21,22 @@ const PatchSchema = z.object({
 });
 
 const MutationSchema = z.object({
-  collection: z.enum(["tags", "devices", "displays"]),
+  collection: z.enum(["tags", "folders"]),
   patches: z.array(PatchSchema),
 });
 
+export type MutationSchema = z.input<typeof MutationSchema>;
+export type CollectionName = MutationSchema["collection"];
+export type Collections = Record<MutationSchema["collection"], any>;
+
 // ── Streams ────────────────────────────────────────────────
 
-export const tagsStream = live.stream(
-  "tags",
-  (): Record<string, TagSelect> => loadCollection("tags"),
+export const foldersStream = live.stream(
+  "tag-folders",
+  async (): Promise<ClosureTableNode[]> => await tagClosureTable.getTree(),
   {
     merge: "crud",
     key: "id",
-    //merge: patchMerge,
-    //delta: buildDelta("tags"),
-  },
-);
-
-export const devicesStream = live.stream(
-  "devices",
-  (): Record<string, Device> => loadCollection("devices"),
-  {
-    merge: patchMerge,
-    delta: buildDelta("devices"),
-  },
-);
-
-export const displaysStream = live.stream(
-  "displays",
-  (): Record<string, Display> => loadCollection("displays"),
-  {
-    merge: patchMerge,
-    delta: buildDelta("displays"),
   },
 );
 

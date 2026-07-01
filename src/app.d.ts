@@ -12,6 +12,13 @@ declare global {
     // interface PageData {}
     // interface Platform {}
   }
+
+  var socketIoClientHandler: {
+    rpc: (args: {
+      name: string;
+      parameters: Record<string, unknown>;
+    }) => Promise<{ error?: { message: string }; data?: string[] }>;
+  };
 }
 
 export {};

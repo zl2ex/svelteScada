@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { command, form, query } from "$app/server";
 import { attempt } from "$lib/util/attempt";
 import { logger } from "$lib/server/pino/logger";
@@ -7,6 +8,9 @@ import z from "zod";
 import { Z_tagOptionsInputForm } from "$lib/client/tag/zodSchema";
 import { tryCatch } from "$lib/util/tryCatch";
 import { tagManager } from "../../hooks.server";
+import { tagClosureTable } from "$lib/server/sqlite/tagClosureTable";
+import { db } from "$lib/server/sqlite/db";
+import { tag as tagTable } from "$lib/server/sqlite/tables";
 
 export const updateTagCommand = command(Z_tagOptionsInputForm, async (data) => {
   let result = await tryCatch(tagManager.updateTag, data.path, data);
@@ -65,3 +69,60 @@ export const getAllChildrenAsNode = query(z.string(), async (path) => {
 
   return result.data;
 });
+
+export const createFolder = command(
+  z.object({
+    name: z.string().min(1),
+    parentId: z.string().nullable(),
+  }),
+  async (data) => {
+    const folder = tagClosureTable.insertNode(data.name, data.parentId);
+    return folder;
+  },
+);
+
+export const deleteFolderCmd = command(z.string(), async (id) => {
+  tagClosureTable.deleteCascade(id);
+});
+
+export const moveFolder = command(
+  z.object({
+    id: z.string(),
+    newParentId: z.string(),
+  }),
+  async (data) => {
+    tagClosureTable.moveNode(data.id, data.newParentId);
+  },
+);
+
+export const deleteTagFromDb = command(z.string(), async (id) => {
+  db.delete(tagTable).where(eq(tagTable.id, id)).run();
+});
+
+export const insertTag = command(
+  z.object({
+    name: z.string().min(1),
+    folderId: z.string(),
+    dataType: z.string(),
+    nodeId: z.string().nullable().optional(),
+    writeable: z.boolean().optional(),
+    exposeOverOpcua: z.boolean().optional(),
+    parameters: z.any().nullable().optional(),
+  }),
+  async (data) => {
+    const result = db
+      .insert(tagTable)
+      .values({
+        name: data.name,
+        folderId: data.folderId,
+        dataType: data.dataType,
+        nodeId: data.nodeId ?? null,
+        writeable: data.writeable ?? true,
+        exposeOverOpcua: data.exposeOverOpcua ?? true,
+        parameters: data.parameters ?? null,
+      })
+      .returning()
+      .get();
+    return result;
+  },
+);
