@@ -25,7 +25,7 @@
     TreeView,
     createTreeViewCollection,
   } from "@skeletonlabs/skeleton-svelte";
-  import { tree } from "$live/counter";
+  import { tagFolder } from "$live/tag-folder";
   import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
   import { tryCatch } from "$lib/util/tryCatch";
   import {
@@ -37,6 +37,7 @@
   import { EditorState } from "$lib/client/versioning/editorState.svelte";
   import { createTravels } from "travels";
   import { browser } from "$app/env";
+  import { updateFolder } from "$live/tag-folder";
 
   let { children } = $props();
 
@@ -95,7 +96,16 @@
   if (browser) {
     document.addEventListener("keyup", (e) => {
       //console.debug(e.key, e.ctrlKey);
-      if (e.key == "z" && e.ctrlKey) s.back();
+      if (e.key == "z" && e.ctrlKey) undo();
+    });
+  }
+
+  function undo() {
+    s.back();
+    const patch = s.getHistoryEntries()[0];
+    patch.inversePatches.forEach((ip) => {
+      console.debug(ip);
+      updateFolder(ip);
     });
   }
 
@@ -173,6 +183,8 @@
     s.setState((draft) => {
       removeNodeById(draft.folders, node.id);
     });
+
+    updateFolder(s.getHistoryEntries()[0].patches[0]);
     return true;
   }
 

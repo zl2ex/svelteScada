@@ -7,11 +7,11 @@ export interface ClosureTableNode extends TagFolder {
   tags: TagSelect[];
 }
 export class ClosureTable {
-  insertNode(name: string, parentId: string | null = null) {
+  insertNode(node: TagFolder, parentId: string | null = null) {
     return db.transaction((tx) => {
       const [folder] = tx
         .insert(tables.tag_folders)
-        .values({ name })
+        .values({ name: node.name })
         .returning()
         .all();
 
