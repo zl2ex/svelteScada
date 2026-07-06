@@ -17,13 +17,13 @@ export const relationsConfig = defineRelations(schema, (r) => ({
   },
 
   tag_folders: {
-    descendantPaths: r.many.tag_folder_paths({
+    childPaths: r.many.tag_folder_paths({
       from: r.tag_folders.id,
-      to: r.tag_folder_paths.ancestor,
+      to: r.tag_folder_paths.parent,
     }),
-    ancestorPaths: r.many.tag_folder_paths({
+    parentPaths: r.many.tag_folder_paths({
       from: r.tag_folders.id,
-      to: r.tag_folder_paths.descendant,
+      to: r.tag_folder_paths.child,
     }),
     tags: r.many.tag({
       from: r.tag_folders.id,
@@ -32,12 +32,12 @@ export const relationsConfig = defineRelations(schema, (r) => ({
   },
 
   tag_folder_paths: {
-    ancestorFolder: r.one.tag_folders({
-      from: r.tag_folder_paths.ancestor,
+    parentFolder: r.one.tag_folders({
+      from: r.tag_folder_paths.parent,
       to: r.tag_folders.id,
     }),
-    descendantFolder: r.one.tag_folders({
-      from: r.tag_folder_paths.descendant,
+    childFolder: r.one.tag_folders({
+      from: r.tag_folder_paths.child,
       to: r.tag_folders.id,
     }),
   },

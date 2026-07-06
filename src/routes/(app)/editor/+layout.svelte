@@ -3,13 +3,7 @@
   import SelectInput from "$lib/client/componets/remoteFormElements/SelectInput.svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import { ClientTag } from "$lib/client/tag/clientTag.svelte";
-  import {
-    updateTag,
-    createFolder,
-    deleteFolderCmd,
-    deleteTagFromDb,
-    insertTag,
-  } from "$lib/remote/tags.remote";
+  import { updateTag, insertTag } from "$lib/remote/tags.remote";
   import {
     Copy,
     FileIcon,
@@ -25,7 +19,7 @@
     TreeView,
     createTreeViewCollection,
   } from "@skeletonlabs/skeleton-svelte";
-  import { tagFolder } from "$live/tag-folder";
+
   import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
   import { tryCatch } from "$lib/util/tryCatch";
   import {
@@ -33,164 +27,111 @@
     z_shared_insertTagFolder,
   } from "$lib/validation/zod";
   import { configure } from "svelte-realtime/client";
-  import { foldersStream } from "$live/editor";
-  import { EditorState } from "$lib/client/versioning/editorState.svelte";
+  import { foldersStream, applyMutation } from "$live/editor";
   import { createTravels } from "travels";
+  import type { Patch } from "mutative";
   import { browser } from "$app/env";
-  import { updateFolder } from "$live/tag-folder";
 
-  let { children } = $props();
+  let { data, children } = $props();
 
   // Offline queue — realtime-svelte
   configure({
     offline: {
       queue: true,
       maxQueue: 200,
-      maxAge: 5 * 60 * 1000,
+      //maxAge: 5 * 60 * 1000,
       beforeReplay: (call) => Date.now() - call.queuedAt < 5 * 60 * 1000,
       onReplayError: (call, err) => console.warn("Replay failed", call, err),
     },
   });
 
-  // Svelte 5 rune views of each stream
-  //let remoteTags = tagsStream.rune().current;
-  //let remoteFolders = foldersStream.rune().current;
+  // tags.svelte.ts — now just a thin instantiation of the generic class
+  import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
+  import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
 
-  // Editor is initialised once streams have loaded
-  // let editor = new EditorState({
-  //   tags: remoteTags ?? {},
-  //   folders: remoteFolders ?? {},
-  // });
-
-  let folders = $derived(foldersStream.rune().current);
-
-  let globalState = $state({
-    folders: folders ?? [],
-  });
-
-  let s = createTravels(globalState, { mutable: true });
-
-  $effect(() => {
-    console.debug(folders);
-    if (folders === undefined) return;
-    if ("error" in folders) {
-      throw Error("", { cause: folders.error });
-    }
-    globalState.folders = folders;
+  let folderPatches = new PatchCollection<ClosureTableNode>({
+    initial: data.tagFolders,
+    applyPatch: applyTagFolderPatches,
+    subscribePatches: (notify) => {
+      // adapt tagPatches' store .subscribe() to the (payload) => void shape
+      const unsubscribe = tagFolderPatches.subscribe(notify);
+      return unsubscribe; // svelte stores' subscribe() already returns an unsubscribe fn
+    },
+    maxHistory: 50,
   });
 
   let collection = $derived(
     createTreeViewCollection<ClosureTableNode>({
       nodeToValue: (node) => node.id,
       nodeToString: (node) => node.name,
+      nodeToChildren: (node) => {
+        if (node.id === "root") {
+          return Object.values(folderPatches.state).filter(
+            (f) => f.parentId == undefined,
+          );
+        }
+        return Object.values(folderPatches.state).filter(
+          (f) => f.parentId == node.id,
+        );
+      },
       rootNode: {
         id: "root",
         name: "",
-        children: globalState.folders,
+        parentId: undefined,
         tags: [],
       },
     }),
   );
 
-  // global keyboard listener
+  // ── Keyboard shortcuts ────────────────────────────────
+
   if (browser) {
     document.addEventListener("keyup", (e) => {
-      //console.debug(e.key, e.ctrlKey);
-      if (e.key == "z" && e.ctrlKey) undo();
-    });
-  }
-
-  function undo() {
-    s.back();
-    const patch = s.getHistoryEntries()[0];
-    patch.inversePatches.forEach((ip) => {
-      console.debug(ip);
-      updateFolder(ip);
+      if (e.key == "z" && e.ctrlKey) folderPatches.undo();
+      if (e.key == "y" && e.ctrlKey) folderPatches.redo();
     });
   }
 
   async function copyToClipboard(text: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch (e: unknown) {
-      console.error(
-        `copyToClipboard() failed ${e instanceof Error ? e.message : e}`,
-      );
-    }
+    await navigator.clipboard.writeText(text);
   }
 
-  function removeNodeById(nodes: ClosureTableNode[], id: string): boolean {
-    const idx = nodes.findIndex((n) => n.id === id);
-    if (idx !== -1) {
-      nodes.splice(idx, 1);
-      return true;
-    }
-    for (const node of nodes) {
-      if (node.children && removeNodeById(node.children, id)) {
-        return true;
-      }
-    }
-    return false;
+  // ── Folder operations ─────────────────────────────────
+
+  async function folderDelete(node: ClosureTableNode) {
+    let children = Object.values(folderPatches.state).filter(
+      (f) => f.parentId == node.id,
+    );
+    children.forEach((child) => folderDelete(child));
+    folderPatches.remove(node.id);
   }
 
-  function findNodeById(
-    nodes: ClosureTableNode[],
-    id: string,
-  ): ClosureTableNode | null {
-    for (const node of nodes) {
-      if (node.id === id) return node;
-      if (node.children) {
-        const found = findNodeById(node.children, id);
-        if (found) return found;
-      }
-    }
-    return null;
+  async function folderCut(node: ClosureTableNode) {
+    copyToClipboard(JSON.stringify({ id: node.id, name: node.name }));
+    folderDelete(node);
   }
 
-  function addChildTo(parentId: string, newNode: ClosureTableNode) {
-    const parent = findNodeById(editor.folders, parentId);
-    if (parent) {
-      if (!parent.children) parent.children = [];
-      parent.children.push(newNode);
-    }
+  async function folderCopy(node: ClosureTableNode) {
+    copyToClipboard(JSON.stringify({ id: node.id, name: node.name }));
   }
+
+  // ── Tag operations ────────────────────────────────────
 
   async function tagCopy(node: ClosureTableNode) {
     copyToClipboard(JSON.stringify(node));
   }
 
-  async function folderCopy(node: ClosureTableNode | undefined) {
-    if (!node) return;
-    const data = { id: node.id, name: node.name, type: node.type };
-    copyToClipboard(JSON.stringify(data));
-  }
-
   async function tagCut(node: ClosureTableNode) {
-    if (!node.id) return;
     copyToClipboard(JSON.stringify(node));
-    await deleteTagFromDb(node.id);
-    removeNodeById(editor.folders, node.id);
   }
 
-  async function folderCut(node: ClosureTableNode | undefined) {
-    if (!node) return;
-    copyToClipboard(JSON.stringify({ id: node.id, name: node.name }));
-    await deleteFolderCmd(node.id);
-    removeNodeById(editor.folders, node.id);
-  }
+  async function tagDeleteNode(node: ClosureTableNode) {}
 
-  async function folderDelete(node: ClosureTableNode) {
-    s.setState((draft) => {
-      removeNodeById(draft.folders, node.id);
-    });
-
-    updateFolder(s.getHistoryEntries()[0].patches[0]);
-    return true;
-  }
+  // ── Paste ─────────────────────────────────────────────
 
   async function handlePaste(
     e: ClipboardEvent,
-    node: ClosureTableNode,
+    parentNode: ClosureTableNode | undefined,
     indexPath: number[],
   ) {
     const text = e.clipboardData?.getData("text/plain");
@@ -199,8 +140,7 @@
 
     let json = await tryCatch(JSON.parse, text);
     if (json.error) {
-      console.error(json.error);
-      return;
+      throw Error(`handlePaste() `, { cause: json.error });
     }
 
     let tagResult = await tryCatch(z_shared_insertTag.parse, json.data);
@@ -216,67 +156,38 @@
 
     if (folderResult.data) {
       let name = folderResult.data.name;
-      const children = collection.getNodeChildren(node);
+      const newId = crypto.randomUUID();
+      const children = Object.values(folderPatches.state).filter(
+        (f) => f.parentId == parentNode?.id,
+      );
       let count = 0;
+      // incrimentally add a number to the end of pasted node if it already exists
       while (children.map((c) => c.name).includes(name)) {
         name = folderResult.data.name + count;
         count++;
       }
-      const created = await createFolder({ name, parentId: node.id });
-      addChildTo(node.id, {
-        id: created.id,
-        name: created.name,
-        children: [],
-        tags: [],
-      });
+
+      folderPatches.add({ id: newId, name, parentId: parentNode?.id });
     } else if (tagResult.data) {
-      let name = tagResult.data.name;
-      const children = collection.getNodeChildren(node);
-      let count = 0;
-      while (children.map((c) => c.name).includes(name)) {
-        name = tagResult.data.name + count;
-        count++;
-      }
-      const created = await insertTag({
-        name,
-        folderId: node.id,
-        dataType: tagResult.data.dataType,
-        nodeId: tagResult.data.nodeId,
-        writeable: tagResult.data.writeable,
-        exposeOverOpcua: tagResult.data.exposeOverOpcua,
-        parameters: tagResult.data.parameters,
-      });
-      addChildTo(node.id, {
-        id: created.id,
-        name: created.name,
-        children: [],
-        tags: [],
-      });
     }
   }
 </script>
 
 {#snippet treeNode(node: ClosureTableNode, indexPath: number[])}
   {@const update = node.id ? updateTag.for(node.id) : undefined}
-  {@const tag =
-    node.type !== "Folder" && node.id
-      ? (
-          await new ClientTag("any", {
-            name: node.name,
-          }).subscribe()
-        ).data
-      : undefined}
+  {@const children = Object.values(folderPatches.state).filter(
+    (f) => f.parentId == node.id,
+  )}
 
   <TreeView.NodeProvider value={{ node, indexPath }}>
-    {#if node.children}
+    {#if children}
       <TreeView.Branch
         onpaste={(e) => handlePaste(e, node, indexPath)}
         oncopy={() => folderCopy(node)}
         oncut={() => folderCut(node)}
         onkeyup={(e) => {
-          if (e.key === "Delete") {
-            folderDelete(node);
-          }
+          e.stopPropagation();
+          if (e.key === "Delete") folderDelete(node);
         }}
       >
         <Menu>
@@ -345,17 +256,18 @@
         </Menu>
         <TreeView.BranchContent>
           <TreeView.BranchIndentGuide />
-          {#each node.children ?? [] as childNode, childIndex (childNode.id)}
+          {#each children ?? [] as childNode, childIndex (childNode.id)}
             {@render treeNode(childNode, [...indexPath, childIndex])}
           {/each}
         </TreeView.BranchContent>
       </TreeView.Branch>
-    {:else if node.type === "Tag"}
+    {:else if node.tags}
       <TreeView.Branch
         oncopy={() => tagCopy(node)}
         oncut={() => tagCut(node)}
         onkeyup={(e) => {
-          if (e.key === "Delete" && node.id) deleteTagFromDb(node.id);
+          e.stopPropagation();
+          if (e.key === "Delete") tagDeleteNode(node);
         }}
       >
         <Menu>
@@ -420,10 +332,7 @@
                   <Menu.ItemText>
                     <button
                       class="flex items-center gap-2 w-full"
-                      onclick={async () => {
-                        if (node.id) await deleteTagFromDb(node.id);
-                        removeNodeById(editor.folders, node.id);
-                      }}
+                      onclick={() => tagDeleteNode(node)}
                     >
                       <Trash2 class="size-4" />
                       Delete
@@ -438,7 +347,7 @@
         </Menu>
         <TreeView.BranchContent>
           <TreeView.BranchIndentGuide />
-          {#if tag && update}
+          {#if false && tag && update}
             <TreeView.Item class="bg-inherit text-inherit" tabindex={-1}>
               <form
                 tabindex="-1"
@@ -540,16 +449,12 @@
   </TreeView.NodeProvider>
 {/snippet}
 
-<!--{#each editor.history.past as history}
-  <pre class="pre">{JSON.stringify(history, null, 2)}</pre>
-{/each}-->
-
 <div class="flex">
-  <div class="text-xs w-100">
+  <div class="text-xs w-100" onpaste={(e) => handlePaste(e, undefined, [0])}>
     <svelte:boundary>
       <TreeView {collection} selectionMode="multiple">
         <TreeView.Tree class="w-full">
-          {#each collection.rootNode.children ?? [] as node, index (node.id)}
+          {#each Object.values(folderPatches.state).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
             {@render treeNode(node, [index])}
           {/each}
         </TreeView.Tree>

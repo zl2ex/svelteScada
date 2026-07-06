@@ -1,11 +1,9 @@
 import { live } from "svelte-realtime/server";
 import { z } from "zod";
-import { applyPatches, enablePatches } from "immer";
+import { enablePatches } from "immer";
 import type { Patch } from "immer";
-import { patchMerge, squashPatches } from "$lib/client/versioning/patches";
 import { db } from "$lib/server/sqlite/db";
 import { tag as tags, devices, displays } from "$lib/server/sqlite/tables";
-import type { TagSelect, Device, Display } from "$lib/server/sqlite/tables";
 import { eq, gt, sql } from "drizzle-orm";
 import {
   tagClosureTable,
@@ -21,7 +19,7 @@ const PatchSchema = z.object({
 });
 
 const MutationSchema = z.object({
-  collection: z.enum(["tags", "folders"]),
+  collection: z.enum(["tags", "folders", "devices", "displays"]),
   patches: z.array(PatchSchema),
 });
 
@@ -34,10 +32,7 @@ export type Collections = Record<MutationSchema["collection"], any>;
 export const foldersStream = live.stream(
   "tag-folders",
   async (): Promise<ClosureTableNode[]> => await tagClosureTable.getTree(),
-  {
-    merge: "crud",
-    key: "id",
-  },
+  { merge: "set" },
 );
 
 // ── Mutations ──────────────────────────────────────────────
@@ -45,8 +40,14 @@ export const foldersStream = live.stream(
 export const applyMutation = live.validated(
   MutationSchema,
   async (ctx, { collection, patches }) => {
-    applyPatchesToTable(collection, patches as Patch[]);
+    if (collection === "folders") {
+      applyFolderPatchesToTable(patches as Patch[]);
+      const fullTree = await tagClosureTable.getTree();
+      ctx.publish("tag-folders", "set", fullTree);
+      return { folders: fullTree };
+    }
 
+    applyTablePatches(collection, patches as Patch[]);
     if (collection === "tags") {
       const enrichedPatches = resolveEnrichedTagPatches(patches as Patch[]);
       ctx.publish("tags", "patched", { patches: enrichedPatches });
@@ -58,69 +59,101 @@ export const applyMutation = live.validated(
   },
 );
 
-// helpers
+// ── Folder patches ────────────────────────────────────────
+
+const FOLDER_PATCHABLE_FIELDS = new Set(["name", "parentId"]);
+
+export function applyFolderPatchesToTable(patches: Patch[]) {
+  for (const patch of patches) {
+    const [id, field] = patch.path as [string, string?];
+
+    if (patch.op === "remove" && !field) {
+      tagClosureTable.deleteCascade(id);
+    } else if (patch.op === "add" && !field) {
+      const v = patch.value as
+        | { name: string; parentId?: string | null }
+        | undefined;
+      const name = v?.name ?? "New Folder";
+      const parentId = v?.parentId ?? null;
+      tagClosureTable.insertNode({ id, name } as any, parentId);
+    } else if (field) {
+      if (!FOLDER_PATCHABLE_FIELDS.has(field)) {
+        throw new Error(`Invalid folder field: ${field}`);
+      }
+      if (field === "name") {
+        tagClosureTable.renameNode(id, patch.value as string);
+      } else if (field === "parentId") {
+        tagClosureTable.moveNode(id, patch.value as string);
+      }
+    }
+  }
+}
+
+// ── Table patches ─────────────────────────────────────────
+
 const tableMap = { tags, devices, displays } as const;
 
-const ALLOWED_FIELDS: Record<CollectionName, Set<string>> = {
+const ALLOWED_FIELDS: Record<string, Set<string>> = {
   tags: new Set(["name", "value", "nodeId"]),
   devices: new Set(["name"]),
   displays: new Set(["name"]),
 };
 
-function loadCollection(collection: CollectionName): Record<string, unknown> {
-  const rows = db.select().from(tableMap[collection]).all() as { id: string }[];
+function loadCollection(collection: string): Record<string, unknown> {
+  const tbl = tableMap[collection as keyof typeof tableMap];
+  if (!tbl) return {};
+  const rows = db.select().from(tbl).all() as { id: string }[];
   return Object.fromEntries(rows.map((r) => [r.id, r]));
 }
 
-export function buildDelta(collection: CollectionName) {
-  const table = tableMap[collection];
+export function buildDelta(collection: string) {
+  const tbl = tableMap[collection as keyof typeof tableMap];
+  if (!tbl) return { version: () => 0, diff: () => null };
   return {
     version: (): number =>
       db
         .select({
-          v: sql<number>`MAX(CAST(strftime('%s', ${table.updatedAt}) AS INTEGER) * 1000)`,
+          v: sql<number>`MAX(CAST(strftime('%s', ${tbl.updatedAt}) AS INTEGER) * 1000)`,
         })
-        .from(table)
+        .from(tbl)
         .get()?.v ?? 0,
 
     diff: (since: number): Record<string, unknown>[] | null => {
       const rows = db
         .select()
-        .from(table)
-        .where(gt(table.updatedAt, new Date(since)))
+        .from(tbl)
+        .where(gt(tbl.updatedAt, new Date(since)))
         .all();
       return rows.length > 0 ? rows : null;
     },
   };
 }
 
-export function applyPatchesToTable(
-  collection: CollectionName,
-  patches: Patch[],
-) {
-  const table = tableMap[collection];
+export function applyTablePatches(collection: string, patches: Patch[]) {
+  const tbl = tableMap[collection as keyof typeof tableMap];
+  if (!tbl) return;
 
   db.transaction((tx) => {
     for (const patch of patches) {
       const [id, field] = patch.path as [string, string?];
 
       if (patch.op === "remove" && !field) {
-        tx.delete(table).where(eq(table.id, id)).run();
+        tx.delete(tbl).where(eq(tbl.id, id)).run();
       } else if (patch.op === "add" && !field) {
-        tx.insert(table)
+        tx.insert(tbl)
           .values({ id, ...(patch.value as object) })
           .onConflictDoNothing()
           .run();
       } else if (field) {
-        if (!ALLOWED_FIELDS[collection].has(field)) {
+        if (!ALLOWED_FIELDS[collection]?.has(field)) {
           throw new Error(`Invalid field: ${field} on ${collection}`);
         }
-        tx.update(table)
+        tx.update(tbl)
           .set({
             [field]: patch.op === "remove" ? null : patch.value,
             updatedAt: new Date(),
           })
-          .where(eq(table.id, id))
+          .where(eq(tbl.id, id))
           .run();
       }
     }

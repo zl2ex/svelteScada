@@ -14,9 +14,7 @@ declare module '$live/tag-folder' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';
 
-  export const increment: () => Promise<any>;
-  export const updateFolder: (patch: Patch) => Promise<any>;
-  export const counter: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
-  export const tagFolder: StreamStore<ClosureTableNode[] | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<ClosureTableNode[]> };
+  export const applyTagFolderPatches: (patches) => Promise<any>;
+  export const tagFolderPatches: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
   export const empty: Readable<undefined>;
 }

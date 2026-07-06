@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { increment, counter, tree } from "$live/counter";
+  import { increment, counter, tree } from "$live/tag-folder";
 
   let cnt = counter.rune();
   let tre = tree.rune();
