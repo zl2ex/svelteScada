@@ -218,49 +218,21 @@ export class ClosureTable {
     });
   }
 
-  async getTree(parentId: string | null = null): Promise<ClosureTableNode[]> {
-    let folders = await db.query.tag_folders.findMany({
-      ...(parentId !== null && {
-        where: { parentPaths: { parent: { eq: parentId } } },
-      }),
-      with: { childPaths: true, tags: true },
+  async getNode(nodeId: string): Promise<ClosureTableNode | undefined> {
+    const node = await db.query.tag_folders.findFirst({
+      where: {
+        id: { eq: nodeId },
+      },
+      with: { parentPaths: true },
     });
 
-    if (folders.length === 0) return [];
+    if (!node) return undefined;
 
-    const folderMap = new Map<string, any>();
-    for (const folder of folders) {
-      const { childPaths, ...rest } = folder;
-      folderMap.set(folder.id, { ...rest, children: [] });
-    }
-
-    for (const folder of folders) {
-      const parent = folderMap.get(folder.id);
-      if (!parent) continue;
-      for (const path of folder.childPaths || []) {
-        if (path.depth !== 1) continue;
-        const child = folderMap.get(path.child);
-        if (child) parent.children.push(child);
-      }
-    }
-
-    if (parentId !== null) {
-      const root = folderMap.get(parentId);
-      return root ? [root] : [];
-    }
-
-    const hasParent = new Set<string>();
-    for (const node of folders) {
-      for (const path of node.childPaths || []) {
-        if (path.depth > 0) hasParent.add(path.child);
-      }
-    }
-
-    let ret = folders
-      .filter((n) => !hasParent.has(n.id))
-      .map((n) => folderMap.get(n.id)!);
-
-    return ret;
+    return {
+      id: node.id,
+      name: node.name,
+      parentId: node.parentPaths.find((f) => f.depth == 1)?.parent,
+    };
   }
 }
 

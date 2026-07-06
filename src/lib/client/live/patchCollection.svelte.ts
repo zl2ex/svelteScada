@@ -137,19 +137,19 @@ export class PatchCollection<T extends Identifiable> {
   }
 
   undo() {
-    this.#travels.getControls().back();
+    this.#travels.back();
   }
 
   redo() {
-    this.#travels.getControls().forward();
+    this.#travels.forward();
   }
 
   canUndo() {
-    return this.#travels.getControls().canBack();
+    return this.#travels.canBack();
   }
 
   canRedo() {
-    return this.#travels.getControls().canForward();
+    return this.#travels.canForward();
   }
 
   // Call this from onDestroy (or wherever the owning component/page

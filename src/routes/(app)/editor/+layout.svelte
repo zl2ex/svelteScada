@@ -2,15 +2,15 @@
   import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index";
   import SelectInput from "$lib/client/componets/remoteFormElements/SelectInput.svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
-  import { ClientTag } from "$lib/client/tag/clientTag.svelte";
-  import { updateTag, insertTag } from "$lib/remote/tags.remote";
   import {
     Copy,
     FileIcon,
     FolderIcon,
+    FolderPlus,
     LoaderIcon,
     Scissors,
     TagIcon,
+    TagPlus,
     Trash2,
   } from "@lucide/svelte";
   import {
@@ -26,41 +26,28 @@
     z_shared_insertTag,
     z_shared_insertTagFolder,
   } from "$lib/validation/zod";
-  import { configure } from "svelte-realtime/client";
-  import { foldersStream, applyMutation } from "$live/editor";
-  import { createTravels } from "travels";
-  import type { Patch } from "mutative";
   import { browser } from "$app/env";
 
   let { data, children } = $props();
-
-  // Offline queue — realtime-svelte
-  configure({
-    offline: {
-      queue: true,
-      maxQueue: 200,
-      //maxAge: 5 * 60 * 1000,
-      beforeReplay: (call) => Date.now() - call.queuedAt < 5 * 60 * 1000,
-      onReplayError: (call, err) => console.warn("Replay failed", call, err),
-    },
-  });
 
   // tags.svelte.ts — now just a thin instantiation of the generic class
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
 
-  let folderPatches = new PatchCollection<ClosureTableNode>({
-    initial: data.tagFolders,
-    applyPatch: applyTagFolderPatches,
-    subscribePatches: (notify) => {
-      // adapt tagPatches' store .subscribe() to the (payload) => void shape
-      const unsubscribe = tagFolderPatches.subscribe(notify);
-      return unsubscribe; // svelte stores' subscribe() already returns an unsubscribe fn
-    },
-    maxHistory: 50,
-  });
+  let folderPatches = $state(
+    new PatchCollection<ClosureTableNode>({
+      initial: data.tagFolders,
+      applyPatch: applyTagFolderPatches,
+      subscribePatches: (notify) => {
+        // adapt tagPatches' store .subscribe() to the (payload) => void shape
+        const unsubscribe = tagFolderPatches.subscribe(notify);
+        return unsubscribe; // svelte stores' subscribe() already returns an unsubscribe fn
+      },
+      maxHistory: 50,
+    }),
+  );
 
-  let collection = $derived(
+  let collection = $state(
     createTreeViewCollection<ClosureTableNode>({
       nodeToValue: (node) => node.id,
       nodeToString: (node) => node.name,
@@ -174,7 +161,6 @@
 </script>
 
 {#snippet treeNode(node: ClosureTableNode, indexPath: number[])}
-  {@const update = node.id ? updateTag.for(node.id) : undefined}
   {@const children = Object.values(folderPatches.state).filter(
     (f) => f.parentId == node.id,
   )}
@@ -182,9 +168,18 @@
   <TreeView.NodeProvider value={{ node, indexPath }}>
     {#if children}
       <TreeView.Branch
-        onpaste={(e) => handlePaste(e, node, indexPath)}
-        oncopy={() => folderCopy(node)}
-        oncut={() => folderCut(node)}
+        onpaste={(e) => {
+          e.stopPropagation();
+          handlePaste(e, node, indexPath);
+        }}
+        oncopy={(e) => {
+          e.stopPropagation();
+          folderCopy(node);
+        }}
+        oncut={(e) => {
+          e.stopPropagation();
+          folderCut(node);
+        }}
         onkeyup={(e) => {
           e.stopPropagation();
           if (e.key === "Delete") folderDelete(node);
@@ -208,8 +203,37 @@
           <Portal>
             <Menu.Positioner>
               <Menu.Content class="min-w-auto">
+                <Menu.Item value="newTag">
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      onclick={() => {}}
+                    >
+                      <TagPlus class="size-4" />
+                      <span>New Tag</span>
+                      <span class="text-xs text-neutral-500 ml-auto"
+                        >Ctrl+N</span
+                      >
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item value="newFolder">
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      onclick={() => {}}
+                    >
+                      <FolderPlus class="size-4" />
+                      <span>New Folder</span>
+                      <span class="text-xs text-neutral-500 ml-auto"
+                        >Ctrl+Shft+N</span
+                      >
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Separator />
                 <Menu.Item value="cut">
-                  <Menu.ItemText>
+                  <Menu.ItemText class="w-full">
                     <button
                       class="flex items-center gap-2 w-full"
                       onclick={() => folderCut(node)}
@@ -223,7 +247,7 @@
                   </Menu.ItemText>
                 </Menu.Item>
                 <Menu.Item value="copy">
-                  <Menu.ItemText>
+                  <Menu.ItemText class="w-full">
                     <button
                       class="flex items-center gap-2 w-full"
                       onclick={() => folderCopy(node)}
@@ -238,7 +262,7 @@
                 </Menu.Item>
                 <Menu.Separator />
                 <Menu.Item value="delete">
-                  <Menu.ItemText>
+                  <Menu.ItemText class="w-full">
                     <button
                       class="flex items-center gap-2 w-full"
                       onclick={() => folderDelete(node)}
@@ -263,11 +287,17 @@
       </TreeView.Branch>
     {:else if node.tags}
       <TreeView.Branch
-        oncopy={() => tagCopy(node)}
-        oncut={() => tagCut(node)}
+        oncopy={(e) => {
+          e.stopPropagation();
+          tagCopy(node);
+        }}
+        oncut={(e) => {
+          e.stopPropagation();
+          tagCut(node);
+        }}
         onkeyup={(e) => {
           e.stopPropagation();
-          if (e.key === "Delete") tagDeleteNode(node);
+          if (e.key == "Delete") tagDeleteNode(node);
         }}
       >
         <Menu>

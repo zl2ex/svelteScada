@@ -24,9 +24,20 @@
   import { themeManager } from "$lib/client/theme.svelte.js";
   import { logout } from "$lib/remote/user.remote.js";
   import { goto } from "$app/navigation";
+  import { configure } from "svelte-realtime/client";
 
   const { children, data } = $props();
 
+  // Offline queue — realtime-svelte
+  configure({
+    offline: {
+      queue: true,
+      maxQueue: 200,
+      //maxAge: 5 * 60 * 1000,
+      beforeReplay: (call) => Date.now() - call.queuedAt < 5 * 60 * 1000,
+      onReplayError: (call, err) => console.warn("Replay failed", call, err),
+    },
+  });
   /*
   const socket = io();
   socket.on("connect", () => {
