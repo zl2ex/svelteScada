@@ -31,14 +31,11 @@ import { attempt } from "../../../lib/util/attempt";
 
 import vm from "node:vm";
 import { TagNode } from "../../client/tag/clientTag.svelte";
-import {
-  Z_BaseTypes,
-  Z_TagOptionsInput,
-  Z_TagOptionsResolved,
-} from "../../client/tag/zodSchema";
+import { Z_BaseTypes, Z_TagOptionsResolved } from "../../client/tag/zodSchema";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
+import { z_insertTag } from "../sqlite/tables";
 
-export type TagOptionsInput<T> = z.input<typeof Z_TagOptionsInput>;
+export type TagOptionsInput<T> = z.input<typeof z_insertTag>;
 
 export type TagOptionsResolved = z.input<typeof Z_TagOptionsResolved>;
 
@@ -298,13 +295,13 @@ export class TagError extends Error {
   }
 }
 
-export class Tag<
-  DataTypeString extends BaseTypeStringsWithArrays,
-> extends TagNode {
+export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   //static tags: TagTypeMap = [];
+  id: string;
+  name: string;
   opcuaServer: OPCUAServer;
   tagFolder?: UAObject;
-  options: TagOptionsInput<DataTypeString> & { path: string };
+  options: TagOptionsInput<DataTypeString>;
   resolvedOptions: TagOptionsResolved;
 
   //nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
@@ -351,13 +348,14 @@ export class Tag<
   constructor(
     opcuaServer: OPCUAServer,
     tagFolder: UAObject | undefined,
-    options: Omit<TagOptionsInput<any>, "path">,
+    options: TagOptionsInput<any>,
   ) {
-    super({ ...options, type: "Tag" });
+    this.id = options.id;
+    this.name = options.name;
     this.opcuaServer = opcuaServer;
     this.tagFolder =
       tagFolder ?? this.opcuaServer.engine.addressSpace?.rootFolder;
-    this.options = { ...options, path: this.path };
+    this.options = z_insertTag.parse(options);
 
     this.resolvedOptions = {
       dataType: "",

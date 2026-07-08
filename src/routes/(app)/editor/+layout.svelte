@@ -1,6 +1,4 @@
 <script lang="ts">
-  import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index";
-  import SelectInput from "$lib/client/componets/remoteFormElements/SelectInput.svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import {
     Copy,
@@ -18,6 +16,7 @@
     Portal,
     TreeView,
     createTreeViewCollection,
+    useTreeView,
   } from "@skeletonlabs/skeleton-svelte";
 
   import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
@@ -27,12 +26,20 @@
     z_shared_insertTagFolder,
   } from "$lib/validation/zod";
   import { browser } from "$app/env";
+  import { tagPatches, applyTagPatches } from "$live/tags";
 
-  let { data, children } = $props();
+  let { id, data, children } = $props();
+
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus();
+    requestAnimationFrame(() => node.select());
+  }
 
   // tags.svelte.ts — now just a thin instantiation of the generic class
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
+  import type { TagOptionsInput } from "$lib/server/tag/tag.js";
+  import { onMount } from "svelte";
 
   let folderPatches = $state(
     new PatchCollection<ClosureTableNode>({
@@ -46,6 +53,26 @@
       maxHistory: 50,
     }),
   );
+
+  let tagPatchesCollection = $state(
+    new PatchCollection<TagOptionsInput<any>>({
+      initial: data.tags,
+      applyPatch: applyTagPatches,
+      subscribePatches: (notify) => {
+        const unsubscribe = tagPatches.subscribe(notify);
+        return unsubscribe;
+      },
+      maxHistory: 50,
+    }),
+  );
+
+  onMount(() => {
+    // unmount
+    return () => {
+      folderPatches.dispose();
+      tagPatchesCollection.dispose();
+    };
+  });
 
   let collection = $state(
     createTreeViewCollection<ClosureTableNode>({
@@ -69,6 +96,12 @@
       },
     }),
   );
+
+  let treeView = useTreeView({
+    id,
+    collection,
+    selectionMode: "multiple",
+  });
 
   // ── Keyboard shortcuts ────────────────────────────────
 
@@ -104,15 +137,78 @@
 
   // ── Tag operations ────────────────────────────────────
 
-  async function tagCopy(node: ClosureTableNode) {
-    copyToClipboard(JSON.stringify(node));
+  function tagCopy(tag: TagOptionsInput<any>) {
+    copyToClipboard(JSON.stringify(tag));
   }
 
-  async function tagCut(node: ClosureTableNode) {
-    copyToClipboard(JSON.stringify(node));
+  function tagCut(tag: TagOptionsInput<any>) {
+    copyToClipboard(JSON.stringify(tag));
+    tagPatchesCollection.remove(tag.id);
   }
 
-  async function tagDeleteNode(node: ClosureTableNode) {}
+  function tagDeleteNode(tag: TagOptionsInput<any>) {
+    tagPatchesCollection.remove(tag.id);
+  }
+
+  // ── Inline add / rename ───────────────────────────────
+
+  let renamingFolderId: string | null = $state(null);
+  let renamingTagId: string | null = $state(null);
+
+  function addFolder(parentNode: ClosureTableNode) {
+    const newId = crypto.randomUUID();
+    folderPatches.add({
+      id: newId,
+      name: "New Folder",
+      parentId: parentNode.id,
+    });
+    renamingFolderId = newId;
+    treeView().expand([parentNode.id]);
+  }
+
+  function addTag(parentNode: ClosureTableNode) {
+    const newId = crypto.randomUUID();
+    tagPatchesCollection.add({
+      id: newId,
+      folderId: parentNode.id ?? null,
+      name: "New Tag",
+      dataType: "string",
+    });
+    renamingTagId = newId;
+    treeView().expand([parentNode.id]);
+  }
+
+  function finalizeFolderRename(id: string, newName: string) {
+    if (renamingFolderId !== id) return;
+    renamingFolderId = null;
+    if (!newName.trim()) {
+      folderPatches.remove(id);
+    } else {
+      folderPatches.update(id, { name: newName.trim() });
+    }
+  }
+
+  function cancelFolderRename(id: string) {
+    if (renamingFolderId !== id) return;
+    renamingFolderId = null;
+    folderPatches.remove(id);
+  }
+
+  function finalizeTagRename(id: string, newName: string) {
+    if (renamingTagId !== id) return;
+    renamingTagId = null;
+    if (!newName.trim()) {
+      tagPatchesCollection.remove(id);
+    } else {
+      tagPatchesCollection.update(id, { name: newName.trim() });
+    }
+  }
+
+  function cancelTagRename(id: string) {
+    if (renamingTagId !== id) return;
+    renamingTagId = null;
+    tagPatchesCollection.remove(id);
+  }
 
   // ── Paste ─────────────────────────────────────────────
 
@@ -156,6 +252,19 @@
 
       folderPatches.add({ id: newId, name, parentId: parentNode?.id });
     } else if (tagResult.data) {
+      const newId = crypto.randomUUID();
+      tagPatchesCollection.add({
+        id: newId,
+        folderId: parentNode?.id ?? null,
+        name: tagResult.data.name,
+        dataType: tagResult.data.dataType,
+        value: tagResult.data.value ?? null,
+        nodeId: tagResult.data.nodeId ?? null,
+        writeable: tagResult.data.writeable ?? true,
+        exposeOverOpcua: tagResult.data.exposeOverOpcua ?? true,
+        parameters: tagResult.data.parameters ?? null,
+        updatedAt: new Date(),
+      });
     }
   }
 </script>
@@ -166,7 +275,7 @@
   )}
 
   <TreeView.NodeProvider value={{ node, indexPath }}>
-    {#if children}
+    {#if children || node.tags}
       <TreeView.Branch
         onpaste={(e) => {
           e.stopPropagation();
@@ -183,6 +292,8 @@
         onkeyup={(e) => {
           e.stopPropagation();
           if (e.key === "Delete") folderDelete(node);
+          if (e.key === "f" && e.altKey) addFolder(node);
+          if (e.key === "t" && e.altKey) addTag(node);
         }}
       >
         <Menu>
@@ -196,7 +307,23 @@
               </TreeView.BranchIndicator>
               <TreeView.BranchText class="truncate">
                 <FolderIcon class="size-4 shrink-0" />
-                {node.name}
+                {#if renamingFolderId === node.id}
+                  <input
+                    type="text"
+                    class="border-none p-0 m-0 text-inherit bg-inherit"
+                    value={node.name}
+                    use:focusOnMount
+                    onblur={(e) =>
+                      finalizeFolderRename(node.id, e.currentTarget.value)}
+                    onkeydown={(e) => {
+                      if (e.key === "Enter")
+                        finalizeFolderRename(node.id, e.currentTarget.value);
+                      if (e.key === "Escape") cancelFolderRename(node.id);
+                    }}
+                  />
+                {:else}
+                  {node.name}
+                {/if}
               </TreeView.BranchText>
             </TreeView.BranchControl>
           </Menu.ContextTrigger>
@@ -207,12 +334,12 @@
                   <Menu.ItemText class="w-full">
                     <button
                       class="flex items-center gap-2 w-full"
-                      onclick={() => {}}
+                      onclick={() => addTag(node)}
                     >
                       <TagPlus class="size-4" />
                       <span>New Tag</span>
                       <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+N</span
+                        >Ctrl+T</span
                       >
                     </button>
                   </Menu.ItemText>
@@ -221,12 +348,12 @@
                   <Menu.ItemText class="w-full">
                     <button
                       class="flex items-center gap-2 w-full"
-                      onclick={() => {}}
+                      onclick={() => addFolder(node)}
                     >
                       <FolderPlus class="size-4" />
                       <span>New Folder</span>
                       <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+Shft+N</span
+                        >Ctrl+F</span
                       >
                     </button>
                   </Menu.ItemText>
@@ -283,190 +410,53 @@
           {#each children ?? [] as childNode, childIndex (childNode.id)}
             {@render treeNode(childNode, [...indexPath, childIndex])}
           {/each}
-        </TreeView.BranchContent>
-      </TreeView.Branch>
-    {:else if node.tags}
-      <TreeView.Branch
-        oncopy={(e) => {
-          e.stopPropagation();
-          tagCopy(node);
-        }}
-        oncut={(e) => {
-          e.stopPropagation();
-          tagCut(node);
-        }}
-        onkeyup={(e) => {
-          e.stopPropagation();
-          if (e.key == "Delete") tagDeleteNode(node);
-        }}
-      >
-        <Menu>
-          <Menu.ContextTrigger>
-            <TreeView.BranchControl>
-              <TreeView.BranchIndicator class="data-loading:hidden" />
-              <TreeView.BranchIndicator
-                class="hidden data-loading:inline animate-spin"
-              >
-                <LoaderIcon class="size-4" />
-              </TreeView.BranchIndicator>
-              <TreeView.BranchText class="flex-1">
-                <TagIcon class="size-4 shrink-0" />
-                <div class="flex justify-between items-center gap-2 flex-1">
-                  {node.name}
-                  {#if tag}
+          {#if node.tags || (renamingTagId && tagPatchesCollection.state[renamingTagId])}
+            {#each node.tags as tagMeta (tagMeta.id)}
+              {@const tag = tagPatchesCollection.state[tagMeta.id]}
+              {#if tag}
+                <TreeView.Item
+                  onkeyup={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Delete") tagDeleteNode(tag);
+                  }}
+                >
+                  <div class="flex items-center gap-2">
+                    <TagIcon class="size-4 shrink-0" />
+                    {#if renamingTagId === tag.id}
+                      <input
+                        type="text"
+                        use:focusOnMount
+                        onblur={(e) =>
+                          finalizeTagRename(tag.id, e.currentTarget.value)}
+                        onkeydown={(e) => {
+                          if (e.key === "Enter")
+                            finalizeTagRename(tag.id, e.currentTarget.value);
+                          if (e.key === "Escape") cancelTagRename(tag.id);
+                        }}
+                      />
+                    {:else}
+                      <span>{tag.name}</span>
+                    {/if}
                     <TagInput
                       clientTag={tag}
                       label=""
                       clazz="py-0 px-1"
                       onclick={(ev) => ev.stopPropagation()}
                       onkeydown={(ev) => ev.stopPropagation()}
-                    ></TagInput>
-                  {/if}
-                </div>
-              </TreeView.BranchText>
-            </TreeView.BranchControl>
-          </Menu.ContextTrigger>
-          <Portal>
-            <Menu.Positioner>
-              <Menu.Content class="min-w-auto">
-                <Menu.Item value="cut">
-                  <Menu.ItemText>
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => tagCut(node)}
-                    >
-                      <Scissors class="size-4" />
-                      <span>Cut</span>
-                      <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+X</span
-                      >
+                    />
+                    <button onclick={() => tagCopy(tag)}>
+                      <Copy class="size-3" />
                     </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Item value="copy">
-                  <Menu.ItemText>
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => tagCopy(node)}
-                    >
-                      <Copy class="size-4" />
-                      <span>Copy</span>
-                      <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+C</span
-                      >
+                    <button onclick={() => tagCut(tag)}>
+                      <Scissors class="size-3" />
                     </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Separator />
-                <Menu.Item value="delete">
-                  <Menu.ItemText>
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => tagDeleteNode(node)}
-                    >
-                      <Trash2 class="size-4" />
-                      Delete
-                      <span class="text-xs text-neutral-500 ml-auto">Del</span
-                      ></button
-                    ></Menu.ItemText
-                  >
-                </Menu.Item>
-              </Menu.Content>
-            </Menu.Positioner>
-          </Portal>
-        </Menu>
-        <TreeView.BranchContent>
-          <TreeView.BranchIndentGuide />
-          {#if false && tag && update}
-            <TreeView.Item class="bg-inherit text-inherit" tabindex={-1}>
-              <form
-                tabindex="-1"
-                {...update.enhance(async ({ submit }) => {
-                  alert("submit");
-                  await submit();
-                })}
-              >
-                <input {...update.fields.name.as("hidden", tag.options.name)} />
-
-                <input {...update.fields.path.as("hidden", tag.path)} />
-                <input
-                  {...update.fields.parentPath.as(
-                    "hidden",
-                    tag.options.parentPath,
-                  )}
-                />
-
-                <SelectInput
-                  remoteFormFeild={update.fields.dataType}
-                  defaultValue={tag.options.dataType}
-                  label="Data Type"
-                  divAttr={{ class: "flex items-center" }}
-                >
-                  {#await socketIoClientHandler.rpc( { name: "getDataTypeStrings()", parameters: {} }, ) then options}
-                    {#if options.error}
-                      <span class="text-error-600-400"
-                        >Error {options.error.message}</span
-                      >
-                    {:else}
-                      {#each options.data as option}
-                        <option value={option}>{option}</option>
-                      {/each}
-                    {/if}
-                  {/await}
-                </SelectInput>
-
-                <RemoteForm
-                  feild={update.fields.nodeId}
-                  class="flex items-center"
-                >
-                  <RemoteForm.Label>Node ID</RemoteForm.Label>
-                  <RemoteForm.Input
-                    as="text"
-                    value={tag.options.nodeId}
-                    onfocusout={() => {
-                      alert("test");
-                      update.enhance(async ({ submit }) => {
-                        await submit();
-                      });
-                    }}
-                  />
-                  <RemoteForm.Issue />
-                </RemoteForm>
-
-                <RemoteForm
-                  feild={update.fields.exposeOverOpcua}
-                  class="flex items-center"
-                >
-                  <RemoteForm.Label
-                    >Expose on Internal OPCUA Server</RemoteForm.Label
-                  >
-                  <RemoteForm.Checkbox checked={tag.options.exposeOverOpcua} />
-                  <RemoteForm.Issue />
-                </RemoteForm>
-
-                <RemoteForm
-                  feild={update.fields.writeable}
-                  class="flex items-center"
-                >
-                  <RemoteForm.Label></RemoteForm.Label>
-                  <RemoteForm.Checkbox checked={tag.options.writeable} />
-                  <RemoteForm.Issue />
-                </RemoteForm>
-
-                <div>
-                  <button class="btn preset-filled">Save</button>
-                </div>
-
-                <div class="form-item">
-                  {#each update.fields.issues() ?? [] as issue}
-                    <span class="text-error-600-400">{issue.message}</span>
-                  {/each}
-                  {#if tag.errorMessage}
-                    <span class="text-error-600-400">{tag.errorMessage}</span>
-                  {/if}
-                </div>
-              </form>
-            </TreeView.Item>
+                    <button onclick={() => tagDeleteNode(tag)}>
+                      <Trash2 class="size-3" />
+                    </button>
+                  </div>
+                </TreeView.Item>
+              {/if}
+            {/each}
           {/if}
         </TreeView.BranchContent>
       </TreeView.Branch>
@@ -482,13 +472,13 @@
 <div class="flex">
   <div class="text-xs w-100" onpaste={(e) => handlePaste(e, undefined, [0])}>
     <svelte:boundary>
-      <TreeView {collection} selectionMode="multiple">
+      <TreeView.Provider value={treeView}>
         <TreeView.Tree class="w-full">
           {#each Object.values(folderPatches.state).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
             {@render treeNode(node, [index])}
           {/each}
         </TreeView.Tree>
-      </TreeView>
+      </TreeView.Provider>
 
       {#snippet pending()}
         <LoaderIcon class="size-4 animate-spin" />

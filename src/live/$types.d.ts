@@ -18,3 +18,12 @@ declare module '$live/tag-folder' {
   export const tagFolderPatches: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
   export const empty: Readable<undefined>;
 }
+
+declare module '$live/tags' {
+  import type { StreamStore, RpcError } from 'svelte-realtime/client';
+  import type { Readable } from 'svelte/store';
+
+  export const applyTagPatches: (patches: TravelPatches["patches"][number]) => Promise<any>;
+  export const tagPatches: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
+  export const empty: Readable<undefined>;
+}

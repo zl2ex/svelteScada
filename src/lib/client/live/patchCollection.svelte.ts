@@ -35,49 +35,46 @@ export interface PatchCollectionOptions<T extends Identifiable> {
 export class PatchCollection<T extends Identifiable> {
   state = $state<Record<string, T>>({});
 
-  #travels: Travels<Record<string, T>>;
-  #prevPosition: number;
-  #applyPatch: PatchCollectionOptions<T>["applyPatch"];
-  #unsubscribeTravels?: () => void;
-  #unsubscribePatches?: () => void;
+  private travels: Travels<Record<string, T>>;
+  private prevPosition: number;
+  private applyPatch: PatchCollectionOptions<T>["applyPatch"];
+  private unsubscribeTravels?: () => void;
+  private unsubscribePatches?: () => void;
 
   constructor(options: PatchCollectionOptions<T>) {
     Object.assign(this.state, options.initial);
 
-    this.#travels = createTravels(this.state, {
+    this.travels = createTravels(this.state, {
       mutable: true,
       maxHistory: options.maxHistory ?? 50,
     });
-    this.#prevPosition = this.#travels.getPosition();
-    this.#applyPatch = options.applyPatch;
+    this.prevPosition = this.travels.getPosition();
+    this.applyPatch = options.applyPatch;
 
-    // NOTE: assumes travels.subscribe() returns an unsubscribe function
-    // (common convention) — verify against the actual return type before
-    // relying on #unsubscribeTravels in destroy().
-    this.#unsubscribeTravels = this.#travels.subscribe(
+    this.unsubscribeTravels = this.travels.subscribe(
       (_state, patches, position) => {
-        if (position === this.#prevPosition) {
-          this.#prevPosition = position;
+        if (position === this.prevPosition) {
+          this.prevPosition = position;
           return;
         }
 
-        if (position > this.#prevPosition) {
-          this.#sendOps(
-            patches.patches[this.#prevPosition],
-            patches.inversePatches[this.#prevPosition],
+        if (position > this.prevPosition) {
+          this.sendOps(
+            patches.patches[this.prevPosition],
+            patches.inversePatches[this.prevPosition],
           );
         } else {
-          this.#sendOps(
+          this.sendOps(
             patches.inversePatches[position],
             patches.patches[position],
           );
         }
 
-        this.#prevPosition = position;
+        this.prevPosition = position;
       },
     );
 
-    this.#unsubscribePatches = options.subscribePatches((payload) => {
+    this.unsubscribePatches = options.subscribePatches((payload) => {
       if (!payload) return;
       this.mutateState((state) => {
         apply(state, payload.patches, { mutable: true });
@@ -89,8 +86,8 @@ export class PatchCollection<T extends Identifiable> {
     });
   }
 
-  #sendOps(ops: Ops, inverseOps: Ops) {
-    this.#applyPatch(ops).catch(() => {
+  private sendOps(ops: Ops, inverseOps: Ops) {
+    this.applyPatch(ops).catch(() => {
       apply(this.state, inverseOps, { mutable: true }); // rollback on failure
     });
   }
@@ -104,7 +101,7 @@ export class PatchCollection<T extends Identifiable> {
     fn: (draft: Record<string, T>) => void,
     label?: string,
   ) {
-    this.#travels.setState(fn, label ? { label } : undefined);
+    this.travels.setState(fn as any, label ? { label } : undefined);
   }
 
   // Generic escape hatch: UNTRACKED mutation. Bypasses Travels entirely —
@@ -126,7 +123,9 @@ export class PatchCollection<T extends Identifiable> {
 
   update(id: string, changes: Partial<Omit<T, "id">>) {
     this.mutateStateWithHistory((draft) => {
-      Object.assign(draft[id], changes);
+      // always send the entire object to the server for flat ["id"] = {entire object}
+      // consistency so no properties are missing
+      draft[id] = { ...draft[id], ...changes };
     }, `Edit ${id}`);
   }
 
@@ -137,19 +136,19 @@ export class PatchCollection<T extends Identifiable> {
   }
 
   undo() {
-    this.#travels.back();
+    this.travels.back();
   }
 
   redo() {
-    this.#travels.forward();
+    this.travels.forward();
   }
 
   canUndo() {
-    return this.#travels.canBack();
+    return this.travels.canBack();
   }
 
   canRedo() {
-    return this.#travels.canForward();
+    return this.travels.canForward();
   }
 
   // Call this from onDestroy (or wherever the owning component/page
@@ -157,8 +156,8 @@ export class PatchCollection<T extends Identifiable> {
   // shorter than the whole app — e.g. a per-document instance closed
   // when a tab closes. Module-level singletons (like a global tags
   // collection) generally never need to call this.
-  destroy() {
-    this.#unsubscribeTravels?.();
-    this.#unsubscribePatches?.();
+  dispose() {
+    this.unsubscribeTravels?.();
+    this.unsubscribePatches?.();
   }
 }

@@ -23,5 +23,4 @@ export const z_shared_insertTag = z.object({
   writeable: z.boolean().optional(),
   exposeOverOpcua: z.boolean().optional(),
   parameters: z.any().nullable().optional(),
-  updatedAt: z.date().nullable().optional(),
 });

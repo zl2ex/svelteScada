@@ -26,16 +26,24 @@ export const tagManager = new TagManager();
 export const gatewayOpcua = new OpcuaServerDriver();
 
 export const init: ServerInit = async () => {
-  logger.trace("[hooks.server.ts] init hook");
+  logger.debug("[hooks.server.ts] init() hook");
 
-  if (building) return;
-  if (!gatewayOpcua.server) return;
+  if (building) {
+    console.debug("[hooks.server.ts] init() vite building - returning");
+    return;
+  }
+
+  if (gatewayOpcua.started) {
+    console.debug(
+      "[hooks.server.ts] init() gatewayOpcua already started - returning",
+    );
+    return;
+  }
+
   await gatewayOpcua.start();
 
   deviceManager.initOpcuaServer(gatewayOpcua.server);
   tagManager.initOpcuaServer(gatewayOpcua.server);
-
-  connectToDatabase();
 
   await deviceManager.loadAllFromDb();
   await udtManager.loadAllFromDb();

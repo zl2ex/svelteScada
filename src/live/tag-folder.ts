@@ -1,5 +1,4 @@
 import {
-  ClosureTable,
   tagClosureTable,
   type ClosureTableNode,
 } from "$lib/server/sqlite/tagClosureTable";
@@ -23,6 +22,10 @@ export const applyTagFolderPatches = live(
 
     patches.forEach(async (patch) => {
       console.debug(patch);
+      if (patch.path.length !== 1)
+        throw Error(
+          `applyTagFolderPatches() must update the entire object from the front end not single properties ${patch}`,
+        );
       const id = patch.path[0].toString();
       const value = patch.value as ClosureTableNode;
       if (patch.op == "add") {
@@ -35,9 +38,9 @@ export const applyTagFolderPatches = live(
         let node = await tagClosureTable.getNode(id);
         if (!node) throw Error(`cannot find node with id ${id} in table`);
 
+        //only move if it has actually moved
         if (node.parentId !== value.parentId) {
-          if (!value.parentId)
-            throw Error(`cannot move node ${id} to undefined parent`);
+          //if (!value.parentId) throw Error(`cannot move node ${id} to undefined parent`);
           tagClosureTable.moveNode(id, value.parentId);
         }
 

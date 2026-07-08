@@ -4,14 +4,15 @@ import z from "zod";
 import { tag_folders } from "./tag-folders";
 
 export const tag = sqliteTable("tag", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+  id: text("id").primaryKey(),
   folderId: text("folderId").references(() => tag_folders.id, {
     onDelete: "set null",
   }),
   name: text("name").notNull(),
   dataType: text("dataType").notNull(),
+  type: text("type", { enum: ["tag", "udtTag"] })
+    .notNull()
+    .default("tag"),
   value: real("value"),
   nodeId: text("nodeId"),
   writeable: integer("writeable", { mode: "boolean" }).$default(() => true),
@@ -19,9 +20,6 @@ export const tag = sqliteTable("tag", {
     () => true,
   ),
   parameters: text("parameters", { mode: "json" }),
-  updatedAt: integer("updatedAt", { mode: "timestamp" }).$defaultFn(
-    () => new Date(),
-  ),
 });
 
 export type TagSelect = typeof tag.$inferSelect;

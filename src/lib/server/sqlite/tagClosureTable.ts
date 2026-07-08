@@ -1,9 +1,9 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "./db";
 import { tables, type TagFolder, type TagSelect } from "./tables";
 
 export interface ClosureTableNode extends TagFolder {
-  parentId: string | undefined;
+  parentId: string | null;
   tags?: TagSelect[];
 }
 export class ClosureTable {
@@ -121,63 +121,47 @@ export class ClosureTable {
     });
   }
 
-  moveNode(id: string, newParentId: string) {
+  moveNode(id: string, newParentId: string | undefined) {
     return db.transaction((tx) => {
-      const subtreeRows = tx
+      const subtree = tx
         .select({
-          id: tables.tag_folder_paths.child,
+          child: tables.tag_folder_paths.child,
           depth: tables.tag_folder_paths.depth,
         })
         .from(tables.tag_folder_paths)
         .where(eq(tables.tag_folder_paths.parent, id))
         .all();
 
-      if (subtreeRows.length === 0) return false;
-      const childIds = subtreeRows.map((r) => r.id);
-      const depthMap = new Map(subtreeRows.map((r) => [r.id, r.depth]));
+      if (subtree.length === 0) return false;
+      const subtreeIds = [...new Set(subtree.map((r) => r.child))];
+      const depthMap = new Map(subtree.map((r) => [r.child, r.depth]));
 
-      const oldparents = tx
-        .select({ id: tables.tag_folder_paths.parent })
-        .from(tables.tag_folder_paths)
-        .where(eq(tables.tag_folder_paths.child, id))
-        .all();
+      tx.delete(tables.tag_folder_paths)
+        .where(inArray(tables.tag_folder_paths.child, subtreeIds))
+        .run();
 
-      const oldparentIds = oldparents
-        .map((a) => a.id)
-        .filter((aId) => aId !== id);
+      const newAncestors = newParentId
+        ? tx
+            .select({
+              parent: tables.tag_folder_paths.parent,
+              depth: tables.tag_folder_paths.depth,
+            })
+            .from(tables.tag_folder_paths)
+            .where(eq(tables.tag_folder_paths.child, newParentId))
+            .all()
+        : [];
 
-      if (oldparentIds.length > 0) {
-        tx.delete(tables.tag_folder_paths)
-          .where(
-            and(
-              inArray(tables.tag_folder_paths.child, childIds),
-              inArray(tables.tag_folder_paths.parent, oldparentIds),
-            ),
-          )
-          .run();
-      }
+      const values: { parent: string; child: string; depth: number }[] = [];
 
-      const newParentparents = tx
-        .select({
-          parent: tables.tag_folder_paths.parent,
-          depth: tables.tag_folder_paths.depth,
-        })
-        .from(tables.tag_folder_paths)
-        .where(eq(tables.tag_folder_paths.child, newParentId))
-        .all();
+      for (const childId of subtreeIds) {
+        values.push({ parent: childId, child: childId, depth: 0 });
 
-      const values: {
-        parent: string;
-        child: string;
-        depth: number;
-      }[] = [];
-
-      for (const na of newParentparents) {
-        for (const dId of childIds) {
+        const relativeDepth = depthMap.get(childId)!;
+        for (const a of newAncestors) {
           values.push({
-            parent: na.parent,
-            child: dId,
-            depth: na.depth + depthMap.get(dId)! + 1,
+            parent: a.parent,
+            child: childId,
+            depth: a.depth + 1 + relativeDepth,
           });
         }
       }
@@ -212,7 +196,7 @@ export class ClosureTable {
       return {
         id: f.id,
         name: f.name,
-        parentId: f.parentPaths.find((p) => p.depth == 1)?.parent,
+        parentId: f.parentPaths.find((p) => p.depth == 1)?.parent ?? null,
         tags: f.tags,
       };
     });
@@ -231,7 +215,7 @@ export class ClosureTable {
     return {
       id: node.id,
       name: node.name,
-      parentId: node.parentPaths.find((f) => f.depth == 1)?.parent,
+      parentId: node.parentPaths.find((f) => f.depth == 1)?.parent ?? null,
     };
   }
 }

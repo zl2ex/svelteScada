@@ -22,6 +22,7 @@ export async function authenticateUser(token: string) {
     return user;
   } catch (err) {
     logger.error(err);
+    logger.debug(token);
   }
 
   return undefined;
