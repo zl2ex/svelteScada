@@ -6,7 +6,8 @@ import { db } from "$lib/server/sqlite/db";
 import { tag as tags, devices, displays } from "$lib/server/sqlite/tables";
 import { eq, gt, sql } from "drizzle-orm";
 import {
-  tagClosureTable,
+  tagFoldersClosureTable,
+  deleteCascade,
   type ClosureTableNode,
 } from "$lib/server/sqlite/tagClosureTable";
 
@@ -31,7 +32,7 @@ export type Collections = Record<MutationSchema["collection"], any>;
 
 export const foldersStream = live.stream(
   "tag-folders",
-  async (): Promise<ClosureTableNode[]> => await tagClosureTable.getTree(),
+  async (): Promise<ClosureTableNode[]> => tagFoldersClosureTable.getAll(),
   { merge: "set" },
 );
 
@@ -42,7 +43,7 @@ export const applyMutation = live.validated(
   async (ctx, { collection, patches }) => {
     if (collection === "folders") {
       applyFolderPatchesToTable(patches as Patch[]);
-      const fullTree = await tagClosureTable.getTree();
+      const fullTree = tagFoldersClosureTable.getAll();
       ctx.publish("tag-folders", "set", fullTree);
       return { folders: fullTree };
     }
@@ -68,22 +69,22 @@ export function applyFolderPatchesToTable(patches: Patch[]) {
     const [id, field] = patch.path as [string, string?];
 
     if (patch.op === "remove" && !field) {
-      tagClosureTable.deleteCascade(id);
+      deleteCascade(id);
     } else if (patch.op === "add" && !field) {
       const v = patch.value as
         | { name: string; parentId?: string | null }
         | undefined;
       const name = v?.name ?? "New Folder";
       const parentId = v?.parentId ?? null;
-      tagClosureTable.insertNode({ id, name } as any, parentId);
+      tagFoldersClosureTable.add({ id, name } as any, parentId);
     } else if (field) {
       if (!FOLDER_PATCHABLE_FIELDS.has(field)) {
         throw new Error(`Invalid folder field: ${field}`);
       }
       if (field === "name") {
-        tagClosureTable.renameNode(id, patch.value as string);
+        tagFoldersClosureTable.rename(id, patch.value as string);
       } else if (field === "parentId") {
-        tagClosureTable.moveNode(id, patch.value as string);
+        tagFoldersClosureTable.move(id, patch.value as string);
       }
     }
   }
@@ -113,7 +114,7 @@ export function buildDelta(collection: string) {
     version: (): number =>
       db
         .select({
-          v: sql<number>`MAX(CAST(strftime('%s', ${tbl.updatedAt}) AS INTEGER) * 1000)`,
+          v: sql<number>`MAX(CAST(strftime('%s', ${(tbl as any).updatedAt}) AS INTEGER) * 1000)`,
         })
         .from(tbl)
         .get()?.v ?? 0,
@@ -122,7 +123,7 @@ export function buildDelta(collection: string) {
       const rows = db
         .select()
         .from(tbl)
-        .where(gt(tbl.updatedAt, new Date(since)))
+        .where(gt((tbl as any).updatedAt, new Date(since)))
         .all();
       return rows.length > 0 ? rows : null;
     },
@@ -141,7 +142,7 @@ export function applyTablePatches(collection: string, patches: Patch[]) {
         tx.delete(tbl).where(eq(tbl.id, id)).run();
       } else if (patch.op === "add" && !field) {
         tx.insert(tbl)
-          .values({ id, ...(patch.value as object) })
+          .values({ id, ...(patch.value as object) } as any)
           .onConflictDoNothing()
           .run();
       } else if (field) {
@@ -151,8 +152,8 @@ export function applyTablePatches(collection: string, patches: Patch[]) {
         tx.update(tbl)
           .set({
             [field]: patch.op === "remove" ? null : patch.value,
-            updatedAt: new Date(),
-          })
+            ...((tbl as any).updatedAt ? { updatedAt: new Date() } : {}),
+          } as any)
           .where(eq(tbl.id, id))
           .run();
       }

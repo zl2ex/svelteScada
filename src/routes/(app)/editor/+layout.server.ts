@@ -1,13 +1,13 @@
 import { db } from "$lib/server/sqlite/db";
 import {
-  tagClosureTable,
+  tagFoldersClosureTable,
   type ClosureTableNode,
 } from "$lib/server/sqlite/tagClosureTable";
 import type { TagOptionsInput } from "$lib/server/tag/tag";
 import { tagManager } from "../../../hooks.server";
 
 export async function load() {
-  const folderRows = await tagClosureTable.getAll();
+  const folderRows = tagFoldersClosureTable.getAll();
   const tagRows = tagManager.getAllTags().map((t) => t.options);
   return {
     tagFolders: folderRows.reduce(

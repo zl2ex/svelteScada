@@ -8,7 +8,10 @@ import z from "zod";
 import { Z_tagOptionsInputForm } from "$lib/client/tag/zodSchema";
 import { tryCatch } from "$lib/util/tryCatch";
 import { tagManager } from "../../hooks.server";
-import { tagClosureTable } from "$lib/server/sqlite/tagClosureTable";
+import {
+  tagFoldersClosureTable,
+  deleteCascade,
+} from "$lib/server/sqlite/tagClosureTable";
 import { db } from "$lib/server/sqlite/db";
 import { tag as tagTable } from "$lib/server/sqlite/tables";
 
@@ -76,13 +79,16 @@ export const createFolder = command(
     parentId: z.string().nullable(),
   }),
   async (data) => {
-    const folder = tagClosureTable.insertNode(data.name, data.parentId);
+    const folder = tagFoldersClosureTable.add(
+      { name: data.name },
+      data.parentId,
+    );
     return folder;
   },
 );
 
 export const deleteFolderCmd = command(z.string(), async (id) => {
-  tagClosureTable.deleteCascade(id);
+  deleteCascade(id);
 });
 
 export const moveFolder = command(
@@ -91,7 +97,7 @@ export const moveFolder = command(
     newParentId: z.string(),
   }),
   async (data) => {
-    tagClosureTable.moveNode(data.id, data.newParentId);
+    tagFoldersClosureTable.move(data.id, data.newParentId);
   },
 );
 

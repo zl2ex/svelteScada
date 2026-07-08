@@ -27,6 +27,7 @@ import {
 } from "node-opcua";
 import z, { ZodObject } from "zod";
 import { type UdtParams } from "./udt";
+import { OpcuaFolder } from "./opcuaFolder";
 import { attempt } from "../../../lib/util/attempt";
 
 import vm from "node:vm";
@@ -300,7 +301,8 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   id: string;
   name: string;
   opcuaServer: OPCUAServer;
-  tagFolder?: UAObject;
+  private _parentFolder?: UAObject;
+  opcuaFolder?: OpcuaFolder;
   options: TagOptionsInput<DataTypeString>;
   resolvedOptions: TagOptionsResolved;
 
@@ -347,14 +349,15 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
   constructor(
     opcuaServer: OPCUAServer,
-    tagFolder: UAObject | undefined,
+    opcuaFolder: OpcuaFolder | undefined,
     options: TagOptionsInput<any>,
   ) {
     this.id = options.id;
     this.name = options.name;
     this.opcuaServer = opcuaServer;
-    this.tagFolder =
-      tagFolder ?? this.opcuaServer.engine.addressSpace?.rootFolder;
+    this.opcuaFolder = opcuaFolder;
+    this._parentFolder =
+      opcuaFolder?.uaObject ?? this.opcuaServer.engine.addressSpace?.rootFolder;
     this.options = z_insertTag.parse(options);
 
     this.resolvedOptions = {
@@ -443,7 +446,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
         .buildTagFeilds(this.resolvedOptions, this.options.children)
         .forEach((tagOptions) => {
           tagOptions.parentPath = this.path + ".";
-          const tag = new Tag(this.opcuaServer, this.tagFolder, tagOptions);
+          const tag = new Tag(this.opcuaServer, this.opcuaFolder, tagOptions);
           this.childTags.set(tag.name, tag);
         });
 
@@ -474,7 +477,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
         );
       }
       const namespace = this.opcuaServer.engine.addressSpace!.getOwnNamespace();
-      const parent = this.tagFolder;
+      const parent = this._parentFolder;
       this.exposeOpcuaVarible = namespace.addVariable({
         componentOf: parent,
         browseName: this.name,

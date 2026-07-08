@@ -1,5 +1,6 @@
 import {
-  tagClosureTable,
+  tagFoldersClosureTable,
+  deleteCascade,
   type ClosureTableNode,
 } from "$lib/server/sqlite/tagClosureTable";
 import { live } from "svelte-realtime/server";
@@ -20,7 +21,7 @@ export const applyTagFolderPatches = live(
   async (ctx, patches: TravelPatches["patches"][number]) => {
     //const versions = await applyAndPersistTagPatches(patches);
 
-    patches.forEach(async (patch) => {
+    for (const patch of patches) {
       console.debug(patch);
       if (patch.path.length !== 1)
         throw Error(
@@ -29,26 +30,26 @@ export const applyTagFolderPatches = live(
       const id = patch.path[0].toString();
       const value = patch.value as ClosureTableNode;
       if (patch.op == "add") {
-        tagClosureTable.insertNode(value, value.parentId);
+        tagFoldersClosureTable.add(value, value.parentId);
       }
       if (patch.op == "remove") {
-        tagClosureTable.deleteCascade(id);
+        deleteCascade(id);
       }
       if (patch.op == "replace") {
-        let node = await tagClosureTable.getNode(id);
+        let node = tagFoldersClosureTable.get(id);
         if (!node) throw Error(`cannot find node with id ${id} in table`);
 
         //only move if it has actually moved
         if (node.parentId !== value.parentId) {
           //if (!value.parentId) throw Error(`cannot move node ${id} to undefined parent`);
-          tagClosureTable.moveNode(id, value.parentId);
+          tagFoldersClosureTable.move(id, value.parentId ?? undefined);
         }
 
         if (node.name !== value.name) {
-          tagClosureTable.renameNode(id, value.name);
+          tagFoldersClosureTable.rename(id, value.name);
         }
       }
-    });
+    }
     ctx.publish("tag-folder-patches", "created", { patches });
   },
 );

@@ -2,13 +2,16 @@ import type { OPCUAServer, UAObject } from "node-opcua";
 import { TagNode } from "../../client/tag/clientTag.svelte";
 import { logger } from "../pino/logger";
 import { Tag, type TagOptionsInput } from "./tag";
+import { OpcuaFolder } from "./opcuaFolder";
 import { db } from "../sqlite/db";
 import { tables } from "../sqlite/tables";
+import { tagFoldersClosureTable } from "../sqlite/tagClosureTable";
 import { eq } from "drizzle-orm";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
-  tagFolder?: UAObject;
+  rootFolder?: UAObject;
+  opcuaFolders: Map<string, OpcuaFolder> = new Map();
   private tags: Map<string, Tag<any>> = new Map();
   private pathToId: Map<string, string> = new Map();
 
@@ -16,7 +19,7 @@ export class TagManager {
 
   initOpcuaServer(opcuaServer: OPCUAServer) {
     this.opcuaServer = opcuaServer;
-    this.tagFolder = this.opcuaServer.engine.addressSpace
+    this.rootFolder = this.opcuaServer.engine.addressSpace
       ?.getOwnNamespace()
       .addObject({
         organizedBy: this.opcuaServer.engine.addressSpace?.rootFolder.objects,
@@ -24,17 +27,25 @@ export class TagManager {
       });
   }
 
+  getParentOpcuaFolder(folderId: string | null | undefined): OpcuaFolder | undefined {
+    if (!folderId) return undefined;
+    return this.opcuaFolders.get(folderId);
+  }
+
   async createTag(
     opts: TagOptionsInput<any>,
     writeToDb: boolean = true,
   ): Promise<Tag<any>> {
-    if (!this.opcuaServer || !this.tagFolder) {
+    if (!this.opcuaServer || !this.rootFolder) {
       throw new Error(
         `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
     }
 
-    const tag = new Tag(this.opcuaServer, this.tagFolder, opts);
+    const opcuaFolder = this.getParentOpcuaFolder(opts.folderId);
+    const tag = new Tag(this.opcuaServer, opcuaFolder, opts);
+
+    const path = opts.name;
 
     if (writeToDb) {
       if (this.tags.has(tag.id)) {
@@ -43,14 +54,13 @@ export class TagManager {
         );
       }
 
-      db.insert(tables.tag).value(tag.options).run();
-
-      this.pathToId.set(tag.path, id);
+      db.insert(tables.tag).values(tag.options as any).run();
     }
 
-    this.tags.set(tag.path, tag);
+    this.tags.set(tag.id, tag);
+    this.pathToId.set(path, tag.id);
 
-    logger.info(`[TagManager] added tag ${tag.path}`);
+    logger.info(`[TagManager] added tag ${tag.id}`);
 
     return tag;
   }
@@ -59,15 +69,21 @@ export class TagManager {
   // Read Helpers
   // -------------------------
 
+  getTagByPath(path: string): Tag<any> | undefined {
+    const id = this.pathToId.get(path);
+    if (!id) return undefined;
+    return this.tags.get(id);
+  }
+
   getNode(path: string): Tag<any> | undefined {
-    return this.tags.get(path);
+    return this.getTagByPath(path);
   }
 
   getTag(path: string): Tag<any> | undefined {
     const [parentPath, propertyName] = path.split(".", 2);
-    const node = this.tags.get(parentPath);
+    const node = this.getTagByPath(parentPath);
     if (!(node instanceof Tag)) return undefined;
-    if (propertyName && node.type == "UdtTag") {
+    if (propertyName && (node as any).type == "UdtTag") {
       return node.childTags.get(propertyName);
     }
     return node;
@@ -79,12 +95,12 @@ export class TagManager {
 
   getAllChildrenAsNode(path: string): TagNode[] {
     return Array.from(this.tags.values())
-      .filter((t) => t.parentPath === path)
+      .filter((t) => false) // TD WIP parentPath removed
       .map((tag) => ({
         name: tag.name,
-        path: tag.path,
-        parentPath: tag.parentPath,
-        type: tag.type,
+        id: tag.id,
+        parentId: null,
+        type: (tag as any).type,
       }));
   }
 
@@ -96,45 +112,38 @@ export class TagManager {
     id: string,
     tagUpdates: TagOptionsInput<any>,
   ): Promise<Tag<any> | null> {
-    if (!this.opcuaServer || !this.tagFolder) {
+    if (!this.opcuaServer || !this.rootFolder) {
       throw new Error(
         `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
     }
 
     this.tags.delete(id);
-    const updatedTag = new Tag(this.opcuaServer, this.tagFolder, updates);
-
-    let oldPath = path;
-    if (oldPath !== updatedTag.path) {
-      if (id) {
-        db.delete(tables.tag).where(eq(tables.tag.id, id)).run();
-        this.pathToId.delete(oldPath);
-      }
-      id = crypto.randomUUID();
-      oldPath = updatedTag.path;
-    }
+    const oldPath = [...this.pathToId.entries()].find(([, v]) => v === id)?.[0];
+    if (oldPath) this.pathToId.delete(oldPath);
+    const opcuaFolder = this.getParentOpcuaFolder(tagUpdates.folderId);
+    const updatedTag = new Tag(this.opcuaServer, opcuaFolder, tagUpdates);
 
     const dbValues = {
-      name: updatedTag.name,
-      dataType: updatedTag.resolvedOptions.dataType,
-      nodeId: updatedTag.resolvedOptions.nodeId ?? null,
-      writeable: updatedTag.resolvedOptions.writeable ?? true,
-      exposeOverOpcua: updatedTag.resolvedOptions.exposeOverOpcua ?? true,
-      parameters: updatedTag.resolvedOptions.parameters ?? null,
+      name: updatedTag.options.name,
+      dataType: (updatedTag.options as any).dataType,
+      nodeId: (updatedTag.options as any).nodeId ?? null,
+      writeable: (updatedTag.options as any).writeable ?? true,
+      exposeOverOpcua: (updatedTag.options as any).exposeOverOpcua ?? true,
+      parameters: (updatedTag.options as any).parameters ?? null,
     };
 
     if (id) {
       db.update(tables.tag).set(dbValues).where(eq(tables.tag.id, id)).run();
     } else {
-      id = crypto.randomUUID();
+      const newId = crypto.randomUUID();
       db.insert(tables.tag)
-        .values({ id, ...dbValues })
+        .values({ id: newId, ...dbValues } as any)
         .run();
     }
 
-    this.pathToId.set(updatedTag.path, id);
-    this.tags.set(updatedTag.path, updatedTag);
+    this.tags.set(updatedTag.id, updatedTag);
+    this.pathToId.set(tagUpdates.name, updatedTag.id);
 
     return updatedTag;
   }
@@ -148,24 +157,16 @@ export class TagManager {
     newParentPath: string,
     newName?: string,
   ): Promise<Tag<any> | null> {
-    const oldTag = this.tags.get(oldPath);
+    const id = this.pathToId.get(oldPath);
+    if (!id) return null;
+    const oldTag = this.tags.get(id);
     if (!(oldTag instanceof Tag)) return null;
 
     const name = newName ?? oldTag.name;
-    const newPath = `${newParentPath}/${name}`;
 
-    const id = this.pathToId.get(oldPath);
-    if (id) {
-      db.update(tables.tag).set({ name }).where(eq(tables.tag.id, id)).run();
-      this.pathToId.delete(oldPath);
-      this.pathToId.set(newPath, id);
-    }
-
-    this.tags.delete(oldPath);
+    this.pathToId.delete(oldPath);
     oldTag.name = name;
-    oldTag.path = newPath;
-    oldTag.parentPath = newParentPath;
-    this.tags.set(newPath, oldTag);
+    this.pathToId.set(name, id);
 
     return oldTag;
   }
@@ -179,8 +180,10 @@ export class TagManager {
     if (id) {
       const result = db.delete(tables.tag).where(eq(tables.tag.id, id)).run();
       if (result.changes === 0) return false;
-      this.pathToId.delete(id);
     }
+
+    const oldPath = [...this.pathToId.entries()].find(([, v]) => v === id)?.[0];
+    if (oldPath) this.pathToId.delete(oldPath);
 
     const tag = this.tags.get(id);
     if (tag) {
@@ -195,20 +198,31 @@ export class TagManager {
   // -------------------------
 
   async loadAllFromDb() {
+    // Load folders and create OpcuaFolder instances
+    const folders = tagFoldersClosureTable.getAll();
+    for (const folder of folders) {
+      const parent = folder.parentId
+        ? this.opcuaFolders.get(folder.parentId)?.uaObject
+        : this.rootFolder;
+      if (!parent) continue;
+      const opcuaFolder = new OpcuaFolder(
+        this.opcuaServer!.engine.addressSpace!,
+        parent,
+        folder,
+      );
+      this.opcuaFolders.set(folder.id, opcuaFolder);
+    }
+    logger.info(`[TagManager] loaded ${folders.length} folders to OPC UA`);
+
+    // Load tags
     const rows = db.select().from(tables.tag).all();
-
     for (const row of rows) {
-      if (this.tags.has(row.name)) continue;
+      if (this.tags.has(row.id)) continue;
 
-      const opts = {
-        name: row.name,
-        parentPath: "/",
-        dataType: row.dataType,
-      } as TagOptionsInput<any>;
-
-      const tag = new Tag(this.opcuaServer!, this.tagFolder, opts);
-      this.pathToId.set(tag.path, row.id);
-      this.tags.set(tag.path, tag);
+      const opcuaFolder = this.getParentOpcuaFolder(row.folderId);
+      const tag = new Tag(this.opcuaServer!, opcuaFolder, row as any);
+      this.tags.set(tag.id, tag);
+      this.pathToId.set(row.name, tag.id);
     }
 
     logger.info(`[TagManager] loaded ${rows.length} tags from database`);

@@ -1,34 +1,43 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "./db";
-import { tables, type TagFolder, type TagSelect } from "./tables";
+import {
+  tag_folders,
+  tag_folder_paths,
+  tag,
+  type TagFolder,
+  type TagSelect,
+} from "./tables";
 
 export interface ClosureTableNode extends TagFolder {
   parentId: string | null;
   tags?: TagSelect[];
 }
+
 export class ClosureTable {
-  insertNode(node: TagFolder, parentId: string | null = null) {
+  private items: typeof tag_folders;
+  private paths: typeof tag_folder_paths;
+
+  constructor(items: typeof tag_folders, paths: typeof tag_folder_paths) {
+    this.items = items;
+    this.paths = paths;
+  }
+
+  add(node: TagFolder, parentId: string | null = null) {
     return db.transaction((tx) => {
-      const values: Record<string, unknown> = { name: node.name };
-      if (node.id) values.id = node.id;
-      const [folder] = tx
-        .insert(tables.tag_folders)
-        .values(values as any)
-        .returning()
-        .all();
+      const [folder] = tx.insert(this.items).values(node).returning().all();
 
       if (parentId === null) {
-        tx.insert(tables.tag_folder_paths)
+        tx.insert(this.paths)
           .values({ parent: folder.id, child: folder.id, depth: 0 })
           .run();
       } else {
         const parents = tx
           .select()
-          .from(tables.tag_folder_paths)
-          .where(eq(tables.tag_folder_paths.child, parentId))
+          .from(this.paths)
+          .where(eq(this.paths.child, parentId))
           .all();
 
-        tx.insert(tables.tag_folder_paths)
+        tx.insert(this.paths)
           .values([
             ...parents.map((row) => ({
               parent: row.parent,
@@ -45,24 +54,24 @@ export class ClosureTable {
   }
 
   getBreadcrumbs(id: string) {
-    const paths = db
+    const rows = db
       .select()
-      .from(tables.tag_folder_paths)
-      .where(eq(tables.tag_folder_paths.child, id))
+      .from(this.paths)
+      .where(eq(this.paths.child, id))
       .all();
 
-    const parentIds = [...new Set(paths.map((p) => p.parent))];
+    const parentIds = [...new Set(rows.map((p) => p.parent))];
     if (parentIds.length === 0) return [];
 
     const nodes = db
       .select()
-      .from(tables.tag_folders)
-      .where(inArray(tables.tag_folders.id, parentIds))
+      .from(this.items)
+      .where(inArray(this.items.id, parentIds))
       .all();
 
     const nameMap = new Map(nodes.map((n) => [n.id, n.name]));
 
-    return paths
+    return rows
       .map((p) => ({
         id: p.parent,
         name: nameMap.get(p.parent) ?? "unknown",
@@ -72,24 +81,24 @@ export class ClosureTable {
   }
 
   getChildren(id: string) {
-    const paths = db
+    const rows = db
       .select()
-      .from(tables.tag_folder_paths)
-      .where(eq(tables.tag_folder_paths.parent, id))
+      .from(this.paths)
+      .where(eq(this.paths.parent, id))
       .all();
 
-    const childIds = [...new Set(paths.map((p) => p.child))];
+    const childIds = [...new Set(rows.map((p) => p.child))];
     if (childIds.length === 0) return [];
 
     const nodes = db
       .select()
-      .from(tables.tag_folders)
-      .where(inArray(tables.tag_folders.id, childIds))
+      .from(this.items)
+      .where(inArray(this.items.id, childIds))
       .all();
 
     const nameMap = new Map(nodes.map((n) => [n.id, n.name]));
 
-    return paths
+    return rows
       .map((p) => ({
         id: p.child,
         name: nameMap.get(p.child) ?? "unknown",
@@ -98,56 +107,25 @@ export class ClosureTable {
       .sort((a, b) => a.depth - b.depth);
   }
 
-  deleteCascade(id: string) {
-    return db.transaction((tx) => {
-      const childs = tx
-        .select({ id: tables.tag_folder_paths.child })
-        .from(tables.tag_folder_paths)
-        .where(eq(tables.tag_folder_paths.parent, id))
-        .all();
-
-      const ids = childs.map((d) => d.id);
-      if (ids.length === 0) return;
-
-      tx.delete(tables.tag).where(inArray(tables.tag.folderId, ids)).run();
-
-      tx.delete(tables.tag_folder_paths)
-        .where(inArray(tables.tag_folder_paths.child, ids))
-        .run();
-
-      tx.delete(tables.tag_folders)
-        .where(inArray(tables.tag_folders.id, ids))
-        .run();
-    });
-  }
-
-  moveNode(id: string, newParentId: string | undefined) {
+  move(id: string, newParentId: string | undefined) {
     return db.transaction((tx) => {
       const subtree = tx
-        .select({
-          child: tables.tag_folder_paths.child,
-          depth: tables.tag_folder_paths.depth,
-        })
-        .from(tables.tag_folder_paths)
-        .where(eq(tables.tag_folder_paths.parent, id))
+        .select({ child: this.paths.child, depth: this.paths.depth })
+        .from(this.paths)
+        .where(eq(this.paths.parent, id))
         .all();
 
       if (subtree.length === 0) return false;
       const subtreeIds = [...new Set(subtree.map((r) => r.child))];
       const depthMap = new Map(subtree.map((r) => [r.child, r.depth]));
 
-      tx.delete(tables.tag_folder_paths)
-        .where(inArray(tables.tag_folder_paths.child, subtreeIds))
-        .run();
+      tx.delete(this.paths).where(inArray(this.paths.child, subtreeIds)).run();
 
       const newAncestors = newParentId
         ? tx
-            .select({
-              parent: tables.tag_folder_paths.parent,
-              depth: tables.tag_folder_paths.depth,
-            })
-            .from(tables.tag_folder_paths)
-            .where(eq(tables.tag_folder_paths.child, newParentId))
+            .select({ parent: this.paths.parent, depth: this.paths.depth })
+            .from(this.paths)
+            .where(eq(this.paths.child, newParentId))
             .all()
         : [];
 
@@ -166,58 +144,95 @@ export class ClosureTable {
         }
       }
 
-      tx.insert(tables.tag_folder_paths).values(values).run();
+      tx.insert(this.paths).values(values).run();
       return true;
     });
   }
 
-  renameNode(id: string, newName: string) {
+  rename(id: string, newName: string) {
     return db.transaction((tx) => {
-      tx.update(tables.tag_folders)
+      tx.update(this.items)
         .set({ name: newName })
-        .where(eq(tables.tag_folders.id, id))
+        .where(eq(this.items.id, id))
         .run();
     });
   }
 
-  async getAll(parentId: string | null = null): Promise<ClosureTableNode[]> {
-    let folders = await db.query.tag_folders.findMany({
-      where: {
-        parentPaths: parentId
-          ? {
-              parent: { eq: parentId },
-            }
-          : {},
-      },
-      with: { parentPaths: true, tags: true },
-    });
+  getAll(parentId: string | null = null): ClosureTableNode[] {
+    let items: TagFolder[];
+    if (parentId === null) {
+      items = db.select().from(this.items).all();
+    } else {
+      const childPaths = db
+        .select()
+        .from(this.paths)
+        .where(eq(this.paths.parent, parentId))
+        .all();
+      const childIds = childPaths.map((p) => p.child);
+      if (childIds.length === 0) return [];
+      items = db
+        .select()
+        .from(this.items)
+        .where(inArray(this.items.id, childIds))
+        .all();
+    }
 
-    return folders.map((f) => {
+    return items.map((item) => {
+      const parentPaths = db
+        .select({ parent: this.paths.parent, depth: this.paths.depth })
+        .from(this.paths)
+        .where(eq(this.paths.child, item.id))
+        .all();
       return {
-        id: f.id,
-        name: f.name,
-        parentId: f.parentPaths.find((p) => p.depth == 1)?.parent ?? null,
-        tags: f.tags,
+        id: item.id,
+        name: item.name,
+        parentId: parentPaths.find((p) => p.depth === 1)?.parent ?? null,
       };
     });
   }
 
-  async getNode(nodeId: string): Promise<ClosureTableNode | undefined> {
-    const node = await db.query.tag_folders.findFirst({
-      where: {
-        id: { eq: nodeId },
-      },
-      with: { parentPaths: true },
-    });
-
+  get(id: string): ClosureTableNode | undefined {
+    const [node] = db
+      .select()
+      .from(this.items)
+      .where(eq(this.items.id, id))
+      .all();
     if (!node) return undefined;
+
+    const parentPaths = db
+      .select({ parent: this.paths.parent, depth: this.paths.depth })
+      .from(this.paths)
+      .where(eq(this.paths.child, id))
+      .all();
 
     return {
       id: node.id,
       name: node.name,
-      parentId: node.parentPaths.find((f) => f.depth == 1)?.parent ?? null,
+      parentId: parentPaths.find((p) => p.depth === 1)?.parent ?? null,
     };
   }
 }
 
-export const tagClosureTable = new ClosureTable();
+export const tagFoldersClosureTable = new ClosureTable(
+  tag_folders,
+  tag_folder_paths,
+);
+
+export function deleteCascade(id: string) {
+  return db.transaction((tx) => {
+    const childs = tx
+      .select({ id: tag_folder_paths.child })
+      .from(tag_folder_paths)
+      .where(eq(tag_folder_paths.parent, id))
+      .all();
+
+    const ids = childs.map((d) => d.id);
+    if (ids.length === 0) return;
+
+    tx.delete(tag).where(inArray(tag.folderId, ids)).run();
+    tx.delete(tag_folder_paths)
+      .where(inArray(tag_folder_paths.child, ids))
+      .run();
+    tx.delete(tag_folders).where(inArray(tag_folders.id, ids)).run();
+  });
+}
