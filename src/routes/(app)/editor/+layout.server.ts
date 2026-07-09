@@ -2,7 +2,7 @@ import { db } from "$lib/server/sqlite/db";
 import {
   tagFoldersClosureTable,
   type ClosureTableNode,
-} from "$lib/server/sqlite/tagClosureTable";
+} from "$lib/server/sqlite/util/tagClosureTable";
 import type { TagOptionsInput } from "$lib/server/tag/tag";
 import { tagManager } from "../../../hooks.server";
 

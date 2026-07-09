@@ -1,28 +1,34 @@
-import { eq, inArray } from "drizzle-orm";
-import { db } from "./db";
+import { eq, inArray, and } from "drizzle-orm";
+import { db } from "../db";
 import {
   tag_folders,
   tag_folder_paths,
-  tag,
-  type TagFolder,
+  tags,
+  type TagFolderSelect,
   type TagSelect,
-} from "./tables";
+} from "../tables";
 
-export interface ClosureTableNode extends TagFolder {
+export interface ClosureTableNode extends TagFolderSelect {
   parentId: string | null;
-  tags?: TagSelect[];
+  //tags?: TagSelect[];
 }
 
 export class ClosureTable {
   private items: typeof tag_folders;
   private paths: typeof tag_folder_paths;
+  private tagTable?: typeof tags;
 
-  constructor(items: typeof tag_folders, paths: typeof tag_folder_paths) {
+  constructor(
+    items: typeof tag_folders,
+    paths: typeof tag_folder_paths,
+    tagTable?: typeof tags,
+  ) {
     this.items = items;
     this.paths = paths;
+    this.tagTable = tagTable;
   }
 
-  add(node: TagFolder, parentId: string | null = null) {
+  add(node: TagFolderSelect, parentId: string | null = null) {
     return db.transaction((tx) => {
       const [folder] = tx.insert(this.items).values(node).returning().all();
 
@@ -80,7 +86,7 @@ export class ClosureTable {
       .sort((a, b) => a.depth - b.depth);
   }
 
-  getChildren(id: string) {
+  getSubtree(id: string) {
     const rows = db
       .select()
       .from(this.paths)
@@ -159,7 +165,7 @@ export class ClosureTable {
   }
 
   getAll(parentId: string | null = null): ClosureTableNode[] {
-    let items: TagFolder[];
+    let items: TagFolderSelect[];
     if (parentId === null) {
       items = db.select().from(this.items).all();
     } else {
@@ -177,18 +183,31 @@ export class ClosureTable {
         .all();
     }
 
-    return items.map((item) => {
-      const parentPaths = db
-        .select({ parent: this.paths.parent, depth: this.paths.depth })
-        .from(this.paths)
-        .where(eq(this.paths.child, item.id))
-        .all();
-      return {
-        id: item.id,
-        name: item.name,
-        parentId: parentPaths.find((p) => p.depth === 1)?.parent ?? null,
-      };
-    });
+    const ids = items.map((i) => i.id);
+    if (ids.length === 0) return [];
+
+    const allPaths = db
+      .select({
+        child: this.paths.child,
+        parent: this.paths.parent,
+        depth: this.paths.depth,
+      })
+      .from(this.paths)
+      .where(inArray(this.paths.child, ids))
+      .all();
+
+    const parentByChild: Record<string, string | null> = {};
+    for (const p of allPaths) {
+      if (p.depth === 1) {
+        parentByChild[p.child] = p.parent;
+      }
+    }
+
+    return items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      parentId: parentByChild[item.id] ?? null,
+    }));
   }
 
   get(id: string): ClosureTableNode | undefined {
@@ -199,40 +218,42 @@ export class ClosureTable {
       .all();
     if (!node) return undefined;
 
-    const parentPaths = db
-      .select({ parent: this.paths.parent, depth: this.paths.depth })
+    const [parentRow] = db
+      .select({ parent: this.paths.parent })
       .from(this.paths)
-      .where(eq(this.paths.child, id))
+      .where(and(eq(this.paths.child, id), eq(this.paths.depth, 1)))
       .all();
 
     return {
       id: node.id,
       name: node.name,
-      parentId: parentPaths.find((p) => p.depth === 1)?.parent ?? null,
+      parentId: parentRow?.parent ?? null,
     };
+  }
+
+  deleteRecursive(id: string) {
+    return db.transaction((tx) => {
+      const children = tx
+        .select({ id: this.paths.child })
+        .from(this.paths)
+        .where(eq(this.paths.parent, id))
+        .all();
+
+      const ids = children.map((d) => d.id);
+      if (ids.length === 0) return;
+
+      if (this.tagTable)
+        tx.delete(this.tagTable)
+          .where(inArray(this.tagTable.folderId, ids))
+          .run();
+      tx.delete(this.paths).where(inArray(this.paths.child, ids)).run();
+      tx.delete(this.items).where(inArray(this.items.id, ids)).run();
+    });
   }
 }
 
 export const tagFoldersClosureTable = new ClosureTable(
   tag_folders,
   tag_folder_paths,
+  tags,
 );
-
-export function deleteCascade(id: string) {
-  return db.transaction((tx) => {
-    const childs = tx
-      .select({ id: tag_folder_paths.child })
-      .from(tag_folder_paths)
-      .where(eq(tag_folder_paths.parent, id))
-      .all();
-
-    const ids = childs.map((d) => d.id);
-    if (ids.length === 0) return;
-
-    tx.delete(tag).where(inArray(tag.folderId, ids)).run();
-    tx.delete(tag_folder_paths)
-      .where(inArray(tag_folder_paths.child, ids))
-      .run();
-    tx.delete(tag_folders).where(inArray(tag_folders.id, ids)).run();
-  });
-}

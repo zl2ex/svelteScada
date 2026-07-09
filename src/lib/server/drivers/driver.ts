@@ -10,6 +10,18 @@ import {
   Z_OpcuaClientDriverOptions,
 } from "./opcua/opcuaClient";
 import { tagManager } from "../../../hooks.server";
+import { db } from "../sqlite/db";
+import {
+  devices,
+  device_modbus_tcp_options,
+  device_modbus_rtu_options,
+  device_opcua_client_options,
+  z_insertDevice,
+  z_insertDeviceModbusTcpOptions,
+  z_insertDeviceModbusRtuOptions,
+  z_insertDeviceOpcuaClientOptions,
+} from "../sqlite/tables";
+import { eq } from "drizzle-orm";
 
 export class DriverStatusError extends Error {
   opcuaStatus: StatusCode;
@@ -22,27 +34,21 @@ export class DriverStatusError extends Error {
 }
 
 // list of all avalible drivers
-export const Z_DeviceOptions = z.discriminatedUnion("driverName", [
-  z.object({
+export const z_DeviceOptions = z.discriminatedUnion("driverName", [
+  z_insertDevice.extend({
     driverName: z.literal("ModbusTCPDriver"),
-    displayName: z.literal("Modbus TCP/IP Driver").optional(),
-    name: z.string().nonempty(),
-    options: Z_ModbusTCPDriverOptions,
-    enabled: z.boolean().default(false),
+    displayName: z.literal("Modbus TCP/IP Driver"),
+    options: z_insertDeviceModbusTcpOptions,
   }),
-  z.object({
+  z_insertDevice.extend({
     driverName: z.literal("ModbusRTUDriver"),
-    displayName: z.literal("Modbus RTU Driver").optional(),
-    name: z.string().nonempty(),
-    options: Z_ModbusRTUDriverOptions,
-    enabled: z.boolean().default(false),
+    displayName: z.literal("Modbus RTU Driver"),
+    options: z_insertDeviceModbusRtuOptions,
   }),
-  z.object({
+  z_insertDevice.extend({
     driverName: z.literal("opcuaClientDriver"),
-    displayName: z.literal("Opcua Client Driver").optional(),
-    name: z.string().nonempty(),
-    options: Z_OpcuaClientDriverOptions,
-    enabled: z.boolean().default(false),
+    displayName: z.literal("Opcua Client Driver"),
+    options: z_insertDeviceOpcuaClientOptions,
   }),
 ]);
 
@@ -51,11 +57,11 @@ export type AvalibleDriver = {
   displayName: string; // UI string
 };
 
-export const avalibeDrivers: AvalibleDriver[] = Z_DeviceOptions.options.map(
+export const avalibeDrivers: AvalibleDriver[] = z_DeviceOptions.options.map(
   (obj) => {
     return {
       id: obj.shape.driverName.value,
-      displayName: obj.shape.displayName.unwrap().value,
+      displayName: obj.shape.displayName.value, // TD WIP avalibeDrivers Might not work
     };
   },
 );
@@ -86,14 +92,14 @@ function fromEntries<T extends readonly [PropertyKey, any]>(
 
 export function getDefaultOptions() {
   return fromEntries(
-    Z_DeviceOptions.options.map((obj) => [
+    z_DeviceOptions.options.map((obj) => [
       obj.shape.driverName.value,
       Z_getDefaults(obj.shape.options),
     ]),
   );
 }
 
-export type DeviceOptions = z.input<typeof Z_DeviceOptions>;
+export type DeviceOptions = z.input<typeof z_DeviceOptions>;
 
 export type DeviceStatus = "Connected" | "Reconnecting" | "Disabled";
 export class Device {
@@ -102,7 +108,7 @@ export class Device {
   options: DeviceOptions;
 
   constructor(opcuaServer: OPCUAServer, opts: DeviceOptions) {
-    const config = Z_DeviceOptions.parse(opts);
+    const config = z_DeviceOptions.parse(opts);
 
     this.name = config.name;
     this.options = config;
@@ -175,9 +181,13 @@ export class DeviceManager {
   }
 
   async loadAllFromDb() {
-    // SQLITE WIP
-    let devices = {};
-    //let devices = await collections.devices.find().toArray();
+    const rows = await db.query.devices.findMany({
+      with: {
+        device_modbus_tcp_options: true,
+        device_modbus_rtu_options: true,
+        device_opcua_client_options: true,
+      },
+    });
 
     if (!this.opcuaServer) {
       throw new Error(
@@ -185,32 +195,88 @@ export class DeviceManager {
       );
     }
 
-    for (const device of devices) {
-      const { _id, ...deviceWithoutId } = device;
-      // TD typscript error about this.opcuaServer possibly being undefined because im using attempt(() => {})
+    let deviceCount = 0;
+
+    for (const row of rows) {
+      let driverOptions;
+      if (
+        row.driverName === "ModbusTCPDriver" &&
+        row.device_modbus_tcp_options
+      ) {
+        driverOptions = row.device_modbus_tcp_options;
+      } else if (
+        row.driverName === "ModbusRTUDriver" &&
+        row.device_modbus_rtu_options
+      ) {
+        driverOptions = row.device_modbus_rtu_options;
+      } else if (
+        row.driverName === "opcuaClientDriver" &&
+        row.device_opcua_client_options
+      ) {
+        driverOptions = row.device_opcua_client_options;
+      }
+
+      const deviceOptions = {
+        name: row.name,
+        driverName: row.driverName,
+        displayName: row.displayName ?? undefined,
+        enabled: row.enabled,
+        options: driverOptions,
+      } as DeviceOptions;
+
       const { data, error } = await attempt(() =>
-        this.addDevice(new Device(this.opcuaServer, deviceWithoutId), false),
+        this.addDevice(new Device(this.opcuaServer, deviceOptions), false),
       );
       if (error) logger.error(error);
+      if (data) deviceCount++;
     }
+    logger.debug(`[DeviceManager] loaded ${deviceCount} devices from database`);
   }
 
   async addDevice(device: Device, writeToDb: boolean = true) {
     this.devices.set(device.name, device);
     if (writeToDb) {
-      const { error, data } = attempt(
-        () =>
-          // SQLITE WIP
-          false,
-        // collections.devices.updateOne(
-        //   { name: device.name },
-        //   { $set: { ...device.options } },
-        //   { upsert: true },
-        // ),
-      );
-      if (error) {
-        logger.error(error);
-      }
+      const { error } = attempt(() => {
+        const [inserted] = db
+          .insert(devices)
+          .values(device.options)
+          .onConflictDoUpdate({
+            target: devices.id,
+            set: device.options,
+          })
+          .returning()
+          .all();
+
+        const deviceId = inserted.id;
+        const opts = device.options.options;
+
+        if (device.options.driverName === "ModbusTCPDriver") {
+          db.insert(device_modbus_tcp_options)
+            .values(opts)
+            .onConflictDoUpdate({
+              target: device_modbus_tcp_options.deviceId,
+              set: opts,
+            })
+            .run();
+        } else if (device.options.driverName === "ModbusRTUDriver") {
+          db.insert(device_modbus_rtu_options)
+            .values(opts)
+            .onConflictDoUpdate({
+              target: device_modbus_rtu_options.deviceId,
+              set: opts,
+            })
+            .run();
+        } else if (device.options.driverName === "opcuaClientDriver") {
+          db.insert(device_opcua_client_options)
+            .values(opts)
+            .onConflictDoUpdate({
+              target: device_opcua_client_options.deviceId,
+              set: opts,
+            })
+            .run();
+        }
+      });
+      if (error) logger.error(error);
     }
     logger.info(`[DeviceManager] added device ${device.name}`);
     return device;
@@ -220,16 +286,10 @@ export class DeviceManager {
     const oldDevice = this.devices.get(deviceName);
     oldDevice?.dispose();
     this.devices.delete(deviceName);
-    const { error, data } = await attempt(
-      () =>
-        // SQLITE WIP
-
-        false,
-      //collections.devices.deleteOne({ name: deviceName }),
+    const { error } = await attempt(() =>
+      db.delete(devices).where(eq(devices.name, deviceName)).run(),
     );
-    if (error) {
-      logger.error(error);
-    }
+    if (error) logger.error(error);
     logger.info(`[DeviceManager] removed device ${deviceName}`);
   }
 

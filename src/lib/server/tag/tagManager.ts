@@ -5,7 +5,7 @@ import { Tag, type TagOptionsInput } from "./tag";
 import { OpcuaFolder } from "./opcuaFolder";
 import { db } from "../sqlite/db";
 import { tables } from "../sqlite/tables";
-import { tagFoldersClosureTable } from "../sqlite/tagClosureTable";
+import { tagFoldersClosureTable } from "../sqlite/util/tagClosureTable";
 import { eq } from "drizzle-orm";
 
 export class TagManager {
@@ -27,7 +27,9 @@ export class TagManager {
       });
   }
 
-  getParentOpcuaFolder(folderId: string | null | undefined): OpcuaFolder | undefined {
+  getParentOpcuaFolder(
+    folderId: string | null | undefined,
+  ): OpcuaFolder | undefined {
     if (!folderId) return undefined;
     return this.opcuaFolders.get(folderId);
   }
@@ -54,7 +56,9 @@ export class TagManager {
         );
       }
 
-      db.insert(tables.tag).values(tag.options as any).run();
+      db.insert(tables.tags)
+        .values(tag.options as any)
+        .run();
     }
 
     this.tags.set(tag.id, tag);
@@ -134,10 +138,10 @@ export class TagManager {
     };
 
     if (id) {
-      db.update(tables.tag).set(dbValues).where(eq(tables.tag.id, id)).run();
+      db.update(tables.tags).set(dbValues).where(eq(tables.tags.id, id)).run();
     } else {
       const newId = crypto.randomUUID();
-      db.insert(tables.tag)
+      db.insert(tables.tags)
         .values({ id: newId, ...dbValues } as any)
         .run();
     }
@@ -178,7 +182,7 @@ export class TagManager {
   async deleteTag(id: string): Promise<boolean> {
     logger.trace(`[TagManager] deleteTag() ${id}`);
     if (id) {
-      const result = db.delete(tables.tag).where(eq(tables.tag.id, id)).run();
+      const result = db.delete(tables.tags).where(eq(tables.tags.id, id)).run();
       if (result.changes === 0) return false;
     }
 
@@ -215,16 +219,16 @@ export class TagManager {
     logger.info(`[TagManager] loaded ${folders.length} folders to OPC UA`);
 
     // Load tags
-    const rows = db.select().from(tables.tag).all();
-    for (const row of rows) {
-      if (this.tags.has(row.id)) continue;
+    const tagOptions = db.select().from(tables.tags).all();
+    for (const tagOpt of tagOptions) {
+      if (this.tags.has(tagOpt.id)) continue;
 
-      const opcuaFolder = this.getParentOpcuaFolder(row.folderId);
-      const tag = new Tag(this.opcuaServer!, opcuaFolder, row as any);
-      this.tags.set(tag.id, tag);
-      this.pathToId.set(row.name, tag.id);
+      const opcuaFolder = this.getParentOpcuaFolder(tagOpt.folderId);
+      const newTag = new Tag(this.opcuaServer, opcuaFolder, tagOpt);
+      this.tags.set(newTag.id, newTag);
+      this.pathToId.set(tagOpt.name, newTag.id);
     }
 
-    logger.info(`[TagManager] loaded ${rows.length} tags from database`);
+    logger.info(`[TagManager] loaded ${tagOptions.length} tags from database`);
   }
 }

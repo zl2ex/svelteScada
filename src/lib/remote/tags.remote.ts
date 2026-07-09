@@ -8,12 +8,9 @@ import z from "zod";
 import { Z_tagOptionsInputForm } from "$lib/client/tag/zodSchema";
 import { tryCatch } from "$lib/util/tryCatch";
 import { tagManager } from "../../hooks.server";
-import {
-  tagFoldersClosureTable,
-  deleteCascade,
-} from "$lib/server/sqlite/tagClosureTable";
+import { tagFoldersClosureTable } from "$lib/server/sqlite/util/tagClosureTable";
 import { db } from "$lib/server/sqlite/db";
-import { tag as tagTable } from "$lib/server/sqlite/tables";
+import { tags as tagTable } from "$lib/server/sqlite/tables";
 
 export const updateTagCommand = command(Z_tagOptionsInputForm, async (data) => {
   let result = await tryCatch(tagManager.updateTag, data.path, data);
@@ -88,7 +85,7 @@ export const createFolder = command(
 );
 
 export const deleteFolderCmd = command(z.string(), async (id) => {
-  deleteCascade(id);
+  tagFoldersClosureTable.deleteRecursive(id);
 });
 
 export const moveFolder = command(

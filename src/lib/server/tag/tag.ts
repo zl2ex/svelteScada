@@ -35,6 +35,7 @@ import { TagNode } from "../../client/tag/clientTag.svelte";
 import { Z_BaseTypes, Z_TagOptionsResolved } from "../../client/tag/zodSchema";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { z_insertTag } from "../sqlite/tables";
+import { tryCatch } from "$lib/util/tryCatch";
 
 export type TagOptionsInput<T> = z.input<typeof z_insertTag>;
 
@@ -301,8 +302,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   id: string;
   name: string;
   opcuaServer: OPCUAServer;
-  private _parentFolder?: UAObject;
-  opcuaFolder?: OpcuaFolder;
+  opcuaFolder: OpcuaFolder;
   options: TagOptionsInput<DataTypeString>;
   resolvedOptions: TagOptionsResolved;
 
@@ -349,16 +349,26 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
   constructor(
     opcuaServer: OPCUAServer,
-    opcuaFolder: OpcuaFolder | undefined,
+    opcuaFolder: OpcuaFolder,
     options: TagOptionsInput<any>,
   ) {
     this.id = options.id;
     this.name = options.name;
     this.opcuaServer = opcuaServer;
     this.opcuaFolder = opcuaFolder;
-    this._parentFolder =
-      opcuaFolder?.uaObject ?? this.opcuaServer.engine.addressSpace?.rootFolder;
-    this.options = z_insertTag.parse(options);
+
+    // silence error for not difinitvly being assigned in the constructor
+    this.options = options;
+
+    // parse for any errors but also to get default values
+    const parsed = tryCatch(z_insertTag.parse, options);
+    if (parsed.error) {
+      this.error = new TagError("", parsed.error.message);
+      console.error(parsed.error);
+      return;
+    }
+
+    this.options = parsed.data;
 
     this.resolvedOptions = {
       dataType: "",
@@ -477,7 +487,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
         );
       }
       const namespace = this.opcuaServer.engine.addressSpace!.getOwnNamespace();
-      const parent = this._parentFolder;
+      const parent = this.opcuaFolder.uaObject;
       this.exposeOpcuaVarible = namespace.addVariable({
         componentOf: parent,
         browseName: this.name,

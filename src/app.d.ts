@@ -1,13 +1,13 @@
 // See https://kit.svelte.dev/docs/types#app
 
-import type { User } from "$lib/server/sqlite/tables";
+import type { UserSelect } from "$lib/server/sqlite/tables";
 
 // for information about these interfaces
 declare global {
   namespace App {
     // interface Error {}
     interface Locals {
-      user: User | undefined;
+      user: UserSelect | undefined;
     }
     // interface PageData {}
     // interface Platform {}

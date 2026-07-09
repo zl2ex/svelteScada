@@ -1,8 +1,7 @@
 import {
   tagFoldersClosureTable,
-  deleteCascade,
   type ClosureTableNode,
-} from "$lib/server/sqlite/tagClosureTable";
+} from "$lib/server/sqlite/util/tagClosureTable";
 import { live } from "svelte-realtime/server";
 import type { TravelPatches } from "travels";
 
@@ -33,7 +32,7 @@ export const applyTagFolderPatches = live(
         tagFoldersClosureTable.add(value, value.parentId);
       }
       if (patch.op == "remove") {
-        deleteCascade(id);
+        tagFoldersClosureTable.deleteRecursive(id);
       }
       if (patch.op == "replace") {
         let node = tagFoldersClosureTable.get(id);

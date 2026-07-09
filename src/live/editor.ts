@@ -3,13 +3,12 @@ import { z } from "zod";
 import { enablePatches } from "immer";
 import type { Patch } from "immer";
 import { db } from "$lib/server/sqlite/db";
-import { tag as tags, devices, displays } from "$lib/server/sqlite/tables";
+import { tags, devices, displays } from "$lib/server/sqlite/tables";
 import { eq, gt, sql } from "drizzle-orm";
 import {
   tagFoldersClosureTable,
-  deleteCascade,
   type ClosureTableNode,
-} from "$lib/server/sqlite/tagClosureTable";
+} from "$lib/server/sqlite/util/tagClosureTable";
 
 enablePatches();
 
@@ -69,7 +68,7 @@ export function applyFolderPatchesToTable(patches: Patch[]) {
     const [id, field] = patch.path as [string, string?];
 
     if (patch.op === "remove" && !field) {
-      deleteCascade(id);
+      tagFoldersClosureTable.deleteRecursive(id);
     } else if (patch.op === "add" && !field) {
       const v = patch.value as
         | { name: string; parentId?: string | null }

@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-
+import { createInsertSchema } from "drizzle-zod";
 export const displays = sqliteTable("displays", {
   id: text("id")
     .primaryKey()
@@ -10,4 +10,7 @@ export const displays = sqliteTable("displays", {
   ),
 });
 
-export type Display = typeof displays.$inferSelect;
+export type DisplaySelect = typeof displays.$inferSelect;
+export type DisplayInsert = typeof displays.$inferInsert;
+
+export const z_insertDisplay = createInsertSchema(displays);

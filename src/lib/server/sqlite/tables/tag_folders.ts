@@ -1,7 +1,5 @@
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
-import z from "zod";
-
 export const tag_folders = sqliteTable("tag_folders", {
   id: text("id")
     .primaryKey()
@@ -9,8 +7,7 @@ export const tag_folders = sqliteTable("tag_folders", {
   name: text("name").notNull(),
 });
 
-export type TagFolder = typeof tag_folders.$inferSelect;
+export type TagFolderSelect = typeof tag_folders.$inferSelect;
+export type TagFolderInsert = typeof tag_folders.$inferInsert;
 
-export const z_insertTagFolder = z.object({
-  ...createInsertSchema(tag_folders).shape,
-});
+export const z_insertTagFolder = createInsertSchema(tag_folders);

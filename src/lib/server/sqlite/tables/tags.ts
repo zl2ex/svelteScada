@@ -1,9 +1,8 @@
 import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
-import z from "zod";
-import { tag_folders } from "./tag-folders";
+import { tag_folders } from "./tag_folders";
 
-export const tag = sqliteTable("tag", {
+export const tags = sqliteTable("tags", {
   id: text("id").primaryKey(),
   folderId: text("folderId").references(() => tag_folders.id, {
     onDelete: "set null",
@@ -22,6 +21,7 @@ export const tag = sqliteTable("tag", {
   parameters: text("parameters", { mode: "json" }),
 });
 
-export type TagSelect = typeof tag.$inferSelect;
+export type TagSelect = typeof tags.$inferSelect;
+export type TagInsert = typeof tags.$inferInsert;
 
-export const z_insertTag = z.object({ ...createInsertSchema(tag) }.shape);
+export const z_insertTag = createInsertSchema(tags);

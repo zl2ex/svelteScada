@@ -1,28 +1,36 @@
 <script lang="ts">
   import TagInput from "./TagInput.svelte"; // self
-  import type { TagPaths } from "$lib/server/tag/tag";
   import { ClientTag } from "$lib/client/tag/clientTag.svelte";
   import type { HTMLInputAttributes } from "svelte/elements";
   import { onMount } from "svelte";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
 
+  interface propsId extends HTMLInputAttributes {
+    id: string;
+    path?: never;
+    clientTag: ClientTag<any>;
+    label?: string;
+    clazz?: string;
+  }
   interface propsPath extends HTMLInputAttributes {
-    path: TagPaths;
+    id?: never;
+    path: string;
     clientTag?: never;
     label?: string;
     clazz?: string;
   }
 
   interface propsClientTag extends HTMLInputAttributes {
+    id?: never;
     path?: never;
     clientTag: ClientTag<any>;
     label?: string;
     clazz?: string;
   }
 
-  type props = propsPath | propsClientTag;
+  type props = propsId | propsPath | propsClientTag;
 
-  let { path, clientTag, label, clazz, ...rest }: props = $props();
+  let { id, path, clientTag, label, clazz, ...rest }: props = $props();
 
   /*
   const id = $props.id();
@@ -30,7 +38,8 @@
 */
   // either provided client tag or create a new instance with the path
   let tag = $derived.by(() => {
-    let tag = clientTag ?? new ClientTag("any", { path: path ?? "" });
+    let tag =
+      clientTag ?? new ClientTag("any", { id: id ?? "", path: path ?? "" });
 
     //subscribe to updates from the server over socket.io
     tag?.subscribe();

@@ -19,7 +19,7 @@
     useTreeView,
   } from "@skeletonlabs/skeleton-svelte";
 
-  import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
+  import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable.js";
   import { tryCatch } from "$lib/util/tryCatch";
   import {
     z_shared_insertTag,
@@ -91,8 +91,7 @@
       rootNode: {
         id: "root",
         name: "",
-        parentId: undefined,
-        tags: [],
+        parentId: null,
       },
     }),
   );
@@ -273,9 +272,12 @@
   {@const children = Object.values(folderPatches.state).filter(
     (f) => f.parentId == node.id,
   )}
+  {@const tags = Object.values(tagPatchesCollection.state).filter(
+    (t) => t.folderId == node.id,
+  )}
 
   <TreeView.NodeProvider value={{ node, indexPath }}>
-    {#if children || node.tags}
+    {#if children || tags}
       <TreeView.Branch
         onpaste={(e) => {
           e.stopPropagation();
@@ -410,52 +412,49 @@
           {#each children ?? [] as childNode, childIndex (childNode.id)}
             {@render treeNode(childNode, [...indexPath, childIndex])}
           {/each}
-          {#if node.tags || (renamingTagId && tagPatchesCollection.state[renamingTagId])}
-            {#each node.tags as tagMeta (tagMeta.id)}
-              {@const tag = tagPatchesCollection.state[tagMeta.id]}
-              {#if tag}
-                <TreeView.Item
-                  onkeyup={(e) => {
-                    e.stopPropagation();
-                    if (e.key === "Delete") tagDeleteNode(tag);
-                  }}
-                >
-                  <div class="flex items-center gap-2">
-                    <TagIcon class="size-4 shrink-0" />
-                    {#if renamingTagId === tag.id}
-                      <input
-                        type="text"
-                        use:focusOnMount
-                        onblur={(e) =>
-                          finalizeTagRename(tag.id, e.currentTarget.value)}
-                        onkeydown={(e) => {
-                          if (e.key === "Enter")
-                            finalizeTagRename(tag.id, e.currentTarget.value);
-                          if (e.key === "Escape") cancelTagRename(tag.id);
-                        }}
-                      />
-                    {:else}
-                      <span>{tag.name}</span>
-                    {/if}
-                    <TagInput
-                      clientTag={tag}
-                      label=""
-                      clazz="py-0 px-1"
-                      onclick={(ev) => ev.stopPropagation()}
-                      onkeydown={(ev) => ev.stopPropagation()}
+          {#if tags || (renamingTagId && tagPatchesCollection.state[renamingTagId])}
+            {#each tags as tag}
+              <TreeView.Item
+                onkeyup={(e) => {
+                  e.stopPropagation();
+                  if (e.key === "Delete") tagDeleteNode(tag);
+                }}
+              >
+                <div class="flex items-center gap-2">
+                  <TagIcon class="size-4 shrink-0" />
+                  {#if renamingTagId === tag.id}
+                    <input
+                      type="text"
+                      use:focusOnMount
+                      onblur={(e) =>
+                        finalizeTagRename(tag.id, e.currentTarget.value)}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter")
+                          finalizeTagRename(tag.id, e.currentTarget.value);
+                        if (e.key === "Escape") cancelTagRename(tag.id);
+                      }}
                     />
-                    <button onclick={() => tagCopy(tag)}>
-                      <Copy class="size-3" />
-                    </button>
-                    <button onclick={() => tagCut(tag)}>
-                      <Scissors class="size-3" />
-                    </button>
-                    <button onclick={() => tagDeleteNode(tag)}>
-                      <Trash2 class="size-3" />
-                    </button>
-                  </div>
-                </TreeView.Item>
-              {/if}
+                  {:else}
+                    <span>{tag.name}</span>
+                  {/if}
+                  <TagInput
+                    clientTag={tag}
+                    label=""
+                    clazz="py-0 px-1"
+                    onclick={(ev) => ev.stopPropagation()}
+                    onkeydown={(ev) => ev.stopPropagation()}
+                  />
+                  <button onclick={() => tagCopy(tag)}>
+                    <Copy class="size-3" />
+                  </button>
+                  <button onclick={() => tagCut(tag)}>
+                    <Scissors class="size-3" />
+                  </button>
+                  <button onclick={() => tagDeleteNode(tag)}>
+                    <Trash2 class="size-3" />
+                  </button>
+                </div>
+              </TreeView.Item>
             {/each}
           {/if}
         </TreeView.BranchContent>
@@ -470,6 +469,7 @@
 {/snippet}
 
 <div class="flex">
+  <pre>{JSON.stringify(data.tags, null, 2)}</pre>
   <div class="text-xs w-100" onpaste={(e) => handlePaste(e, undefined, [0])}>
     <svelte:boundary>
       <TreeView.Provider value={treeView}>

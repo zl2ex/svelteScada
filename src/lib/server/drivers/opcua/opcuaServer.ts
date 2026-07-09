@@ -30,7 +30,7 @@ export class OpcuaServerDriver {
 
   #buildAddressSpace(addressSpace: AddressSpace): void {
     const namespace = addressSpace.getOwnNamespace();
-    const allTags = db.select().from(tables.tag).all();
+    const allTags = db.select().from(tables.tags).all();
 
     /*for (const tag of allTags) {
       namespace.addVariable({

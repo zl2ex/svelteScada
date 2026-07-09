@@ -2,7 +2,7 @@ import { command, form, prerender, query } from "$app/server";
 import {
   avalibeDrivers,
   getDefaultOptions,
-  Z_DeviceOptions,
+  z_DeviceOptions,
 } from "$lib/server/drivers/driver";
 import { z } from "zod";
 import { deviceManager } from "../../server";
@@ -53,7 +53,7 @@ export const updateDeviceEnabled = form(
   }
 );*/
 
-export const updateDevice = form(Z_DeviceOptions, async (deviceOptions) => {
+export const updateDevice = form(z_DeviceOptions, async (deviceOptions) => {
   await deviceManager.updateDevice(deviceOptions);
   redirect(308, "/editor/devices");
 });
@@ -79,7 +79,7 @@ export const browseOpcua = query(
     }
 
     const browse = await attempt(device.driver.browse(x.nodeId));
-    if("error" in browse) {
+    if ("error" in browse) {
       error(500, browse.error.message);
     }
 

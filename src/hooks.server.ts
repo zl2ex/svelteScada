@@ -4,8 +4,8 @@ import { logger } from "$lib/server/pino/logger";
 import { DeviceManager } from "$lib/server/drivers/driver";
 import { UdtManager } from "$lib/server/tag/udtManager";
 import { TagManager } from "$lib/server/tag/tagManager";
-import { building, dev } from "$app/environment";
 import { OpcuaServerDriver } from "$lib/server/drivers/opcua/opcuaServer";
+import { building } from "$app/environment";
 
 // for serialisiing errors
 Object.defineProperty(Error.prototype, "toJSON", {
@@ -23,7 +23,9 @@ Object.defineProperty(Error.prototype, "toJSON", {
 export const deviceManager = new DeviceManager();
 export const udtManager = new UdtManager();
 export const tagManager = new TagManager();
-export const gatewayOpcua = new OpcuaServerDriver();
+export const gatewayOpcua: OpcuaServerDriver =
+  (globalThis as any).__gatewayOpcua ??
+  ((globalThis as any).__gatewayOpcua = new OpcuaServerDriver());
 
 export const init: ServerInit = async () => {
   logger.debug("[hooks.server.ts] init() hook");
@@ -33,7 +35,7 @@ export const init: ServerInit = async () => {
     return;
   }
 
-  if (gatewayOpcua.started) {
+  if (gatewayOpcua.server) {
     console.debug(
       "[hooks.server.ts] init() gatewayOpcua already started - returning",
     );
@@ -48,12 +50,6 @@ export const init: ServerInit = async () => {
   await deviceManager.loadAllFromDb();
   await udtManager.loadAllFromDb();
   await tagManager.loadAllFromDb();
-
-  if (dev) {
-    import.meta.hot?.dispose(async () => {
-      await gatewayOpcua.stop();
-    });
-  }
 };
 
 export const handle: Handle = async ({ event, resolve }) => {

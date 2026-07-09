@@ -8,13 +8,13 @@ import { z_insertUser } from "$lib/server/sqlite/tables";
 import { invalid, redirect } from "@sveltejs/kit";
 
 import { JWT_EXPERATION_TIME, PRIVATE_KEY } from "$env/static/private";
-import { z_loginUser } from "$lib/server/sqlite/tables/user";
+import { z_loginUser } from "$lib/server/sqlite/tables/users";
 import { tables } from "$lib/server/sqlite/tables";
 
 export const register = form(z_insertUser, async (newUser, issue) => {
   const { cookies } = getRequestEvent();
   cookies.delete("token", { path: "/" });
-  const user = await db.query.user.findFirst({
+  const user = await db.query.users.findFirst({
     where: {
       email: newUser.email,
     },
@@ -26,7 +26,7 @@ export const register = form(z_insertUser, async (newUser, issue) => {
   const hashedPassword = await bcrypt.hash(newUser.password, salt);
   newUser.password = hashedPassword;
 
-  let [insertedUser] = await db.insert(tables.user).values(newUser).returning();
+  let [insertedUser] = await db.insert(tables.users).values(newUser).returning();
   db.insert(tables.user_permissions).values({ userId: insertedUser.id }).run();
   redirect(302, "/login");
 });
@@ -34,7 +34,7 @@ export const register = form(z_insertUser, async (newUser, issue) => {
 export const login = form(z_loginUser, async (loginUser, issue) => {
   const { cookies, url } = getRequestEvent();
 
-  const user = await db.query.user.findFirst({
+  const user = await db.query.users.findFirst({
     where: {
       email: loginUser.email,
     },

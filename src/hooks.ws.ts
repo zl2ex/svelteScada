@@ -22,8 +22,7 @@
 // warning once your auth is in place.
 import { authenticateUser } from "$lib/server/auth/auth";
 import { logger } from "$lib/server/pino/logger";
-import { message } from "svelte-realtime/server";
-export { message };
+export { message } from "svelte-realtime/server";
 
 export function upgrade({ cookies }) {
   logger.trace("hooks.ws.ts");

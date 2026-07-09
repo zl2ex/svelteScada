@@ -2,14 +2,14 @@ import { produceWithPatches, applyPatches, enablePatches } from "immer";
 import type { Patch } from "immer";
 import { applyMutation } from "$live/editor";
 import { squashPatches } from "$lib/client/versioning/patches";
-import type { Tag, Device, Display } from "$lib/server/sqlite/schema";
+import type { TagSelect } from "$lib/server/sqlite/tables";
 import type {
   CollectionName,
   Collections,
   MutationSchema,
 } from "../../../live/editor";
 import { tryCatch } from "$lib/util/tryCatch";
-import type { ClosureTableNode } from "$lib/server/sqlite/tagClosureTable";
+import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
 
 enablePatches();
 
@@ -29,7 +29,7 @@ interface CollectionStack {
 }
 
 export class EditorState {
-  tags = $state<Record<string, Tag>>({});
+  tags = $state<Record<string, TagSelect>>({});
   folders = $state<ClosureTableNode[]>([]);
   syncError = $state<string | null>(null);
 

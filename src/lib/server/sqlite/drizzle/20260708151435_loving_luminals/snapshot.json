@@ -1,0 +1,790 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "92853294-acf3-4914-8281-fc4772823136",
+  "prevIds": [
+    "b8040148-b08a-4088-9f32-8060ea84325c",
+    "d98c716d-564e-4dde-aa26-0a153966cedb"
+  ],
+  "ddl": [
+    {
+      "name": "device_modbus_rtu_options",
+      "entityType": "tables"
+    },
+    {
+      "name": "device_modbus_tcp_options",
+      "entityType": "tables"
+    },
+    {
+      "name": "device_opcua_client_options",
+      "entityType": "tables"
+    },
+    {
+      "name": "devices",
+      "entityType": "tables"
+    },
+    {
+      "name": "displays",
+      "entityType": "tables"
+    },
+    {
+      "name": "tag_folder_paths",
+      "entityType": "tables"
+    },
+    {
+      "name": "tag_folders",
+      "entityType": "tables"
+    },
+    {
+      "name": "tags",
+      "entityType": "tables"
+    },
+    {
+      "name": "user_permissions",
+      "entityType": "tables"
+    },
+    {
+      "name": "users",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deviceId",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "serialPort",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "9600",
+      "generated": null,
+      "name": "baudRate",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'none'",
+      "generated": null,
+      "name": "parity",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "unitId",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "spanGaps",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1000",
+      "generated": null,
+      "name": "pollingIntervalMs",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "startAddress",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'LittleEndian'",
+      "generated": null,
+      "name": "endian",
+      "entityType": "columns",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deviceId",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'127.0.0.1'",
+      "generated": null,
+      "name": "ip",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "502",
+      "generated": null,
+      "name": "port",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1",
+      "generated": null,
+      "name": "unitId",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "1000",
+      "generated": null,
+      "name": "pollingIntervalMs",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "spanGaps",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "5000",
+      "generated": null,
+      "name": "reconnectInervalMs",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "startAddress",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'LittleEndian'",
+      "generated": null,
+      "name": "endian",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "swapWords",
+      "entityType": "columns",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deviceId",
+      "entityType": "columns",
+      "table": "device_opcua_client_options"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'opc.tcp://localhost:4840'",
+      "generated": null,
+      "name": "endpointUrl",
+      "entityType": "columns",
+      "table": "device_opcua_client_options"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "devices"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "devices"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "driverName",
+      "entityType": "columns",
+      "table": "devices"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "displayName",
+      "entityType": "columns",
+      "table": "devices"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "table": "devices"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "displays"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "displays"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updatedAt",
+      "entityType": "columns",
+      "table": "displays"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parent",
+      "entityType": "columns",
+      "table": "tag_folder_paths"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "child",
+      "entityType": "columns",
+      "table": "tag_folder_paths"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "depth",
+      "entityType": "columns",
+      "table": "tag_folder_paths"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "tag_folders"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "tag_folders"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "folderId",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dataType",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'tag'",
+      "generated": null,
+      "name": "type",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "real",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "nodeId",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "writeable",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "exposeOverOpcua",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "parameters",
+      "entityType": "columns",
+      "table": "tags"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "user_permissions"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "userId",
+      "entityType": "columns",
+      "table": "user_permissions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "read",
+      "entityType": "columns",
+      "table": "user_permissions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "write",
+      "entityType": "columns",
+      "table": "user_permissions"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "edit",
+      "entityType": "columns",
+      "table": "user_permissions"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "email",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "password",
+      "entityType": "columns",
+      "table": "users"
+    },
+    {
+      "columns": [
+        "deviceId"
+      ],
+      "tableTo": "devices",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_device_modbus_rtu_options_deviceId_devices_id_fk",
+      "entityType": "fks",
+      "table": "device_modbus_rtu_options"
+    },
+    {
+      "columns": [
+        "deviceId"
+      ],
+      "tableTo": "devices",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_device_modbus_tcp_options_deviceId_devices_id_fk",
+      "entityType": "fks",
+      "table": "device_modbus_tcp_options"
+    },
+    {
+      "columns": [
+        "deviceId"
+      ],
+      "tableTo": "devices",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_device_opcua_client_options_deviceId_devices_id_fk",
+      "entityType": "fks",
+      "table": "device_opcua_client_options"
+    },
+    {
+      "columns": [
+        "parent"
+      ],
+      "tableTo": "tag_folders",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_tagFolderPaths_ancestor_tagFolders_id_fk",
+      "entityType": "fks",
+      "table": "tag_folder_paths"
+    },
+    {
+      "columns": [
+        "child"
+      ],
+      "tableTo": "tag_folders",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_tagFolderPaths_descendant_tagFolders_id_fk",
+      "entityType": "fks",
+      "table": "tag_folder_paths"
+    },
+    {
+      "columns": [
+        "folderId"
+      ],
+      "tableTo": "tag_folders",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "SET NULL",
+      "nameExplicit": false,
+      "name": "fk_tag_folderId_tagFolders_id_fk",
+      "entityType": "fks",
+      "table": "tags"
+    },
+    {
+      "columns": [
+        "userId"
+      ],
+      "tableTo": "users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_user_permissions_userId_user_id_fk",
+      "entityType": "fks",
+      "table": "user_permissions"
+    },
+    {
+      "columns": [
+        "parent",
+        "child"
+      ],
+      "nameExplicit": false,
+      "name": "tagFolderPaths_pk",
+      "entityType": "pks",
+      "table": "tag_folder_paths"
+    },
+    {
+      "columns": [
+        "deviceId"
+      ],
+      "nameExplicit": false,
+      "name": "device_modbus_rtu_options_pk",
+      "table": "device_modbus_rtu_options",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "deviceId"
+      ],
+      "nameExplicit": false,
+      "name": "device_modbus_tcp_options_pk",
+      "table": "device_modbus_tcp_options",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "deviceId"
+      ],
+      "nameExplicit": false,
+      "name": "device_opcua_client_options_pk",
+      "table": "device_opcua_client_options",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "devices_pk",
+      "table": "devices",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "displays_pk",
+      "table": "displays",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "tagFolders_pk",
+      "table": "tag_folders",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "tag_pk",
+      "table": "tags",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "user_permissions_pk",
+      "table": "user_permissions",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "user_pk",
+      "table": "users",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "name"
+      ],
+      "nameExplicit": false,
+      "name": "devices_name_unique",
+      "entityType": "uniques",
+      "table": "devices"
+    }
+  ],
+  "renames": [
+    "tag->tags",
+    "user->users"
+  ]
+}

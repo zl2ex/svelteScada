@@ -3,14 +3,14 @@ import { PRIVATE_KEY } from "$env/static/private";
 import { logger } from "../pino/logger";
 import { db } from "../sqlite/db";
 import { eq } from "drizzle-orm";
-import type { User } from "../sqlite/tables";
+import type { UserSelect } from "../sqlite/tables";
 
 export async function authenticateUser(token: string) {
   try {
-    const jwtUser = jwt.verify(token, PRIVATE_KEY) as User;
+    const jwtUser = jwt.verify(token, PRIVATE_KEY) as UserSelect;
     logger.debug(jwtUser, "[Auth] jwtUser ");
 
-    const user = await db.query.user.findFirst({
+    const user = await db.query.users.findFirst({
       where: {
         id: jwtUser.id,
       },
