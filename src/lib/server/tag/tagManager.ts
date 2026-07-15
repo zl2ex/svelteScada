@@ -79,33 +79,12 @@ export class TagManager {
     return this.tags.get(id);
   }
 
-  getNode(path: string): Tag<any> | undefined {
-    return this.getTagByPath(path);
-  }
-
-  getTag(path: string): Tag<any> | undefined {
-    const [parentPath, propertyName] = path.split(".", 2);
-    const node = this.getTagByPath(parentPath);
-    if (!(node instanceof Tag)) return undefined;
-    if (propertyName && (node as any).type == "UdtTag") {
-      return node.childTags.get(propertyName);
-    }
-    return node;
+  getTagById(id: string): Tag<any> | undefined {
+    return this.tags.get(id);
   }
 
   getAllTags(): Tag<any>[] {
     return Array.from(this.tags.values());
-  }
-
-  getAllChildrenAsNode(path: string): TagNode[] {
-    return Array.from(this.tags.values())
-      .filter((t) => false) // TD WIP parentPath removed
-      .map((tag) => ({
-        name: tag.name,
-        id: tag.id,
-        parentId: null,
-        type: (tag as any).type,
-      }));
   }
 
   // -------------------------

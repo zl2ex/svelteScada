@@ -298,7 +298,6 @@ export class TagError extends Error {
 }
 
 export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
-  //static tags: TagTypeMap = [];
   id: string;
   name: string;
   opcuaServer: OPCUAServer;
@@ -445,7 +444,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       if (!udtDefinition) {
         const err = new TagError(
           "dataType",
-          `[Tag] error while creating tag ${this.path} dataType ${this.resolvedOptions.dataType} does not exist in udtDefinitions`,
+          `[Tag] error while creating tag ${this.id} dataType ${this.resolvedOptions.dataType} does not exist in udtDefinitions`,
         );
         this.error = err;
         logger.error(err);
@@ -455,7 +454,6 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       udtDefinition
         .buildTagFeilds(this.resolvedOptions, this.options.children)
         .forEach((tagOptions) => {
-          tagOptions.parentPath = this.path + ".";
           const tag = new Tag(this.opcuaServer, this.opcuaFolder, tagOptions);
           this.childTags.set(tag.name, tag);
         });
@@ -483,7 +481,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     if (this.resolvedOptions.exposeOverOpcua) {
       if (!this.opcuaServer?.engine) {
         throw new Error(
-          `[Tag] no opcua server defined for tag ${this.path}  please call Tag.initOpcuaServer() and provide a server`,
+          `[Tag] no opcua server defined for tag ${this.id}  please call Tag.initOpcuaServer() and provide a server`,
         );
       }
       const namespace = this.opcuaServer.engine.addressSpace!.getOwnNamespace();
@@ -523,9 +521,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     let initalValue: any;
 
     if (opts.data.initalValue) {
-      const result = attempt<unknown, any>(() =>
-        this.validate(opts.data.initalValue),
-      );
+      const result = attempt(() => this.validate(opts.data.initalValue));
       if ("error" in result) {
         if (result.error instanceof TagError) {
           this.error = result.error;
@@ -563,9 +559,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       StatusCodes.UncertainInitialValue,
     ); // update tag value when created if it is there, if not set to inital value
 
-    // push instance to tags map referenced by path
-    // TD WIP typescript
-    logger.debug(`[Tag] created new tag ${this.path} = ${this.value}`);
+    logger.debug(`[Tag] created new tag ${this.id} = ${this.value}`);
   }
 
   [Symbol.dispose]() {
@@ -573,7 +567,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   }
 
   dispose() {
-    logger.trace(`[Tag] dispose() ${this.path}`);
+    logger.trace(`[Tag] dispose() ${this.id}`);
     try {
       this.unsubscribeToDriver();
 
@@ -609,19 +603,18 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     )
       return; // if the tag class called update() already so we have the current value and status code
     logger.trace(
-      `[Tag] valueChanged() for ${this.path} = ${newValue.value.value} ${newValue.statusCode.toString()}`,
+      `[Tag] valueChanged() for ${this.id} = ${newValue.value.value} ${newValue.statusCode.toString()}`,
     );
 
     try {
       if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
         throw new Error(
-          `[Tag] new value for tag ${this.path} type ${newValue.value.dataType} is not assignable to ${this.opcuaDataType}`,
+          `[Tag] new value for tag ${this.id} type ${newValue.value.dataType} is not assignable to ${this.opcuaDataType}`,
         );
       }
 
       this.value = this.validate(newValue.value.value);
       this.statusCode = newValue.statusCode;
-      this.triggerEmit();
     } catch (error) {
       logger.error(error);
     }
@@ -633,7 +626,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     const resolvedPath = resolveOpcuaPath(this.resolvedOptions.nodeId);
     if (!resolvedPath.deviceName) {
       throw new Error(
-        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to create tag ${this.path}`,
+        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to create tag ${this.id}`,
       );
     }
 
@@ -643,7 +636,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
     if (!variable)
       throw new Error(
-        `[Tag] failed to subscribe to tag at ${this.resolvedOptions.nodeId} while trying to create tag ${this.path}`,
+        `[Tag] failed to subscribe to tag at ${this.resolvedOptions.nodeId} while trying to create tag ${this.id}`,
       );
     /*
     const addressSpace = server.engine.addressSpace;
@@ -674,7 +667,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     const resolvedPath = resolveOpcuaPath(this.resolvedOptions.nodeId);
     if (!resolvedPath.deviceName) {
       logger.error(
-        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to unsubscribe from tag ${this.path}`,
+        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to unsubscribe from tag ${this.id}`,
       );
       return;
     }
@@ -688,21 +681,20 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   update(value: ResolveType<DataTypeString>, statusCode = StatusCodes.Good) {
     if (this.resolvedOptions.writeable == false) {
       logger.warn(
-        `[Tag] update() ${this.path} failed because writeable is set to false`,
+        `[Tag] update() ${this.id} failed because writeable is set to false`,
       );
       this.statusCode = StatusCodes.BadNotWritable;
-      this.triggerEmit(); // emit old value back to client
       return;
     }
 
     const newValue = this.validate(value);
     if (this.isArray !== Array.isArray(newValue))
       throw new TypeError(
-        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.resolvedOptions.dataType}`,
+        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.resolvedOptions.dataType}`,
       );
     if (this.isArray && this.arrayLength !== newValue?.length)
       throw new TypeError(
-        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.path} expected type ${this.resolvedOptions.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
+        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.resolvedOptions.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
       );
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
 
@@ -724,7 +716,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     if (this.resolvedOptions.exposeOverOpcua) {
       if (!this.exposeOpcuaVarible) {
         throw new Error(
-          `[Tag] update() path: ${this.path} cannot update exposeOpcuaVariable as it is not initalised`,
+          `[Tag] update() id: ${this.id} cannot update exposeOpcuaVariable as it is not initalised`,
         );
       }
       this.exposeOpcuaVarible?.setValueFromSource(
@@ -738,33 +730,8 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       );
     }
 
-    this.triggerEmit();
     logger.trace(
-      `[Tag] update() ${this.path} = ${value} : ${this.driverOpcuaVarible?.readValue().statusCode.toString()}`,
+      `[Tag] update() ${this.id} = ${value} : ${this.driverOpcuaVarible?.readValue().statusCode.toString()}`,
     );
-  }
-
-  getEmitPayload() {
-    return {
-      path: this.path,
-      value: {
-        name: this.name,
-        id: this.path,
-        options: this.options,
-        value: this.value,
-        statusCodeString: this.statusCode.name,
-        errorMessage: this.error?.message,
-        childTags: this.childTags
-          ? Array.from(this.childTags).map(([path, tag]) =>
-              //tag.getEmitPayload(),
-              {},
-            )
-          : undefined,
-      },
-    };
-  }
-
-  triggerEmit() {
-    //emitToSubscribers(this.getEmitPayload());
   }
 }

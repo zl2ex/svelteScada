@@ -4,93 +4,11 @@ import type {
   TagPaths,
 } from "$lib/server/tag/tag";
 import type { Result } from "$lib/util/attempt";
-import z from "zod";
-
-export const Z_NodeOptions = z.object({
-  name: z
-    .string()
-    .regex(
-      /^[a-zA-Z0-9/_-]+$/,
-      "Only alphanumeric characters and - _ / are allowed",
-    ),
-  parentPath: z.string(),
-  type: z.union([z.literal("Tag"), z.literal("UdtTag"), z.literal("Folder")]),
-});
-
-export type NodeOptions = z.input<typeof Z_NodeOptions>;
-
-export class TagNode {
-  path: string;
-  name: string;
-  parentPath: string;
-  type: NodeOptions["type"];
-  children?: TagNode[];
-  constructor(options: NodeOptions) {
-    const opts = Z_NodeOptions.parse(options);
-    this.type = opts.type;
-    this.name = opts.name;
-
-    this.parentPath = opts.parentPath;
-    let path = `${this.parentPath}${this.name}`;
-
-    if (this.type == "Folder" && path.endsWith("/") == false) {
-      path = path + "/";
-    }
-    this.path = path;
-  }
-}
-
-type EventMap = Record<string, Event>;
-
-export class TypedEventTarget<T extends EventMap> {
-  private target = new EventTarget();
-
-  addEventListener<K extends keyof T>(
-    type: K,
-    listener: (ev: T[K]) => void,
-    options?: boolean | AddEventListenerOptions,
-  ): void {
-    this.target.addEventListener(
-      type as string,
-      listener as EventListener,
-      options,
-    );
-  }
-
-  removeEventListener<K extends keyof T>(
-    type: K,
-    listener: (ev: T[K]) => void,
-    options?: boolean | EventListenerOptions,
-  ): void {
-    this.target.removeEventListener(
-      type as string,
-      listener as EventListener,
-      options,
-    );
-  }
-
-  dispatchEvent<K extends keyof T>(event: T[K]): boolean {
-    return this.target.dispatchEvent(event);
-  }
-}
-
-type TagEvents = {
-  "tag:update:": CustomEvent<EmitPayload>;
-};
-
-export type ClientTagOptions = {
-  path: TagPaths;
-  name?: string;
-  parentPath?: string;
-  initialValue?: any;
-};
 
 export type ClientDataTypeStrings = "number" | "boolean" | "string" | "any";
 
 //export class ClientTag<DataTypeString extends BaseTypeStringsWithArrays> {
 export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
-  //static tags: Record<TagPaths, ClientTag<any>> = []; // TD WIP REMOVE ??
-  static events = new TypedEventTarget<TagEvents>();
   private _value: ResolveType<DataTypeString>;
   private expectedDataType: ClientDataTypeStrings;
   path: TagPaths;
@@ -99,26 +17,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   children?: Map<string, ClientTag<any>>;
   errorMessage?: string;
 
-  static initSocketIo(clientSocket: Socket) {
-    ClientTag.socket = clientSocket;
-    ClientTag.socket.on("tag:update", (payload) => {
-      //ClientTag.tags[path]?.update({ path, value });
-      console.debug(
-        `tag.update:${payload.path} = ${payload.value.value} ${payload.value.statusCodeString}`,
-      );
-      ClientTag.events.dispatchEvent(
-        new CustomEvent(`tag:update:${payload.path}`, { detail: payload }),
-      );
-    });
-  }
-
   constructor(expectedDataType: DataTypeString, opts: ClientTagOptions) {
-    if (!ClientTag.socket) {
-      throw new Error(
-        `[ClientTag] Socket.io client not initalised  Call initSocketIo() before creating any instances`,
-      );
-    }
-
     this.path = opts.path;
     this.expectedDataType = expectedDataType;
     this.options = $state({
@@ -149,10 +48,6 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
 
   dispose() {
     this.unsubscribe();
-    ClientTag.events.removeEventListener(
-      `tag:update:${this.path}`,
-      this.update,
-    );
     console.trace(`[ClientTag] dispose() ${this.path}`);
     //delete ClientTag.tags[this.path];
   }

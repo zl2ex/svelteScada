@@ -24,6 +24,8 @@ declare module '$live/tags' {
   import type { Readable } from 'svelte/store';
 
   export const applyTagPatches: (patches: TravelPatches["patches"][number]) => Promise<any>;
+  export const setTagValue: ({ id, value }: { id: string; value: unknown }) => Promise<any>;
   export const tagPatches: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
+  export const tagValues: ((lookup: string) => StreamStore<TagValueState | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<TagValueState> };
   export const empty: Readable<undefined>;
 }

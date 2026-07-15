@@ -1,7 +1,8 @@
 import pino from "pino";
 import pretty from "pino-pretty";
 
-export const logger = pino({ level: "debug" }, pretty());
+export const logger = pino({ level: "trace" }, pretty());
+//export const logger = pino({ level: "debug" }, pretty());
 //export const logger = pino({ level: "info" }, pretty());
 
 /*export const logger = pino({

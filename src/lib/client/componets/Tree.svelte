@@ -104,7 +104,7 @@
           <TagIcon class="size-4" />
           <div class="cont">
             {node.name}
-            <Label path={node.path}></Label>
+            <Label id={node.id}></Label>
           </div>
         </TreeView.Item>
         <!--render normal file icon plus name-->

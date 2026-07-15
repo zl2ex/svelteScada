@@ -1,6 +1,4 @@
-import { db } from "$lib/server/sqlite/db";
 import { tables, type TagSelect } from "$lib/server/sqlite/tables";
-import { eq } from "drizzle-orm";
 import { live } from "svelte-realtime/server";
 import type { TravelPatches } from "travels";
 import { tagManager } from "../hooks.server";
@@ -26,5 +24,59 @@ export const applyTagPatches = live(
     }
 
     ctx.publish("tag-patches", "created", { patches });
+  },
+);
+
+export interface TagValueState {
+  id: string;
+  name: string;
+  value: unknown;
+  statusCode: string;
+  errorMessage: string | null;
+  writeable: boolean;
+}
+
+export const tagValues = live.stream(
+  (ctx, lookup: string) => `tag-values:${lookup}`,
+  async (ctx, lookup: string): Promise<TagValueState> => {
+    const tag =
+      tagManager.getTagById(lookup) ?? tagManager.getTagByPath(lookup);
+    if (!tag) throw new Error(`Tag not found: ${lookup}`);
+
+    return {
+      id: tag.id,
+      name: tag.name,
+      value: tag.value,
+      statusCode: tag.statusCode.name,
+      errorMessage: tag.error?.message ?? null,
+      writeable: tag.resolvedOptions.writeable,
+    };
+  },
+  { merge: "set" },
+);
+
+function publishTagValue(ctx: any, tag: any) {
+  const state: TagValueState = {
+    id: tag.id,
+    name: tag.name,
+    value: tag.value,
+    statusCode: tag.statusCode.name,
+    errorMessage: tag.error?.message ?? null,
+    writeable: tag.resolvedOptions.writeable,
+  };
+  ctx.publish(`tag-values:${tag.id}`, "set", state);
+  ctx.publish(`tag-values:${tag.path}`, "set", state);
+}
+
+export const setTagValue = live(
+  async (ctx, { id, value }: { id: string; value: unknown }) => {
+    const tag = tagManager.getTagById(id) ?? tagManager.getTagByPath(id);
+    if (!tag) throw new Error(`Tag not found: ${id}`);
+
+    tag.update(value);
+
+    publishTagValue(ctx, tag);
+
+    return { success: true };
   },
 );

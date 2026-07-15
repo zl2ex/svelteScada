@@ -16,9 +16,6 @@
     {@render children?.()}
   </div>
 
-  {#snippet pending()}
-    <p>loading...</p>
-  {/snippet}
   {#snippet failed(error, reset)}
     <p class="text-error-300-700">{error}</p>
     <button onclick={reset} class="btn preset-filled">reset</button>

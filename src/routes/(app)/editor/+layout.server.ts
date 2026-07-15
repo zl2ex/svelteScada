@@ -1,4 +1,3 @@
-import { db } from "$lib/server/sqlite/db";
 import {
   tagFoldersClosureTable,
   type ClosureTableNode,
