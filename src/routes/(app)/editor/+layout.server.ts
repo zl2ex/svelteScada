@@ -22,7 +22,7 @@ export async function load() {
         map[tag.id] = tag;
         return map;
       },
-      {} as Record<string, TagOptionsInput<any>>,
+      {} as Record<string, TagOptionsInput>,
     ),
   };
 }

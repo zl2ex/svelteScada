@@ -14,9 +14,9 @@ export const tags = sqliteTable("tags", {
     .default("tag"),
   value: real("value"),
   nodeId: text("nodeId"),
-  writeable: integer("writeable", { mode: "boolean" }).$default(() => true),
-  exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).$default(
-    () => true,
+  writeable: integer("writeable", { mode: "boolean" }).default(true),
+  exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).default(
+    true,
   ),
   parameters: text("parameters", { mode: "json" }),
 });

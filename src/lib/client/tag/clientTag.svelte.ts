@@ -12,7 +12,7 @@ export class ClientTag<DataTypeString extends ClientDataTypeStrings> {
   private _value: ResolveType<DataTypeString>;
   private expectedDataType: ClientDataTypeStrings;
   path: TagPaths;
-  options: TagOptionsInput<any>;
+  options: TagOptionsInput;
   statusCodeString: string;
   children?: Map<string, ClientTag<any>>;
   errorMessage?: string;

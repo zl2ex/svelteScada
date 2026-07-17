@@ -30,6 +30,9 @@ export interface PatchCollectionOptions<T extends Identifiable> {
     notify: (payload: PatchPayload | null) => void,
   ) => () => void;
   maxHistory?: number;
+  // Called after every tracked mutation (add/update/remove/mutateStateWithHistory).
+  // Used by UnifiedUndoManager to record entries on the unified timeline.
+  onMutation?: () => void;
 }
 
 export class PatchCollection<T extends Identifiable> {
@@ -38,6 +41,7 @@ export class PatchCollection<T extends Identifiable> {
   private travels: Travels<Record<string, T>>;
   private prevPosition: number;
   private applyPatch: PatchCollectionOptions<T>["applyPatch"];
+  private onMutation?: () => void;
   private unsubscribeTravels?: () => void;
   private unsubscribePatches?: () => void;
 
@@ -50,6 +54,7 @@ export class PatchCollection<T extends Identifiable> {
     });
     this.prevPosition = this.travels.getPosition();
     this.applyPatch = options.applyPatch;
+    this.onMutation = options.onMutation;
 
     this.unsubscribeTravels = this.travels.subscribe(
       (_state, patches, position) => {
@@ -102,6 +107,7 @@ export class PatchCollection<T extends Identifiable> {
     label?: string,
   ) {
     this.travels.setState(fn as any, label ? { label } : undefined);
+    this.onMutation?.();
   }
 
   // Generic escape hatch: UNTRACKED mutation. Bypasses Travels entirely —

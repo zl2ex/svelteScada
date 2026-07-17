@@ -31,13 +31,12 @@ import { OpcuaFolder } from "./opcuaFolder";
 import { attempt } from "../../../lib/util/attempt";
 
 import vm from "node:vm";
-import { TagNode } from "../../client/tag/clientTag.svelte";
 import { Z_BaseTypes, Z_TagOptionsResolved } from "../../client/tag/zodSchema";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { z_insertTag } from "../sqlite/tables";
 import { tryCatch } from "$lib/util/tryCatch";
 
-export type TagOptionsInput<T> = z.input<typeof z_insertTag>;
+export type TagOptionsInput = z.input<typeof z_insertTag>;
 
 export type TagOptionsResolved = z.input<typeof Z_TagOptionsResolved>;
 
@@ -80,17 +79,14 @@ function isExpression(expr: unknown): boolean {
 }
 
 function resolveTagOptions(
-  instanceProps: TagOptionsInput<any>,
+  instanceProps: TagOptionsInput,
   udtParams?: UdtParams,
 ): TagOptionsResolved {
   //@ts-ignore
   const resolved: TagOptionsResolved = {};
   const inProgress = new Set<string>();
 
-  function resolveKey(
-    key: keyof TagOptionsResolved,
-    props: TagOptionsInput<any>,
-  ) {
+  function resolveKey(key: keyof TagOptionsResolved, props: TagOptionsInput) {
     //if (!isExpression(resolved[key])) return; // if it doesnt need to be evaluated
 
     // TD WIP
@@ -286,7 +282,7 @@ export type TagTypeMap = {
 
 export type TagPaths = keyof TagTypeMapDefinition | (string & {});
 
-export type TagOptionsFeildNames = keyof TagOptionsInput<any> | (string & {});
+export type TagOptionsFeildNames = keyof TagOptionsInput | (string & {});
 export class TagError extends Error {
   feildName: TagOptionsFeildNames;
   message: string;
@@ -302,7 +298,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   name: string;
   opcuaServer: OPCUAServer;
   opcuaFolder: OpcuaFolder;
-  options: TagOptionsInput<DataTypeString>;
+  options: TagOptionsInput;
   resolvedOptions: TagOptionsResolved;
 
   //nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
@@ -349,7 +345,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   constructor(
     opcuaServer: OPCUAServer,
     opcuaFolder: OpcuaFolder,
-    options: TagOptionsInput<any>,
+    options: TagOptionsInput,
   ) {
     this.id = options.id;
     this.name = options.name;
@@ -359,13 +355,18 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     // silence error for not difinitvly being assigned in the constructor
     this.options = options;
 
+    console.debug(options);
+
     // parse for any errors but also to get default values
     const parsed = tryCatch(z_insertTag.parse, options);
     if (parsed.error) {
       this.error = new TagError("", parsed.error.message);
+      console.debug("error parsing");
       console.error(parsed.error);
       return;
     }
+
+    console.debug(parsed.data);
 
     this.options = parsed.data;
 

@@ -26,7 +26,10 @@ export const register = form(z_insertUser, async (newUser, issue) => {
   const hashedPassword = await bcrypt.hash(newUser.password, salt);
   newUser.password = hashedPassword;
 
-  let [insertedUser] = await db.insert(tables.users).values(newUser).returning();
+  let [insertedUser] = await db
+    .insert(tables.users)
+    .values(newUser)
+    .returning();
   db.insert(tables.user_permissions).values({ userId: insertedUser.id }).run();
   redirect(302, "/login");
 });
@@ -54,7 +57,7 @@ export const login = form(z_loginUser, async (loginUser, issue) => {
   cookies.set("token", token, {
     httpOnly: true,
     path: "/",
-    secure: true, // WIP DEV ONLY FOR HOSTING -- change to true for production
+    secure: false, // WIP DEV ONLY FOR HOSTING -- change to true for production
     sameSite: "strict",
     maxAge: 60 * 60 * 24 * 360, // 1 Year
   });

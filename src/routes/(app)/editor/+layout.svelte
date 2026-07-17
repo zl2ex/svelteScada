@@ -37,8 +37,14 @@
   import { tagPatches, applyTagPatches } from "$live/tags";
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
-  import type { TagOptionsInput } from "$lib/server/tag/tag.js";
+  import { UnifiedUndoManager } from "$lib/client/live/undoManager.svelte";
+  import type {
+    BaseTypeStringsWithArrays,
+    TagOptionsInput,
+  } from "$lib/server/tag/tag.js";
   import { onMount } from "svelte";
+
+  const undoManager = new UnifiedUndoManager();
 
   let tagFolderPatchesCollection = $state(
     new PatchCollection<ClosureTableNode>({
@@ -50,11 +56,12 @@
         return unsubscribe; // svelte stores' subscribe() already returns an unsubscribe fn
       },
       maxHistory: 50,
+      onMutation: () => undoManager.recordMutation("folders"),
     }),
   );
 
   let tagPatchesCollection = $state(
-    new PatchCollection<TagOptionsInput<any>>({
+    new PatchCollection<TagOptionsInput>({
       initial: data.tags,
       applyPatch: applyTagPatches,
       subscribePatches: (notify) => {
@@ -62,32 +69,45 @@
         return unsubscribe;
       },
       maxHistory: 50,
+      onMutation: () => undoManager.recordMutation("tags"),
     }),
   );
+
+  undoManager.register("folders", tagFolderPatchesCollection);
+  undoManager.register("tags", tagPatchesCollection);
 
   onMount(() => {
     // unmount
     return () => {
+      undoManager.unregister("folders");
+      undoManager.unregister("tags");
       tagFolderPatchesCollection.dispose();
       tagPatchesCollection.dispose();
     };
   });
 
   let collection = $state(
-    createTreeViewCollection<ClosureTableNode>({
+    createTreeViewCollection<ClosureTableNode | TagOptionsInput>({
       nodeToValue: (node) => node.id,
       nodeToString: (node) => node.name,
       nodeToChildren: (node) => {
+        if (!isClosureTableNode(node)) return [];
         const allFolders = {
           ...tagFolderPatchesCollection.state,
           ...stagingFolders,
         };
-        if (node.id === "root") {
-          return Object.values(allFolders).filter(
-            (f) => f.parentId == undefined,
-          );
-        }
-        return Object.values(allFolders).filter((f) => f.parentId == node.id);
+        const allTags = {
+          ...tagPatchesCollection.state,
+          ...stagingTags,
+        };
+        const subFolders =
+          node.id === "root"
+            ? Object.values(allFolders).filter((f) => f.parentId == undefined)
+            : Object.values(allFolders).filter((f) => f.parentId == node.id);
+        const subTags = Object.values(allTags).filter(
+          (t) => t.folderId == node.id,
+        );
+        return [...subFolders, ...subTags];
       },
       rootNode: {
         id: "root",
@@ -97,15 +117,34 @@
     }),
   );
 
+  const TREE_EXPANDED_KEY = `editor-tree-expanded-${id}`;
+
+  function loadExpandedFromStorage(): string[] {
+    if (!browser) return [];
+    try {
+      const stored = localStorage.getItem(TREE_EXPANDED_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  }
+
   let treeView = useTreeView({
     id,
     collection,
     selectionMode: "multiple",
+    defaultExpandedValue: loadExpandedFromStorage(),
+    onExpandedChange: (details) => {
+      localStorage.setItem(
+        TREE_EXPANDED_KEY,
+        JSON.stringify(details.expandedValue),
+      );
+    },
   });
 
   // --- Helpers ------------------------------------------
 
-  function isClosureTableNode(node: object) {
+  function isClosureTableNode(node: object): node is ClosureTableNode {
     return (
       Object.hasOwn(node, "id") &&
       Object.hasOwn(node, "name") &&
@@ -113,7 +152,7 @@
     );
   }
 
-  function isTagOptions(node: object) {
+  function isTagOptions(node: object): node is TagOptionsInput {
     return (
       Object.hasOwn(node, "id") &&
       Object.hasOwn(node, "name") &&
@@ -121,12 +160,31 @@
     );
   }
 
+  function getSelectedItems() {
+    const selectedValues = treeView().selectedValue;
+    const allFolders = {
+      ...tagFolderPatchesCollection.state,
+      ...stagingFolders,
+    };
+    const allTags = {
+      ...tagPatchesCollection.state,
+      ...stagingTags,
+    };
+    const folders: ClosureTableNode[] = [];
+    const tags: TagOptionsInput[] = [];
+    for (const val of selectedValues) {
+      if (allFolders[val]) folders.push(allFolders[val]);
+      else if (allTags[val]) tags.push(allTags[val]);
+    }
+    return { folders, tags };
+  }
+
   // ── Keyboard shortcuts ────────────────────────────────
 
   if (browser) {
     document.addEventListener("keyup", (e) => {
-      if (e.key == "z" && e.ctrlKey) tagFolderPatchesCollection.undo();
-      if (e.key == "y" && e.ctrlKey) tagFolderPatchesCollection.redo();
+      if (e.key == "z" && e.ctrlKey) undoManager.undo();
+      if (e.key == "y" && e.ctrlKey) undoManager.redo();
     });
   }
 
@@ -136,37 +194,74 @@
 
   // ── Folder operations ─────────────────────────────────
 
-  async function folderDelete(node: ClosureTableNode) {
+  function folderDeleteOne(node: ClosureTableNode) {
     let children = Object.values(tagFolderPatchesCollection.state).filter(
       (f) => f.parentId == node.id,
     );
-    children.forEach((child) => folderDelete(child));
+    children.forEach((child) => folderDeleteOne(child));
     tagFolderPatchesCollection.remove(node.id);
   }
 
-  async function folderCut(node: ClosureTableNode) {
-    copyToClipboard(JSON.stringify({ id: node.id, name: node.name }));
-    folderDelete(node);
+  function foldersDelete(nodes: ClosureTableNode[]) {
+    nodes.forEach((n) => folderDeleteOne(n));
   }
 
-  async function folderCopy(node: ClosureTableNode) {
-    copyToClipboard(JSON.stringify({ id: node.id, name: node.name }));
+  function foldersCut(nodes: ClosureTableNode[]) {
+    copyToClipboard(
+      JSON.stringify(nodes.map((n) => ({ id: n.id, name: n.name }))),
+    );
+    foldersDelete(nodes);
   }
 
   // ── Tag operations ────────────────────────────────────
 
-  function tagCopy(tag: TagOptionsInput<any>) {
-    copyToClipboard(JSON.stringify(tag));
+  function tagsCut(tags: TagOptionsInput[]) {
+    copyToClipboard(JSON.stringify(tags));
+    tags.forEach((t) => tagPatchesCollection.remove(t.id));
   }
 
-  function tagCut(tag: TagOptionsInput<any>) {
-    copyToClipboard(JSON.stringify(tag));
-    tagPatchesCollection.remove(tag.id);
+  function tagsDelete(tags: TagOptionsInput[]) {
+    tags.forEach((t) => tagPatchesCollection.remove(t.id));
   }
 
-  function tagDelete(tag: TagOptionsInput<any>) {
-    tagPatchesCollection.remove(tag.id);
+  // ── Global tree keyboard handler ──────────────────────
+
+  function handleTreeKeyup(e: KeyboardEvent) {
+    const { folders, tags } = getSelectedItems();
+    const hasSelection = folders.length > 0 || tags.length > 0;
+
+    if (!hasSelection) return;
+
+    // excusively one folder or one tag
+    const onlyOneFolder =
+      folders.length === 1 && tags.length === 0 ? true : false;
+    const onlyOneTag = tags.length === 1 && folders.length === 0 ? true : false;
+
+    if (e.key === "Delete") {
+      e.preventDefault();
+      foldersDelete(folders);
+      tagsDelete(tags);
+    }
+    if (e.key === "F2" && onlyOneFolder) {
+      renamingFolderId = folders[0].id;
+    }
+    if (e.key === "f" && e.altKey && onlyOneFolder) {
+      addFolder(folders[0]);
+    }
+    if (e.key === "t" && e.altKey && onlyOneFolder) {
+      addTag(folders[0]);
+    }
+
+    if (e.key === "c" && e.ctrlKey) {
+      let json = JSON.stringify([...tags, ...folders]);
+      copyToClipboard(json);
+    }
   }
+
+  // ── Context menu state ────────────────────────────────
+
+  let contextMenuFolders: ClosureTableNode[] = $state([]);
+  let contextMenuTags: TagOptionsInput[] = $state([]);
 
   // ── Inline add / rename ───────────────────────────────
 
@@ -175,7 +270,7 @@
 
   // ── Staging state for new items ──────────────────────
   let stagingFolders = $state<Record<string, ClosureTableNode>>({});
-  let stagingTags = $state<Record<string, TagOptionsInput<any>>>({});
+  let stagingTags = $state<Record<string, TagOptionsInput>>({});
 
   function addFolder(parentNode: ClosureTableNode) {
     const newId = crypto.randomUUID();
@@ -194,7 +289,7 @@
       id: newId,
       folderId: parentNode.id ?? null,
       name: "New Tag",
-      dataType: "string",
+      dataType: "Double" as BaseTypeStringsWithArrays,
     };
     renamingTagId = newId;
     treeView().expand([parentNode.id]);
@@ -206,7 +301,7 @@
     // renaming an existing node
     const current = tagFolderPatchesCollection.state[id];
     if (current) {
-      current.name = newName;
+      current.name = checkDuplicateFolderName(newName, current);
       tagFolderPatchesCollection.update(id, current);
       return;
     }
@@ -250,12 +345,47 @@
     delete stagingTags[id];
   }
 
+  // checks for duplicate tag names in a specific folder and returns a new unique name if neeeded
+  function checkDuplicateTagName(
+    name: string,
+    parentNode: ClosureTableNode | undefined,
+  ) {
+    let newName = name;
+    const children = Object.values(tagPatchesCollection.state).filter(
+      (f) => f.folderId == parentNode?.id,
+    );
+
+    let count = 0;
+    while (children.map((c) => c.name).includes(newName)) {
+      newName = newName + count;
+      count++;
+    }
+    return newName;
+  }
+
+  // checks for duplicate folder name in a specific folder and returns a new unique name if neeeded
+  function checkDuplicateFolderName(
+    name: string,
+    parentNode: ClosureTableNode | undefined,
+  ) {
+    let newName = name;
+    const children = Object.values(tagFolderPatchesCollection.state).filter(
+      (f) => f.parentId == parentNode?.id,
+    );
+
+    let count = 0;
+    while (children.map((c) => c.name).includes(newName)) {
+      newName = newName + count;
+      count++;
+    }
+    return newName;
+  }
+
   // ── Paste ─────────────────────────────────────────────
 
   async function handlePaste(
     e: ClipboardEvent,
     parentNode: ClosureTableNode | undefined,
-    indexPath: number[],
   ) {
     const text = e.clipboardData?.getData("text/plain");
     e.stopPropagation();
@@ -266,62 +396,55 @@
       throw Error(`handlePaste() `, { cause: json.error });
     }
 
-    let tagResult = tryCatch(z_shared_insertTag.parse, json.data);
-    let folderResult = tryCatch(z_shared_insertTagFolder.parse, json.data);
-    if (tagResult.error && folderResult.error) {
+    // not an array
+    if (json.data.length <= 0)
       throw Error(
-        `handlePaste() parse into tag or folder failed, wrong format ${json.data}`,
-      );
-    }
-
-    // check tagResult first as folderResult also has id and name feilds
-    if (tagResult.data) {
-      const newId = crypto.randomUUID();
-      let name = tagResult.data.name;
-      const children = Object.values(tagPatchesCollection.state).filter(
-        (f) => f.folderId == parentNode?.id,
+        `handlePaste() pasted data is not an array with at least one element ${text}`,
       );
 
-      let count = 0;
-      while (children.map((c) => c.name).includes(name)) {
-        name = tagResult.data.name + count;
-        count++;
+    for (const data of json.data) {
+      let tagResult = tryCatch(z_shared_insertTag.parse, data);
+      let folderResult = tryCatch(z_shared_insertTagFolder.parse, data);
+      if (tagResult.error && folderResult.error) {
+        throw Error(
+          `handlePaste() parse into tag or folder failed, wrong format ${data}`,
+        );
       }
 
-      tagPatchesCollection.add({
-        id: newId,
-        folderId: parentNode?.id ?? null,
-        name: name,
-        dataType: tagResult.data.dataType,
-        value: tagResult.data.value ?? null,
-        nodeId: tagResult.data.nodeId ?? null,
-        writeable: tagResult.data.writeable ?? true,
-        exposeOverOpcua: tagResult.data.exposeOverOpcua ?? true,
-        parameters: tagResult.data.parameters ?? null,
-      });
-    } else if (folderResult.data) {
-      let name = folderResult.data.name;
-      const newId = crypto.randomUUID();
-      const children = Object.values(tagFolderPatchesCollection.state).filter(
-        (f) => f.parentId == parentNode?.id,
-      );
-      let count = 0;
-      while (children.map((c) => c.name).includes(name)) {
-        name = folderResult.data.name + count;
-        count++;
-      }
+      // check tagResult first as folderResult also has id and name feilds
+      if (tagResult.data) {
+        const newId = crypto.randomUUID();
+        let name = checkDuplicateTagName(tagResult.data.name, parentNode);
 
-      tagFolderPatchesCollection.add({
-        id: newId,
-        name,
-        parentId: parentNode?.id ?? null,
-      });
+        tagPatchesCollection.add({
+          id: newId,
+          folderId: parentNode?.id ?? null,
+          name: name,
+          dataType: tagResult.data.dataType,
+          value: tagResult.data.value ?? null,
+          nodeId: tagResult.data.nodeId ?? null,
+          writeable: tagResult.data.writeable ?? true,
+          exposeOverOpcua: tagResult.data.exposeOverOpcua ?? true,
+          parameters: tagResult.data.parameters ?? null,
+        });
+      } else if (folderResult.data) {
+        const newId = crypto.randomUUID();
+        let name = checkDuplicateFolderName(folderResult.data.name, parentNode);
+        tagFolderPatchesCollection.add({
+          id: newId,
+          name,
+          parentId: parentNode?.id ?? null,
+        });
+      }
     }
   }
 </script>
 
-{#snippet treeNode(node: ClosureTableNode, indexPath: number[])}
-  {@const children = Object.values({
+{#snippet treeNode(
+  node: ClosureTableNode | TagOptionsInput,
+  indexPath: number[],
+)}
+  {@const folders = Object.values({
     ...tagFolderPatchesCollection.state,
     ...stagingFolders,
   }).filter((f) => f.parentId == node.id)}
@@ -331,278 +454,223 @@
     ...stagingTags,
   }).filter((t) => t.folderId == node.id)}
 
-  {@const items = [...(children ?? []), ...(tags ?? [])]}
+  {@const children = [...(folders ?? []), ...(tags ?? [])]}
 
   <TreeView.NodeProvider value={{ node, indexPath }}>
-    {#if children}
+    {#if isClosureTableNode(node)}
       <TreeView.Branch
         onpaste={(e) => {
           e.stopPropagation();
-          handlePaste(e, node, indexPath);
-        }}
-        oncopy={(e) => {
-          e.stopPropagation();
-          folderCopy(node);
-        }}
-        oncut={(e) => {
-          e.stopPropagation();
-          folderCut(node);
-        }}
-        onkeyup={(e) => {
-          e.stopPropagation();
-          console.debug(e.key);
-          if (e.key === "Delete") folderDelete(node);
-          if (e.key === "f" && e.altKey) addFolder(node);
-          if (e.key === "t" && e.altKey) addTag(node);
-          if (e.key === "F2") renamingFolderId = node.id;
+          handlePaste(e, node);
         }}
       >
-        <Menu>
-          <Menu.ContextTrigger>
-            <TreeView.BranchControl>
-              <TreeView.BranchIndicator class="data-loading:hidden" />
-              <TreeView.BranchIndicator
-                class="hidden data-loading:inline animate-spin"
-              >
-                <LoaderIcon class="size-4" />
-              </TreeView.BranchIndicator>
-              <TreeView.BranchText class="truncate">
-                <FolderIcon class="size-4 shrink-0" />
+        <TreeView.BranchControl>
+          <TreeView.BranchIndicator class="data-loading:hidden" />
+          <TreeView.BranchIndicator
+            class="hidden data-loading:inline animate-spin"
+          >
+            <LoaderIcon class="size-4" />
+          </TreeView.BranchIndicator>
+          <TreeView.BranchText class="truncate">
+            <FolderIcon class="size-4 shrink-0" />
 
-                {#if renamingFolderId === node.id}
-                  <input
-                    type="text"
-                    class="border-none p-0 m-0 text-inherit bg-inherit"
-                    value={node.name}
-                    use:focusOnMount
-                    onblur={(e) =>
-                      finalizeFolderRename(node.id, e.currentTarget.value)}
-                    onkeydown={(e) => {
-                      if (e.key === "Enter")
-                        finalizeFolderRename(node.id, e.currentTarget.value);
-                      if (e.key === "Escape") cancelFolderRename(node.id);
-                    }}
-                  />
-                {:else}
-                  {node.name}
-                {/if}
-              </TreeView.BranchText>
-            </TreeView.BranchControl>
-          </Menu.ContextTrigger>
-          <Portal>
-            <Menu.Positioner>
-              <Menu.Content class="min-w-auto">
-                <Menu.Item value="newTag">
-                  <Menu.ItemText class="w-full">
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => addTag(node)}
-                    >
-                      <TagPlus class="size-4" />
-                      <span>New Tag</span>
-                      <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+T</span
-                      >
-                    </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Item value="newFolder">
-                  <Menu.ItemText class="w-full">
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => addFolder(node)}
-                    >
-                      <FolderPlus class="size-4" />
-                      <span>New Folder</span>
-                      <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+F</span
-                      >
-                    </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Separator />
-                <Menu.Item value="cut">
-                  <Menu.ItemText class="w-full">
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => folderCut(node)}
-                    >
-                      <Scissors class="size-4" />
-                      <span>Cut</span>
-                      <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+X</span
-                      >
-                    </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Item value="copy">
-                  <Menu.ItemText class="w-full">
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => folderCopy(node)}
-                    >
-                      <Copy class="size-4" />
-                      <span>Copy</span>
-                      <span class="text-xs text-neutral-500 ml-auto"
-                        >Ctrl+C</span
-                      >
-                    </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Separator />
-                <Menu.Item value="delete">
-                  <Menu.ItemText class="w-full">
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      onclick={() => folderDelete(node)}
-                    >
-                      <Trash2 class="size-4" />
-                      Delete
-                      <span class="text-xs text-neutral-500 ml-auto">Del</span
-                      ></button
-                    ></Menu.ItemText
-                  >
-                </Menu.Item>
-              </Menu.Content>
-            </Menu.Positioner>
-          </Portal>
-        </Menu>
+            {#if renamingFolderId === node.id}
+              <input
+                type="text"
+                class="border-none p-0 m-0 text-inherit bg-inherit"
+                value={node.name}
+                use:focusOnMount
+                onblur={(e) =>
+                  finalizeFolderRename(node.id, e.currentTarget.value)}
+                onkeydown={(e) => {
+                  if (e.key === "Enter")
+                    finalizeFolderRename(node.id, e.currentTarget.value);
+                  if (e.key === "Escape") cancelFolderRename(node.id);
+                }}
+              />
+            {:else}
+              {node.name}
+            {/if}
+          </TreeView.BranchText>
+        </TreeView.BranchControl>
         <TreeView.BranchContent>
           <TreeView.BranchIndentGuide />
-          {#each items as item, childIndex (item.id)}
-            {#if isClosureTableNode(item)}
-              {@render treeNode(item, [...indexPath, childIndex])}
-            {:else if isTagOptions(item)}
-              <TreeView.NodeProvider
-                value={{ node: item, indexPath: [...indexPath, childIndex] }}
-              >
-                <TreeView.Item
-                  onpaste={(e) => {
-                    e.stopPropagation();
-                    handlePaste(e, node, indexPath);
-                  }}
-                  oncopy={(e) => {
-                    e.stopPropagation();
-                    tagCopy(item);
-                  }}
-                  oncut={(e) => {
-                    e.stopPropagation();
-                    tagCut(item);
-                  }}
-                  onkeyup={(e) => {
-                    e.stopPropagation();
-                    if (e.key === "Delete") tagDelete(item);
-                  }}
-                >
-                  <Menu>
-                    <Menu.ContextTrigger>
-                      <div class="flex items-center gap-2">
-                        <TagIcon class="size-4 shrink-0" />
-                        {#if renamingTagId === item.id}
-                          <input
-                            type="text"
-                            class="border-none p-0 m-0 text-inherit bg-inherit"
-                            use:focusOnMount
-                            onblur={(e) =>
-                              finalizeTagRename(item.id, e.currentTarget.value)}
-                            onkeydown={(e) => {
-                              if (e.key === "Enter")
-                                finalizeTagRename(
-                                  item.id,
-                                  e.currentTarget.value,
-                                );
-                              if (e.key === "Escape") cancelTagRename(item.id);
-                            }}
-                          />
-                        {:else}
-                          <span>{item.name}</span>
-                        {/if}
-                        <TagInput
-                          id={item.id}
-                          label=""
-                          clazz="py-0 px-1"
-                          onclick={(ev) => ev.stopPropagation()}
-                          onkeydown={(ev) => ev.stopPropagation()}
-                        />
-                      </div>
-                    </Menu.ContextTrigger>
-                    <Portal>
-                      <Menu.Positioner>
-                        <Menu.Content class="min-w-auto">
-                          <Menu.Item value="cut">
-                            <Menu.ItemText class="w-full">
-                              <button
-                                class="flex items-center gap-2 w-full"
-                                onclick={() => tagCut(item)}
-                              >
-                                <Scissors class="size-4" />
-                                <span>Cut</span>
-                                <span class="text-xs text-neutral-500 ml-auto"
-                                  >Ctrl+X</span
-                                >
-                              </button>
-                            </Menu.ItemText>
-                          </Menu.Item>
-                          <Menu.Item value="copy">
-                            <Menu.ItemText class="w-full">
-                              <button
-                                class="flex items-center gap-2 w-full"
-                                onclick={() => tagCopy(item)}
-                              >
-                                <Copy class="size-4" />
-                                <span>Copy</span>
-                                <span class="text-xs text-neutral-500 ml-auto"
-                                  >Ctrl+C</span
-                                >
-                              </button>
-                            </Menu.ItemText>
-                          </Menu.Item>
-                          <Menu.Separator />
-                          <Menu.Item value="delete">
-                            <Menu.ItemText class="w-full">
-                              <button
-                                class="flex items-center gap-2 w-full"
-                                onclick={() => tagDelete(item)}
-                              >
-                                <Trash2 class="size-4" />
-                                Delete
-                                <span class="text-xs text-neutral-500 ml-auto"
-                                  >Del</span
-                                ></button
-                              ></Menu.ItemText
-                            >
-                          </Menu.Item>
-                        </Menu.Content>
-                      </Menu.Positioner>
-                    </Portal>
-                  </Menu>
-                </TreeView.Item>
-              </TreeView.NodeProvider>
-            {/if}
+          {#each children as child, childIndex (child.id)}
+            {@render treeNode(child, [...indexPath, childIndex])}
           {/each}
         </TreeView.BranchContent>
       </TreeView.Branch>
-    {:else}
-      <TreeView.Item class="truncate">
-        <FileIcon class="size-4 shrink-0" />
-        {node.name}
+    {:else if isTagOptions(node)}
+      <TreeView.Item class="flex items-center gap-2">
+        <TagIcon class="size-4 shrink-0" />
+        {#if renamingTagId === node.id}
+          <input
+            type="text"
+            class="border-none p-0 m-0 text-inherit bg-inherit"
+            use:focusOnMount
+            onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
+            onkeydown={(e) => {
+              if (e.key === "Enter")
+                finalizeTagRename(node.id, e.currentTarget.value);
+              if (e.key === "Escape") cancelTagRename(node.id);
+            }}
+          />
+        {:else}
+          <span>{node.name}</span>
+          <TagInput
+            id={node.id}
+            label=""
+            clazz="py-0 px-1 border-none bg-inherit"
+            onclick={(ev) => ev.stopPropagation()}
+            onkeydown={(ev) => ev.stopPropagation()}
+          />
+        {/if}
       </TreeView.Item>
     {/if}
   </TreeView.NodeProvider>
 {/snippet}
 
 <div class="flex">
-  <pre>{JSON.stringify(stagingFolders, null, 2)}</pre>
-
-  <div class="text-xs w-100" onpaste={(e) => handlePaste(e, undefined, [0])}>
+  <div class="text-xs w-100">
     <svelte:boundary>
-      <TreeView.Provider value={treeView}>
-        <TreeView.Tree class="w-full">
-          {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders }, ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
-            {@render treeNode(node, [index])}
-          {/each}
-        </TreeView.Tree>
-      </TreeView.Provider>
+      <Menu
+        onOpenChange={(e) => {
+          if (e.open) {
+            const { folders, tags } = getSelectedItems();
+            contextMenuFolders = folders;
+            contextMenuTags = tags;
+          }
+        }}
+      >
+        <Menu.ContextTrigger class="w-full">
+          <TreeView.Provider value={treeView}>
+            <TreeView.Tree
+              class="w-full"
+              onkeyup={handleTreeKeyup}
+              onpaste={(e) => {
+                e.stopPropagation();
+                handlePaste(e, undefined, [0]);
+              }}
+            >
+              {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders }, ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
+                {@render treeNode(node, [index])}
+              {/each}
+            </TreeView.Tree>
+          </TreeView.Provider>
+        </Menu.ContextTrigger>
+        <Portal>
+          <Menu.Positioner>
+            <Menu.Content class="min-w-auto">
+              {#if contextMenuFolders.length > 0}
+                <Menu.Item
+                  value="newTag"
+                  disabled={contextMenuFolders.length !== 1}
+                >
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      disabled={contextMenuFolders.length !== 1}
+                      onclick={() => addTag(contextMenuFolders[0])}
+                    >
+                      <TagPlus class="size-4" />
+                      <span>New Tag</span>
+                      <span class="text-xs text-neutral-500 ml-auto">Alt+T</span
+                      >
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item
+                  value="newFolder"
+                  disabled={contextMenuFolders.length !== 1}
+                >
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      disabled={contextMenuFolders.length !== 1}
+                      onclick={() => addFolder(contextMenuFolders[0])}
+                    >
+                      <FolderPlus class="size-4" />
+                      <span>New Folder</span>
+                      <span class="text-xs text-neutral-500 ml-auto">Alt+F</span
+                      >
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Separator />
+              {/if}
+              <Menu.Item
+                value="cut"
+                disabled={contextMenuFolders.length === 0 &&
+                  contextMenuTags.length === 0}
+              >
+                <Menu.ItemText class="w-full">
+                  <button
+                    class="flex items-center gap-2 w-full"
+                    disabled={contextMenuFolders.length === 0 &&
+                      contextMenuTags.length === 0}
+                    onclick={() => {
+                      if (contextMenuFolders.length > 0)
+                        foldersCut(contextMenuFolders);
+                      else if (contextMenuTags.length > 0)
+                        tagsCut(contextMenuTags);
+                    }}
+                  >
+                    <Scissors class="size-4" />
+                    <span>Cut</span>
+                    <span class="text-xs text-neutral-500 ml-auto">Ctrl+X</span>
+                  </button>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item
+                value="copy"
+                disabled={contextMenuFolders.length === 0 &&
+                  contextMenuTags.length === 0}
+              >
+                <Menu.ItemText class="w-full">
+                  <button
+                    class="flex items-center gap-2 w-full"
+                    disabled={contextMenuFolders.length === 0 &&
+                      contextMenuTags.length === 0}
+                    onclick={() => {
+                      let json = JSON.stringify([
+                        ...contextMenuTags,
+                        ...contextMenuFolders,
+                      ]);
+                      copyToClipboard(json);
+                    }}
+                  >
+                    <Copy class="size-4" />
+                    <span>Copy</span>
+                    <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
+                  </button>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item
+                value="delete"
+                disabled={contextMenuFolders.length === 0 &&
+                  contextMenuTags.length === 0}
+              >
+                <Menu.ItemText class="w-full">
+                  <button
+                    class="flex items-center gap-2 w-full"
+                    disabled={contextMenuFolders.length === 0 &&
+                      contextMenuTags.length === 0}
+                    onclick={() => {
+                      foldersDelete(contextMenuFolders);
+                      tagsDelete(contextMenuTags);
+                    }}
+                  >
+                    <Trash2 class="size-4" />
+                    Delete
+                    <span class="text-xs text-neutral-500 ml-auto">Del</span>
+                  </button>
+                </Menu.ItemText>
+              </Menu.Item>
+            </Menu.Content>
+          </Menu.Positioner>
+        </Portal>
+      </Menu>
 
       {#snippet pending()}
         <LoaderIcon class="size-4 animate-spin" />

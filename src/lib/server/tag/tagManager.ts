@@ -35,7 +35,7 @@ export class TagManager {
   }
 
   async createTag(
-    opts: TagOptionsInput<any>,
+    opts: TagOptionsInput,
     writeToDb: boolean = true,
   ): Promise<Tag<any>> {
     if (!this.opcuaServer || !this.rootFolder) {
@@ -93,7 +93,7 @@ export class TagManager {
 
   async updateTag(
     id: string,
-    tagUpdates: TagOptionsInput<any>,
+    tagUpdates: TagOptionsInput,
   ): Promise<Tag<any> | null> {
     if (!this.opcuaServer || !this.rootFolder) {
       throw new Error(

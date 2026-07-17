@@ -1,7 +1,11 @@
-import { tables, type TagSelect } from "$lib/server/sqlite/tables";
-import { live } from "svelte-realtime/server";
+import { type TagSelect } from "$lib/server/sqlite/tables";
+import { guard, live, LiveError } from "svelte-realtime/server";
 import type { TravelPatches } from "travels";
 import { tagManager } from "../hooks.server";
+
+export const _guard = guard((ctx) => {
+  if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
+});
 
 export const tagPatches = live.stream("tag-patches", async () => null, {
   merge: "set",

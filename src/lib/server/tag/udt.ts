@@ -216,7 +216,7 @@ export class UdtDefinition {
 
   buildTagFeilds(
     parentTagOptions: TagOptionsResolved,
-    tagOverrideOptions?: Record<string, TagOptionsInput<any>>,
+    tagOverrideOptions?: Record<string, TagOptionsInput>,
   ) {
     // instance parameters overide udt parameters
 
@@ -231,7 +231,7 @@ export class UdtDefinition {
       }
     }
 
-    const feilds = new Map<string, TagOptionsInput<any>>();
+    const feilds = new Map<string, TagOptionsInput>();
     for (let options of this.options.feilds) {
       let override = undefined;
       if (tagOverrideOptions && tagOverrideOptions[options.name]) {

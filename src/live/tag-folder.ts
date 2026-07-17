@@ -2,8 +2,12 @@ import {
   tagFoldersClosureTable,
   type ClosureTableNode,
 } from "$lib/server/sqlite/util/tagClosureTable";
-import { live } from "svelte-realtime/server";
+import { guard, live, LiveError } from "svelte-realtime/server";
 import type { TravelPatches } from "travels";
+
+export const _guard = guard((ctx) => {
+  if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
+});
 
 // TD WIP TYPE return
 // TravelPatches["patches"][number]
