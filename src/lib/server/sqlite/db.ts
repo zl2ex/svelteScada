@@ -6,12 +6,14 @@ import { resolve } from "path";
 import { runMigrations } from "./migrate";
 import { DB_URL } from "$env/static/private";
 
-export const sqlite = new Database(
-  resolve(DB_URL ?? "./src/lib/server/sqlite/database/database.db"),
-);
+export const sqlite = new Database(resolve(DB_URL ?? "./database.db"));
 sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
-export const db = drizzle({ client: sqlite, schema, relations: relationsConfig });
+export const db = drizzle({
+  client: sqlite,
+  schema,
+  relations: relationsConfig,
+});
 
 runMigrations();
