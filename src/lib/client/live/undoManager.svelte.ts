@@ -36,6 +36,10 @@ export class UnifiedUndoManager {
   private redoTimeline: UndoRedoRecord[] = [];
   private activeDocument: string | null = null;
 
+  // Transaction support
+  private transactionStack = 0;            // >0 when inside a begin/end pair
+  private transactionBuffer: string[] = []; // contexts recorded during transaction
+
   // ── registration ─────────────────────────────────────
 
   register(
@@ -73,9 +77,52 @@ export class UnifiedUndoManager {
    * with `onMutation` disabled for that purpose.
    */
   recordMutation(context: string) {
+    // During a transaction, buffer the context instead of adding to the timeline
+    if (this.transactionStack > 0) {
+      if (!this.transactionBuffer.includes(context)) {
+        this.transactionBuffer.push(context);
+      }
+      return;
+    }
+
     this.undoTimeline.push({ context, timestamp: Date.now() });
     // A new mutation clears the redo stack
     this.redoTimeline.length = 0;
+  }
+
+  // ── transaction support ─────────────────────────────────
+
+  /**
+   * Start a transaction. All mutations recorded via `recordMutation`
+   * until `endTransaction()` is called are grouped into a single
+   * undo/redo action on the unified timeline.
+   *
+   * Calls can be nested — only the outermost `endTransaction` flushes.
+   */
+  beginTransaction() {
+    this.transactionStack++;
+  }
+
+  /**
+   * End a transaction. The buffered mutations are committed to the
+   * unified timeline as a single entry (per unique context).
+   */
+  endTransaction() {
+    if (this.transactionStack === 0) {
+      console.warn("UnifiedUndoManager.endTransaction() called without a matching beginTransaction()");
+      return;
+    }
+
+    this.transactionStack--;
+
+    if (this.transactionStack > 0) return; // still inside a nested transaction
+
+    // Flush the buffer — one timeline entry per unique context that was touched
+    for (const context of this.transactionBuffer) {
+      this.undoTimeline.push({ context, timestamp: Date.now() });
+    }
+    this.redoTimeline.length = 0;
+    this.transactionBuffer.length = 0;
   }
 
   /**

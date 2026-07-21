@@ -1,7 +1,8 @@
 import { type TagSelect } from "$lib/server/sqlite/tables";
-import { guard, live, LiveError } from "svelte-realtime/server";
+import { guard, live, LiveError, publish } from "svelte-realtime/server";
 import type { TravelPatches } from "travels";
 import { tagManager } from "../hooks.server";
+import type { Tag } from "$lib/server/tag/tag";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -59,7 +60,7 @@ export const tagValues = live.stream(
   { merge: "set" },
 );
 
-function publishTagValue(ctx: any, tag: any) {
+export function publishTagValue(tag: Tag<any>) {
   const state: TagValueState = {
     id: tag.id,
     name: tag.name,
@@ -68,8 +69,11 @@ function publishTagValue(ctx: any, tag: any) {
     errorMessage: tag.error?.message ?? null,
     writeable: tag.resolvedOptions.writeable,
   };
-  ctx.publish(`tag-values:${tag.id}`, "set", state);
-  ctx.publish(`tag-values:${tag.path}`, "set", state);
+
+  const path = tagManager.idToPath(tag.id);
+
+  publish(`tag-values:${tag.id}`, "set", state);
+  publish(`tag-values:${path}`, "set", state);
 }
 
 export const setTagValue = live(
@@ -79,8 +83,10 @@ export const setTagValue = live(
 
     tag.update(value);
 
-    publishTagValue(ctx, tag);
+    publishTagValue(tag);
 
     return { success: true };
   },
 );
+
+

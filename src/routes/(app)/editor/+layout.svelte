@@ -194,16 +194,39 @@
 
   // ── Folder operations ─────────────────────────────────
 
-  function folderDeleteOne(node: ClosureTableNode) {
-    let children = Object.values(tagFolderPatchesCollection.state).filter(
-      (f) => f.parentId == node.id,
-    );
-    children.forEach((child) => folderDeleteOne(child));
-    tagFolderPatchesCollection.remove(node.id);
+  function getChildTags(nodes: ClosureTableNode[]): TagOptionsInput[] {
+    return nodes.flatMap((n) => {
+      let childTags = Object.values(tagPatchesCollection.state).filter(
+        (f) => f.folderId == n.id,
+      );
+      let childFolders = Object.values(tagFolderPatchesCollection.state).filter(
+        (f) => f.parentId == n.id,
+      );
+      return [...childTags, ...getChildTags(childFolders)];
+    });
   }
 
+  function getChildFolders(nodes: ClosureTableNode[]): ClosureTableNode[] {
+    return nodes.flatMap((n) => {
+      let childFolders = Object.values(tagFolderPatchesCollection.state).filter(
+        (f) => f.parentId == n.id,
+      );
+      return [...childFolders, ...getChildFolders(childFolders)];
+    });
+  }
+
+  // delete all tags and folders inside the parent folder
   function foldersDelete(nodes: ClosureTableNode[]) {
-    nodes.forEach((n) => folderDeleteOne(n));
+    let childTags = getChildTags(nodes);
+    let childFolders = getChildFolders(nodes);
+
+    undoManager.beginTransaction();
+    tagPatchesCollection.removeMany(childTags.map((t) => t.id));
+    tagFolderPatchesCollection.removeMany([
+      ...childFolders.map((f) => f.id),
+      ...nodes.map((n) => n.id),
+    ]);
+    undoManager.endTransaction();
   }
 
   function foldersCut(nodes: ClosureTableNode[]) {
@@ -217,11 +240,11 @@
 
   function tagsCut(tags: TagOptionsInput[]) {
     copyToClipboard(JSON.stringify(tags));
-    tags.forEach((t) => tagPatchesCollection.remove(t.id));
+    tagPatchesCollection.removeMany(tags.map((t) => t.id));
   }
 
   function tagsDelete(tags: TagOptionsInput[]) {
-    tags.forEach((t) => tagPatchesCollection.remove(t.id));
+    tagPatchesCollection.removeMany(tags.map((t) => t.id));
   }
 
   // ── Global tree keyboard handler ──────────────────────
@@ -253,7 +276,13 @@
     }
 
     if (e.key === "c" && e.ctrlKey) {
-      let json = JSON.stringify([...tags, ...folders]);
+      // copy selected but also if the selected folder has child tags or folders copy them too
+      let json = JSON.stringify([
+        ...tags,
+        ...folders,
+        ...getChildFolders(folders),
+        ...getChildTags(folders),
+      ]);
       copyToClipboard(json);
     }
   }
@@ -383,14 +412,14 @@
 
   // ── Paste ─────────────────────────────────────────────
 
-  async function handlePaste(
-    e: ClipboardEvent,
+  async function readClipboard(): Promise<string | null> {
+    return navigator.clipboard.readText();
+  }
+
+  function handlePasteText(
+    text: string,
     parentNode: ClosureTableNode | undefined,
   ) {
-    const text = e.clipboardData?.getData("text/plain");
-    e.stopPropagation();
-    if (!text) return;
-
     let json = tryCatch(JSON.parse, text);
     if (json.error) {
       throw Error(`handlePaste() `, { cause: json.error });
@@ -402,6 +431,8 @@
         `handlePaste() pasted data is not an array with at least one element ${text}`,
       );
 
+    // if multiple tags or folders added just create one history entry
+    undoManager.beginTransaction();
     for (const data of json.data) {
       let tagResult = tryCatch(z_shared_insertTag.parse, data);
       let folderResult = tryCatch(z_shared_insertTagFolder.parse, data);
@@ -437,6 +468,17 @@
         });
       }
     }
+    undoManager.endTransaction();
+  }
+
+  async function handlePaste(
+    e: ClipboardEvent,
+    parentNode: ClosureTableNode | undefined,
+  ) {
+    const text = e.clipboardData?.getData("text/plain");
+    e.stopPropagation();
+    if (!text) return;
+    handlePasteText(text, parentNode);
   }
 </script>
 
@@ -520,7 +562,7 @@
           <TagInput
             id={node.id}
             label=""
-            clazz="py-0 px-1 border-none bg-inherit"
+            class="py-0 px-1 border-none w-20"
             onclick={(ev) => ev.stopPropagation()}
             onkeydown={(ev) => ev.stopPropagation()}
           />
@@ -645,6 +687,27 @@
                   </button>
                 </Menu.ItemText>
               </Menu.Item>
+              <Menu.Item
+                value="paste"
+                disabled={contextMenuFolders.length === 0 &&
+                  contextMenuTags.length === 0}
+              >
+                <Menu.ItemText class="w-full">
+                  <button
+                    class="flex items-center gap-2 w-full"
+                    disabled={contextMenuFolders.length === 0 &&
+                      contextMenuTags.length === 0}
+                    onclick={async () => {
+                      const text = await readClipboard();
+                      if (text) handlePasteText(text, contextMenuFolders[0]);
+                    }}
+                  >
+                    <Copy class="size-4" />
+                    <span>Paste</span>
+                    <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
+                  </button>
+                </Menu.ItemText>
+              </Menu.Item>
               <Menu.Separator />
               <Menu.Item
                 value="delete"
@@ -684,3 +747,16 @@
 
   {@render children?.()}
 </div>
+
+<style>
+  :global(
+    [data-scope="tree-view"] [data-part="item"][data-selected],
+    [data-scope="tree-view"] [data-part="branch-control"][data-selected]
+  ) {
+    background-color: light-dark(
+      var(--color-neutral-300),
+      var(--color-neutral-800)
+    );
+    color: light-dark(var(--color-neutral-000), var(--color-neutral-900));
+  }
+</style>

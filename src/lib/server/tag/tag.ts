@@ -1,3 +1,4 @@
+import { publishTagValue } from "../../../live/tags";
 import { logger } from "../pino/logger";
 import {
   OPCUAServer,
@@ -33,8 +34,11 @@ import { attempt } from "../../../lib/util/attempt";
 import vm from "node:vm";
 import { Z_BaseTypes, Z_TagOptionsResolved } from "../../client/tag/zodSchema";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
-import { z_insertTag } from "../sqlite/tables";
+import { tags, z_insertTag } from "../sqlite/tables";
+import { getTableDefaults } from "$lib/util/drizzle";
 import { tryCatch } from "$lib/util/tryCatch";
+
+const tagTableDefaults = getTableDefaults(tags);
 
 export type TagOptionsInput = z.input<typeof z_insertTag>;
 
@@ -355,18 +359,14 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     // silence error for not difinitvly being assigned in the constructor
     this.options = options;
 
-    console.debug(options);
-
     // parse for any errors but also to get default values
-    const parsed = tryCatch(z_insertTag.parse, options);
-    if (parsed.error) {
+    const parsed = z_insertTag.safeParse({ ...tagTableDefaults, ...options });
+    if (!parsed.success) {
       this.error = new TagError("", parsed.error.message);
       console.debug("error parsing");
       console.error(parsed.error);
       return;
     }
-
-    console.debug(parsed.data);
 
     this.options = parsed.data;
 
@@ -504,7 +504,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
           set: (variant: Variant) => {
             try {
               this.value = this.validate(variant.value);
-              this.triggerEmit();
+              publishTagValue(this);
               return { statusCode: StatusCodes.Good };
             } catch (error) {
               logger.error(
@@ -560,7 +560,9 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       StatusCodes.UncertainInitialValue,
     ); // update tag value when created if it is there, if not set to inital value
 
-    logger.debug(`[Tag] created new tag ${this.id} = ${this.value}`);
+    logger.debug(
+      `[Tag] created new tag ${this.id}  ${this.name} = ${this.value}`,
+    );
   }
 
   [Symbol.dispose]() {

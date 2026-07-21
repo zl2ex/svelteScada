@@ -21,6 +21,7 @@ import { logger } from "../../pino/logger";
 import { attempt } from "../../../../lib/util/attempt";
 import { DriverStatusError } from "../driver";
 import { gatewayOpcua } from "../../../../hooks.server";
+import { publishTagValue } from "../../../../live/tags";
 
 type ModbusRegisterType = "hr" | "ir" | "co" | "di";
 
@@ -184,7 +185,9 @@ export class ModbusTCPDriver {
         status,
       );
       //sub.sub.update(sub.value)
-      sub.tags.forEach((tag) => tag.triggerEmit()); // emit new status to client
+      sub.tags.forEach((tag) => {
+        publishTagValue(tag);
+      });
     }
   }
 
@@ -216,7 +219,7 @@ export class ModbusTCPDriver {
   subscribeByTag(tag: Tag<any>, parent?: NodeIdLike): UAVariable | undefined {
     if (!tag.resolvedOptions.nodeId) {
       throw new Error(
-        `[ModbusTCPDriver] subscribeByTag() no node id provided for tag ${tag.path}`,
+        `[ModbusTCPDriver] subscribeByTag() no node id provided for tag ${tag.id}`,
       );
     }
     const nodeId = tag.resolvedOptions.nodeId;
@@ -244,14 +247,14 @@ export class ModbusTCPDriver {
     const monitoredCount = this.subscriptions[nodeId]?.tags.size;
     // return varibleNode if multiple tags reference the same address
     if (monitoredCount >= 1) {
-      this.subscriptions[nodeId].tags.set(tag.path, tag);
+      this.subscriptions[nodeId].tags.set(tag.id, tag);
       logger.trace(
-        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.resolvedOptions.nodeId} returning varible already set up to tag ${tag.path}`,
+        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.resolvedOptions.nodeId} returning varible already set up to tag ${tag.id}`,
       );
 
       if (this.subscriptions[nodeId].opcuaDataType !== tag.opcuaDataType) {
         throw new Error(
-          `[ModbusTcpDriver] subscribeByTag() varible tag ${tag.path} dataType ${this.subscriptions[nodeId].dataType} is not equal to ${tag.options.dataType}`,
+          `[ModbusTcpDriver] subscribeByTag() varible tag ${tag.id} dataType ${this.subscriptions[nodeId].dataType} is not equal to ${tag.options.dataType}`,
         );
       }
       return this.subscriptions[nodeId].driverOpcuaVarible;
@@ -293,7 +296,7 @@ export class ModbusTCPDriver {
       swapWords: parsed.swapWords,
       arrayLength: parsed.arrayLength,
       bit: parsed.bit,
-      tags: new Map().set(tag.path, tag),
+      tags: new Map().set(tag.id, tag),
       value: typeHandlers[parsed.dataType].default,
       dataView: new DataView(new ArrayBuffer(0)),
     };
@@ -339,7 +342,7 @@ export class ModbusTCPDriver {
   unsubscribeByTag(tag: Tag<any>) {
     if (!tag.resolvedOptions.nodeId) return;
 
-    this.subscriptions[tag.resolvedOptions.nodeId].tags.delete(tag.path);
+    this.subscriptions[tag.resolvedOptions.nodeId].tags.delete(tag.id);
     if (this.subscriptions[tag.resolvedOptions.nodeId].tags.size > 0) {
       logger.debug(
         `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId} monitored count ${this.subscriptions[tag.resolvedOptions.nodeId].tags.size} not removing varible node`,
@@ -508,7 +511,7 @@ export class ModbusTCPDriver {
                 oldValue.statusCode.isBad()
               ) {
                 logger.trace(
-                  `[ModbusTCPDriver] poll() updated varible ${tag.path} = ${decoded.data}`,
+                  `[ModbusTCPDriver] poll() updated varible ${tag.id} = ${decoded.data}`,
                 );
 
                 sub.value = decoded.data;
@@ -522,7 +525,7 @@ export class ModbusTCPDriver {
                 tag.error = undefined;
               }
             } else {
-              const errorMessage = `[ModbusTCPDriver] poll() driverOpcuaVarible.addressSpace undefined for tag ${tag.path}`;
+              const errorMessage = `[ModbusTCPDriver] poll() driverOpcuaVarible.addressSpace undefined for tag ${tag.id}`;
               tag.error = new TagError("nodeId", errorMessage);
               logger.error(errorMessage);
             }

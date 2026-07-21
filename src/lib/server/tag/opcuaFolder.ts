@@ -1,14 +1,20 @@
 import type { OPCUAServer, UAObject, AddressSpace } from "node-opcua";
 import { logger } from "../pino/logger";
+import type { ClosureTableNode } from "../sqlite/util/tagClosureTable";
 
 export class OpcuaFolder {
+  node: ClosureTableNode;
+  // id: string;
+  //   // name: string;
+  // parentId: string | null = null;
   uaObject: UAObject;
 
   constructor(
     private addressSpace: AddressSpace,
     parent: UAObject,
-    node: { id: string; name: string },
+    node: ClosureTableNode,
   ) {
+    this.node = node;
     const namespace = addressSpace.getOwnNamespace();
     this.uaObject = namespace.addObject({
       organizedBy: parent,
@@ -18,11 +24,14 @@ export class OpcuaFolder {
   }
 
   rename(newName: string) {
-    (this.uaObject as any).browseName.value = newName;
+    this.node.name = newName;
+    this.uaObject.browseName.name = newName;
   }
 
   dispose() {
-    logger.trace(`[OpcuaFolder] dispose() ${this.uaObject.browseName.toString()}`);
+    logger.trace(
+      `[OpcuaFolder] dispose() ${this.uaObject.browseName.toString()}`,
+    );
     this.uaObject.removeAllListeners();
 
     const parents = this.uaObject.findReferences("HasComponent", false);

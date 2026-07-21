@@ -4,6 +4,7 @@ import { logger } from "$lib/server/pino/logger";
 import { DeviceManager } from "$lib/server/drivers/driver";
 import { UdtManager } from "$lib/server/tag/udtManager";
 import { TagManager } from "$lib/server/tag/tagManager";
+import { FolderManager } from "$lib/server/tag/folderManager";
 import { OpcuaServerDriver } from "$lib/server/drivers/opcua/opcuaServer";
 import { building } from "$app/environment";
 
@@ -22,6 +23,7 @@ Object.defineProperty(Error.prototype, "toJSON", {
 
 export const deviceManager = new DeviceManager();
 export const udtManager = new UdtManager();
+export const folderManager = new FolderManager();
 export const tagManager = new TagManager();
 export const gatewayOpcua: OpcuaServerDriver =
   (globalThis as any).__gatewayOpcua ??
@@ -30,25 +32,22 @@ export const gatewayOpcua: OpcuaServerDriver =
 export const init: ServerInit = async () => {
   logger.debug("[hooks.server.ts] init() hook");
 
-  if (building) {
-    console.debug("[hooks.server.ts] init() vite building - returning");
-    return;
-  }
-
-  if (gatewayOpcua.server) {
-    console.debug(
-      "[hooks.server.ts] init() gatewayOpcua already started - returning",
-    );
-    return;
-  }
-
   await gatewayOpcua.start();
 
+  if (!gatewayOpcua.server) {
+    throw Error(`[hooks.server.ts] init() gatewayOpcua.server not initalised`);
+  }
+
   deviceManager.initOpcuaServer(gatewayOpcua.server);
-  tagManager.initOpcuaServer(gatewayOpcua.server);
+  tagManager.initOpcuaServer(gatewayOpcua.server, folderManager);
+  folderManager.initOpcuaServer(
+    gatewayOpcua.server,
+    gatewayOpcua.server.engine.addressSpace?.rootFolder,
+  );
 
   await deviceManager.loadAllFromDb();
   await udtManager.loadAllFromDb();
+  await folderManager.loadAllFromDb();
   await tagManager.loadAllFromDb();
 };
 

@@ -9,7 +9,8 @@
     "start": "ORIGIN=http://localhost:3000 npx tsx ./src/server/index.ts",
     "preview": "vite preview --host",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "code-server": "code-server --bind-addr 0.0.0.0:8080 ~/Documents/sandbox/svelteScada/"
   },
   "devDependencies": {
     "@lucide/svelte": "^1.21.0",

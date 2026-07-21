@@ -28,11 +28,11 @@ export class ClosureTable {
     this.tagTable = tagTable;
   }
 
-  add(node: TagFolderSelect, parentId: string | null = null) {
+  add(node: ClosureTableNode) {
     return db.transaction((tx) => {
       const [folder] = tx.insert(this.items).values(node).returning().all();
 
-      if (parentId === null) {
+      if (node.parentId === null) {
         tx.insert(this.paths)
           .values({ parent: folder.id, child: folder.id, depth: 0 })
           .run();
@@ -40,7 +40,7 @@ export class ClosureTable {
         const parents = tx
           .select()
           .from(this.paths)
-          .where(eq(this.paths.child, parentId))
+          .where(eq(this.paths.child, node.parentId))
           .all();
 
         tx.insert(this.paths)
@@ -55,7 +55,10 @@ export class ClosureTable {
           .run();
       }
 
-      return folder;
+      return {
+        ...folder,
+        parentId: node.parentId,
+      };
     });
   }
 

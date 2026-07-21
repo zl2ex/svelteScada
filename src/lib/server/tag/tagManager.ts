@@ -1,50 +1,44 @@
-import type { OPCUAServer, UAObject } from "node-opcua";
-import { TagNode } from "../../client/tag/clientTag.svelte";
+import type { OPCUAServer } from "node-opcua";
 import { logger } from "../pino/logger";
 import { Tag, type TagOptionsInput } from "./tag";
 import { OpcuaFolder } from "./opcuaFolder";
 import { db } from "../sqlite/db";
 import { tables } from "../sqlite/tables";
-import { tagFoldersClosureTable } from "../sqlite/util/tagClosureTable";
 import { eq } from "drizzle-orm";
+import type { FolderManager } from "./folderManager";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
-  rootFolder?: UAObject;
-  opcuaFolders: Map<string, OpcuaFolder> = new Map();
   private tags: Map<string, Tag<any>> = new Map();
   private pathToId: Map<string, string> = new Map();
+  private folderManager: FolderManager | undefined;
 
   constructor() {}
 
-  initOpcuaServer(opcuaServer: OPCUAServer) {
+  initOpcuaServer(opcuaServer: OPCUAServer, folderManager: FolderManager) {
     this.opcuaServer = opcuaServer;
-    this.rootFolder = this.opcuaServer.engine.addressSpace
-      ?.getOwnNamespace()
-      .addObject({
-        organizedBy: this.opcuaServer.engine.addressSpace?.rootFolder.objects,
-        browseName: "Tags",
-      });
-  }
-
-  getParentOpcuaFolder(
-    folderId: string | null | undefined,
-  ): OpcuaFolder | undefined {
-    if (!folderId) return undefined;
-    return this.opcuaFolders.get(folderId);
+    this.folderManager = folderManager;
   }
 
   async createTag(
     opts: TagOptionsInput,
     writeToDb: boolean = true,
   ): Promise<Tag<any>> {
-    if (!this.opcuaServer || !this.rootFolder) {
-      throw new Error(
+    if (!this.opcuaServer || !this.folderManager) {
+      throw Error(
         `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
     }
 
-    const opcuaFolder = this.getParentOpcuaFolder(opts.folderId);
+    //this.folderManager.ensureFolderExists(opts.folderId);
+    const opcuaFolder =
+      this.folderManager.get(opts.folderId) ??
+      this.folderManager.createFolder({
+        id: "stub",
+        name: "stub",
+        parentId: null,
+      });
+
     const tag = new Tag(this.opcuaServer, opcuaFolder, opts);
 
     const path = opts.name;
@@ -64,7 +58,9 @@ export class TagManager {
     this.tags.set(tag.id, tag);
     this.pathToId.set(path, tag.id);
 
-    logger.info(`[TagManager] added tag ${tag.id}`);
+    logger.info(
+      `[TagManager] added tag ${tag.id}  ${tag.name}  into folder ${opcuaFolder.node.name}`,
+    );
 
     return tag;
   }
@@ -87,6 +83,10 @@ export class TagManager {
     return Array.from(this.tags.values());
   }
 
+  idToPath(findId: string) {
+    return this.pathToId.entries().find(([id, path]) => id == findId)?.[1];
+  }
+
   // -------------------------
   // Update Functions
   // -------------------------
@@ -95,7 +95,7 @@ export class TagManager {
     id: string,
     tagUpdates: TagOptionsInput,
   ): Promise<Tag<any> | null> {
-    if (!this.opcuaServer || !this.rootFolder) {
+    if (!this.opcuaServer) {
       throw new Error(
         `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
@@ -104,7 +104,7 @@ export class TagManager {
     this.tags.delete(id);
     const oldPath = [...this.pathToId.entries()].find(([, v]) => v === id)?.[0];
     if (oldPath) this.pathToId.delete(oldPath);
-    const opcuaFolder = this.getParentOpcuaFolder(tagUpdates.folderId);
+    const opcuaFolder = this.folderManager?.getOpcuaFolder(tagUpdates.folderId);
     const updatedTag = new Tag(this.opcuaServer, opcuaFolder, tagUpdates);
 
     const dbValues = {
@@ -181,29 +181,12 @@ export class TagManager {
   // -------------------------
 
   async loadAllFromDb() {
-    // Load folders and create OpcuaFolder instances
-    const folders = tagFoldersClosureTable.getAll();
-    for (const folder of folders) {
-      const parent = folder.parentId
-        ? this.opcuaFolders.get(folder.parentId)?.uaObject
-        : this.rootFolder;
-      if (!parent) continue;
-      const opcuaFolder = new OpcuaFolder(
-        this.opcuaServer!.engine.addressSpace!,
-        parent,
-        folder,
-      );
-      this.opcuaFolders.set(folder.id, opcuaFolder);
-    }
-    logger.info(`[TagManager] loaded ${folders.length} folders to OPC UA`);
-
-    // Load tags
     const tagOptions = db.select().from(tables.tags).all();
     for (const tagOpt of tagOptions) {
       if (this.tags.has(tagOpt.id)) continue;
 
-      const opcuaFolder = this.getParentOpcuaFolder(tagOpt.folderId);
-      const newTag = new Tag(this.opcuaServer, opcuaFolder, tagOpt);
+      const opcuaFolder = this.folderManager.get(tagOpt.folderId);
+      const newTag = new Tag(this.opcuaServer!, opcuaFolder, tagOpt);
       this.tags.set(newTag.id, newTag);
       this.pathToId.set(tagOpt.name, newTag.id);
     }

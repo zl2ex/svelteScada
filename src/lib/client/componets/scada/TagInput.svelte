@@ -16,10 +16,10 @@
     id?: string;
     path?: string;
     label?: string;
-    clazz?: string;
+    class?: string;
   }
 
-  let { id, path, label, clazz, ...rest }: Props = $props();
+  let { id, path, label, class: clazz, ...rest }: Props = $props();
 
   let lookup = $derived.by(() => id ?? path);
 

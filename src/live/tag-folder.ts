@@ -1,9 +1,7 @@
-import {
-  tagFoldersClosureTable,
-  type ClosureTableNode,
-} from "$lib/server/sqlite/util/tagClosureTable";
+import { type ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
 import { guard, live, LiveError } from "svelte-realtime/server";
 import type { TravelPatches } from "travels";
+import { folderManager } from "../hooks.server";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -33,23 +31,22 @@ export const applyTagFolderPatches = live(
       const id = patch.path[0].toString();
       const value = patch.value as ClosureTableNode;
       if (patch.op == "add") {
-        tagFoldersClosureTable.add(value, value.parentId);
+        folderManager.createFolder(value);
       }
       if (patch.op == "remove") {
-        tagFoldersClosureTable.deleteRecursive(id);
+        folderManager.deleteFolder(id);
       }
       if (patch.op == "replace") {
-        let node = tagFoldersClosureTable.get(id);
-        if (!node) throw Error(`cannot find node with id ${id} in table`);
+        let opcuaFolder = folderManager.get(id);
+        if (!opcuaFolder) throw Error(`cannot find node with id ${id} in table`);
 
         //only move if it has actually moved
-        if (node.parentId !== value.parentId) {
-          //if (!value.parentId) throw Error(`cannot move node ${id} to undefined parent`);
-          tagFoldersClosureTable.move(id, value.parentId ?? undefined);
+        if (opcuaFolder.node.parentId !== value.parentId) {
+          folderManager.moveFolder(id, value.parentId ?? undefined);
         }
 
-        if (node.name !== value.name) {
-          tagFoldersClosureTable.rename(id, value.name);
+        if (opcuaFolder.node.name !== value.name) {
+          folderManager.renameFolder(id, value.name);
         }
       }
     }

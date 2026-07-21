@@ -141,6 +141,34 @@ export class PatchCollection<T extends Identifiable> {
     }, `Delete ${id}`);
   }
 
+  addMany(items: T[]) {
+    this.mutateStateWithHistory(
+      (draft) => {
+        items.forEach((item) => (draft[item.id] = item));
+      },
+      `Add ${items.forEach((item) => item.id)}`,
+    );
+  }
+
+  updateMany(items: { id: string; changes: Partial<Omit<T, "id">> }[]) {
+    this.mutateStateWithHistory(
+      (draft) => {
+        // always send the entire object to the server for flat ["id"] = {entire object}
+        // consistency so no properties are missing
+        items.forEach(
+          (item) => (draft[item.id] = { ...draft[item.id], ...item.changes }),
+        );
+      },
+      `Edit ${items.forEach((item) => item.id)}`,
+    );
+  }
+
+  removeMany(ids: string[]) {
+    this.mutateStateWithHistory((draft) => {
+      ids.forEach((id) => delete draft[id]);
+    }, `Delete ${ids}`);
+  }
+
   undo() {
     this.travels.back();
   }
