@@ -1,5 +1,5 @@
 import { users } from "./users";
-import { tags, z_insertTag } from "./tags";
+import { tags } from "./tags";
 import { devices } from "./devices";
 import { displays } from "./displays";
 import { user_permissions } from "./user_permissions";

@@ -1,4 +1,4 @@
-import type { OPCUAServer, UAObject, AddressSpace } from "node-opcua";
+import type { UAObject, AddressSpace } from "node-opcua";
 import { logger } from "../pino/logger";
 import type { ClosureTableNode } from "../sqlite/util/tagClosureTable";
 
@@ -16,10 +16,17 @@ export class OpcuaFolder {
   ) {
     this.node = node;
     const namespace = addressSpace.getOwnNamespace();
+    const nodeId = `s=folder_${node.id}`;
+
+    const existing = addressSpace.findNode(nodeId);
+    if (existing) {
+      addressSpace.deleteNode(existing);
+    }
+
     this.uaObject = namespace.addObject({
       organizedBy: parent,
       browseName: node.name,
-      nodeId: `s=folder_${node.id}`,
+      nodeId,
     });
   }
 

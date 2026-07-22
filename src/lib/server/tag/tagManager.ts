@@ -20,51 +20,6 @@ export class TagManager {
     this.folderManager = folderManager;
   }
 
-  async createTag(
-    opts: TagOptionsInput,
-    writeToDb: boolean = true,
-  ): Promise<Tag<any>> {
-    if (!this.opcuaServer || !this.folderManager) {
-      throw Error(
-        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
-      );
-    }
-
-    //this.folderManager.ensureFolderExists(opts.folderId);
-    const opcuaFolder =
-      this.folderManager.get(opts.folderId) ??
-      this.folderManager.createFolder({
-        id: "stub",
-        name: "stub",
-        parentId: null,
-      });
-
-    const tag = new Tag(this.opcuaServer, opcuaFolder, opts);
-
-    const path = opts.name;
-
-    if (writeToDb) {
-      if (this.tags.has(tag.id)) {
-        throw new Error(
-          `[TagManager] createTag() Tag already exists at ${tag.id}`,
-        );
-      }
-
-      db.insert(tables.tags)
-        .values(tag.options as any)
-        .run();
-    }
-
-    this.tags.set(tag.id, tag);
-    this.pathToId.set(path, tag.id);
-
-    logger.info(
-      `[TagManager] added tag ${tag.id}  ${tag.name}  into folder ${opcuaFolder.node.name}`,
-    );
-
-    return tag;
-  }
-
   // -------------------------
   // Read Helpers
   // -------------------------
@@ -84,96 +39,135 @@ export class TagManager {
   }
 
   idToPath(findId: string) {
-    return this.pathToId.entries().find(([id, path]) => id == findId)?.[1];
+    return this.pathToId.entries().find(([id, path]) => id == findId)?.[0];
   }
 
   // -------------------------
   // Update Functions
   // -------------------------
 
-  async updateTag(
-    id: string,
-    tagUpdates: TagOptionsInput,
-  ): Promise<Tag<any> | null> {
+  async createTag(
+    opts: TagOptionsInput,
+    writeToDb: boolean = true,
+  ): Promise<Tag<any>> {
+    if (!this.opcuaServer || !this.folderManager) {
+      throw Error(
+        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
+      );
+    }
+
+    const newFolderId = opts.folderId ?? crypto.randomUUID();
+    const opcuaFolder =
+      this.folderManager.get(opts.folderId) ??
+      this.folderManager.createFolder({
+        id: newFolderId,
+        name: "__PLACEHOLDER__",
+        parentId: null,
+      });
+
+    // reference new folder if we had to create a placeholder
+    opts.folderId = newFolderId;
+
+    const tag = new Tag(this.opcuaServer, opcuaFolder, opts);
+    const path = opts.name;
+
+    if (writeToDb) {
+      if (this.tags.has(tag.id)) {
+        tag.dispose();
+        throw new Error(
+          `[TagManager] createTag() Tag already exists at ${tag.id}`,
+        );
+      }
+
+      try {
+        db.insert(tables.tags)
+          .values(tag.options as any)
+          .run();
+      } catch (e) {
+        tag.dispose();
+        throw e;
+      }
+    }
+
+    this.tags.set(tag.id, tag);
+    this.pathToId.set(path, tag.id);
+
+    logger.info(
+      `[TagManager] added tag ${tag.id}  ${tag.name}  into folder ${opcuaFolder.node.name}`,
+    );
+
+    return tag;
+  }
+
+  async updateTag(id: string, tagUpdates: TagOptionsInput) {
     if (!this.opcuaServer) {
       throw new Error(
         `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
     }
 
-    this.tags.delete(id);
-    const oldPath = [...this.pathToId.entries()].find(([, v]) => v === id)?.[0];
-    if (oldPath) this.pathToId.delete(oldPath);
-    const opcuaFolder = this.folderManager?.getOpcuaFolder(tagUpdates.folderId);
-    const updatedTag = new Tag(this.opcuaServer, opcuaFolder, tagUpdates);
-
-    const dbValues = {
-      name: updatedTag.options.name,
-      dataType: (updatedTag.options as any).dataType,
-      nodeId: (updatedTag.options as any).nodeId ?? null,
-      writeable: (updatedTag.options as any).writeable ?? true,
-      exposeOverOpcua: (updatedTag.options as any).exposeOverOpcua ?? true,
-      parameters: (updatedTag.options as any).parameters ?? null,
-    };
-
-    if (id) {
-      db.update(tables.tags).set(dbValues).where(eq(tables.tags.id, id)).run();
-    } else {
-      const newId = crypto.randomUUID();
-      db.insert(tables.tags)
-        .values({ id: newId, ...dbValues } as any)
-        .run();
+    if (!this.folderManager) {
+      throw new Error(
+        `[TagManager] updateTag() folderManager not initalised, please call initOpcuaServer() first`,
+      );
     }
 
+    const oldTag = this.tags.get(id);
+    const oldOptions = oldTag?.options;
+    const oldPath = this.idToPath(id);
+
+    if (oldTag) {
+      oldTag.dispose();
+      this.tags.delete(id);
+      if (oldPath) this.pathToId.delete(oldPath);
+    }
+
+    const opcuaFolder = this.folderManager!.get(tagUpdates.folderId)!;
+    const updatedTag = new Tag(this.opcuaServer, opcuaFolder, tagUpdates);
     this.tags.set(updatedTag.id, updatedTag);
     this.pathToId.set(tagUpdates.name, updatedTag.id);
 
+    try {
+      db.update(tables.tags).set(tagUpdates).where(eq(tables.tags.id, id)).run();
+    } catch (e) {
+      updatedTag.dispose();
+      this.tags.delete(id);
+      this.pathToId.delete(tagUpdates.name);
+
+      if (oldOptions) {
+        const restoredFolder = this.folderManager!.get(oldOptions.folderId)!;
+        const restoredTag = new Tag(
+          this.opcuaServer,
+          restoredFolder,
+          oldOptions,
+        );
+        this.tags.set(restoredTag.id, restoredTag);
+        this.pathToId.set(oldOptions.name, restoredTag.id);
+      }
+      throw e;
+    }
+
     return updatedTag;
-  }
-
-  // -------------------------
-  // Move Functions
-  // -------------------------
-
-  async moveTag(
-    oldPath: string,
-    newParentPath: string,
-    newName?: string,
-  ): Promise<Tag<any> | null> {
-    const id = this.pathToId.get(oldPath);
-    if (!id) return null;
-    const oldTag = this.tags.get(id);
-    if (!(oldTag instanceof Tag)) return null;
-
-    const name = newName ?? oldTag.name;
-
-    this.pathToId.delete(oldPath);
-    oldTag.name = name;
-    this.pathToId.set(name, id);
-
-    return oldTag;
   }
 
   // -------------------------
   // Delete Functions
   // -------------------------
 
-  async deleteTag(id: string): Promise<boolean> {
+  async deleteTag(id: string) {
     logger.trace(`[TagManager] deleteTag() ${id}`);
-    if (id) {
-      const result = db.delete(tables.tags).where(eq(tables.tags.id, id)).run();
-      if (result.changes === 0) return false;
-    }
-
-    const oldPath = [...this.pathToId.entries()].find(([, v]) => v === id)?.[0];
-    if (oldPath) this.pathToId.delete(oldPath);
 
     const tag = this.tags.get(id);
+    const oldPath = this.idToPath(id);
+
     if (tag) {
       tag.dispose();
       this.tags.delete(id);
+      if (oldPath) this.pathToId.delete(oldPath);
     }
-    return true;
+
+    const result = db.delete(tables.tags).where(eq(tables.tags.id, id)).run();
+    return result.changes > 0;
   }
 
   // -------------------------
@@ -181,12 +175,23 @@ export class TagManager {
   // -------------------------
 
   async loadAllFromDb() {
+    if (!this.opcuaServer) {
+      throw new Error(
+        `[TagManager] loadAllFromDb() opcuaServer not initalised, please call initOpcuaServer() first`,
+      );
+    }
+
+    if (!this.folderManager) {
+      throw new Error(
+        `[TagManager] loadAllFromDb() folderManager not initalised, please call initOpcuaServer() first`,
+      );
+    }
     const tagOptions = db.select().from(tables.tags).all();
     for (const tagOpt of tagOptions) {
       if (this.tags.has(tagOpt.id)) continue;
 
       const opcuaFolder = this.folderManager.get(tagOpt.folderId);
-      const newTag = new Tag(this.opcuaServer!, opcuaFolder, tagOpt);
+      const newTag = new Tag(this.opcuaServer, opcuaFolder, tagOpt);
       this.tags.set(newTag.id, newTag);
       this.pathToId.set(tagOpt.name, newTag.id);
     }

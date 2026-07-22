@@ -24,10 +24,11 @@ export const applyTagFolderPatches = live(
 
     for (const patch of patches) {
       console.debug(patch);
-      if (patch.path.length !== 1)
+      if (patch.path.length !== 1) {
         throw Error(
           `applyTagFolderPatches() must update the entire object from the front end not single properties ${patch}`,
         );
+      }
       const id = patch.path[0].toString();
       const value = patch.value as ClosureTableNode;
       if (patch.op == "add") {
@@ -38,7 +39,8 @@ export const applyTagFolderPatches = live(
       }
       if (patch.op == "replace") {
         let opcuaFolder = folderManager.get(id);
-        if (!opcuaFolder) throw Error(`cannot find node with id ${id} in table`);
+        if (!opcuaFolder)
+          throw Error(`cannot find node with id ${id} in table`);
 
         //only move if it has actually moved
         if (opcuaFolder.node.parentId !== value.parentId) {

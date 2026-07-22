@@ -33,15 +33,19 @@ export interface PatchCollectionOptions<T extends Identifiable> {
   // Called after every tracked mutation (add/update/remove/mutateStateWithHistory).
   // Used by UnifiedUndoManager to record entries on the unified timeline.
   onMutation?: () => void;
+  // Called when a server sync fails for one or more patches.
+  onError?: (error: Error) => void;
 }
 
 export class PatchCollection<T extends Identifiable> {
   state = $state<Record<string, T>>({});
+  syncError = $state<string | null>(null);
 
   private travels: Travels<Record<string, T>>;
   private prevPosition: number;
   private applyPatch: PatchCollectionOptions<T>["applyPatch"];
   private onMutation?: () => void;
+  private onError?: (error: Error) => void;
   private unsubscribeTravels?: () => void;
   private unsubscribePatches?: () => void;
 
@@ -55,6 +59,7 @@ export class PatchCollection<T extends Identifiable> {
     this.prevPosition = this.travels.getPosition();
     this.applyPatch = options.applyPatch;
     this.onMutation = options.onMutation;
+    this.onError = options.onError;
 
     this.unsubscribeTravels = this.travels.subscribe(
       (_state, patches, position) => {
@@ -91,10 +96,17 @@ export class PatchCollection<T extends Identifiable> {
     });
   }
 
-  private sendOps(ops: Ops, inverseOps: Ops) {
-    this.applyPatch(ops).catch(() => {
-      apply(this.state, inverseOps, { mutable: true }); // rollback on failure
-    });
+  private async sendOps(ops: Ops, inverseOps: Ops) {
+    for (let i = 0; i < ops.length; i++) {
+      try {
+        await this.applyPatch([ops[i]]);
+        this.syncError = null;
+      } catch (e) {
+        apply(this.state, [inverseOps[i]], { mutable: true });
+        this.syncError = (e as Error).message;
+        this.onError?.(e as Error);
+      }
+    }
   }
 
   // Generic escape hatch: tracked mutation, goes through Travels exactly

@@ -57,6 +57,7 @@
       },
       maxHistory: 50,
       onMutation: () => undoManager.recordMutation("folders"),
+      onError: (e) => console.error("Folder sync error:", e),
     }),
   );
 
@@ -70,6 +71,7 @@
       },
       maxHistory: 50,
       onMutation: () => undoManager.recordMutation("tags"),
+      onError: (e) => console.error("Tag sync error:", e),
     }),
   );
 
@@ -572,7 +574,19 @@
   </TreeView.NodeProvider>
 {/snippet}
 
-<div class="flex">
+<div class="flex flex-col">
+  {#if tagFolderPatchesCollection.syncError || tagPatchesCollection.syncError}
+    <div class="bg-error-500 text-white text-xs px-2 py-1 flex items-center justify-between">
+      <span>Sync failed: {tagFolderPatchesCollection.syncError || tagPatchesCollection.syncError}</span>
+      <button
+        class="ml-2 font-bold"
+        onclick={() => {
+          tagFolderPatchesCollection.syncError = null;
+          tagPatchesCollection.syncError = null;
+        }}
+      >&times;</button>
+    </div>
+  {/if}
   <div class="text-xs w-100">
     <svelte:boundary>
       <Menu

@@ -51,28 +51,45 @@ export class FolderManager {
   // ── DB + OPC UA CRUD ────────────────────────────────
 
   createFolder(newNode: ClosureTableNode) {
-    const node = tagFoldersClosureTable.add(newNode);
-    const folder = this.createOpcuaFolder(node);
+    const folder = this.createOpcuaFolder(newNode);
+    try {
+      tagFoldersClosureTable.add(newNode);
+    } catch (e) {
+      this.disposeOpcuaFolder(newNode.id);
+      throw e;
+    }
     logger.info(`[FolderManager] created folder ${folder?.node.id}`);
     return folder;
   }
 
   deleteFolder(id: string) {
-    tagFoldersClosureTable.deleteRecursive(id);
     this.disposeOpcuaFolder(id);
+    tagFoldersClosureTable.deleteRecursive(id);
     logger.info(`[FolderManager] deleted folder ${id}`);
   }
 
   renameFolder(id: string, newName: string) {
-    tagFoldersClosureTable.rename(id, newName);
     this.opcuaFolders.get(id)?.rename(newName);
+    tagFoldersClosureTable.rename(id, newName);
   }
 
   moveFolder(id: string, newParentId: string | undefined) {
-    this.disposeOpcuaFolder(id);
-    tagFoldersClosureTable.move(id, newParentId);
     const node = tagFoldersClosureTable.get(id);
-    if (node) this.createOpcuaFolder(node);
+    if (!node) throw Error(`[FolderManager] moveFolder() cannot find node ${id}`);
+
+    this.disposeOpcuaFolder(id);
+    const newNode = { ...node, parentId: newParentId ?? null };
+    this.createOpcuaFolder(newNode);
+
+    try {
+      tagFoldersClosureTable.move(id, newParentId);
+    } catch (e) {
+      this.disposeOpcuaFolder(id);
+      this.createOpcuaFolder(node);
+      throw e;
+    }
+
+    logger.info(`[FolderManager] moved folder ${id} to ${newParentId}`);
   }
 
   // ── FK safety ───────────────────────────────────────

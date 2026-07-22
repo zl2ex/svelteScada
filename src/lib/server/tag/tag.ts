@@ -734,7 +734,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     }
 
     logger.trace(
-      `[Tag] update() ${this.id} = ${value} : ${this.driverOpcuaVarible?.readValue().statusCode.toString()}`,
+      `[Tag] update() ${this.id} = ${value} : ${this.statusCode.name}`,
     );
   }
 }

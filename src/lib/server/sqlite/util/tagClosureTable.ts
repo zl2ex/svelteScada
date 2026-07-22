@@ -30,11 +30,21 @@ export class ClosureTable {
 
   add(node: ClosureTableNode) {
     return db.transaction((tx) => {
-      const [folder] = tx.insert(this.items).values(node).returning().all();
+      const [folder] = tx
+        .insert(this.items)
+        .values(node)
+        // TD WIP fix conflict updates
+        // .onConflictDoUpdate({
+        //   target: this.items.id,
+        //   set: { name: node.name },
+        // })
+        .returning()
+        .all();
 
       if (node.parentId === null) {
         tx.insert(this.paths)
           .values({ parent: folder.id, child: folder.id, depth: 0 })
+          //.onConflictDoNothing()
           .run();
       } else {
         const parents = tx
@@ -52,6 +62,7 @@ export class ClosureTable {
             })),
             { parent: folder.id, child: folder.id, depth: 0 },
           ])
+          //.onConflictDoNothing()
           .run();
       }
 

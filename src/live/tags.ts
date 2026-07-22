@@ -16,6 +16,13 @@ export const tagPatches = live.stream("tag-patches", async () => null, {
 export const applyTagPatches = live(
   async (ctx, patches: TravelPatches["patches"][number]) => {
     for (const patch of patches) {
+      console.debug(patch);
+      if (patch.path.length !== 1) {
+        throw Error(
+          `applyTagFolderPatches() must update the entire object from the front end not single properties ${patch}`,
+        );
+      }
+
       const id = patch.path[0].toString();
       const value = patch.value as TagSelect;
 
@@ -55,12 +62,12 @@ export const tagValues = live.stream(
       statusCode: tag.statusCode.name,
       errorMessage: tag.error?.message ?? null,
       writeable: tag.resolvedOptions.writeable,
-    };
+    } satisfies TagValueState;
   },
   { merge: "set" },
 );
 
-export function publishTagValue(tag: Tag<any>) {
+export function publishTagValue(tag: Tag<any>, ctx?: any) {
   const state: TagValueState = {
     id: tag.id,
     name: tag.name,
@@ -71,6 +78,12 @@ export function publishTagValue(tag: Tag<any>) {
   };
 
   const path = tagManager.idToPath(tag.id);
+
+  if (ctx) {
+    ctx.publish(`tag-values:${tag.id}`, "set", state);
+    ctx.publish(`tag-values:${path}`, "set", state);
+    return;
+  }
 
   publish(`tag-values:${tag.id}`, "set", state);
   publish(`tag-values:${path}`, "set", state);
@@ -83,10 +96,8 @@ export const setTagValue = live(
 
     tag.update(value);
 
-    publishTagValue(tag);
+    publishTagValue(tag, ctx);
 
     return { success: true };
   },
 );
-
-
