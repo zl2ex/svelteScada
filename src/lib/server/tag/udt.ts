@@ -1,5 +1,5 @@
 import { DataType, OPCUAServer, type UAObject } from "node-opcua";
-import { type TagOptionsResolved, type TagOptionsInput } from "./tag";
+import { type TagOptionsInput } from "./tag";
 import z from "zod";
 import { logger } from "../pino/logger";
 import {
@@ -215,7 +215,7 @@ export class UdtDefinition {
   }
 
   buildTagFeilds(
-    parentTagOptions: TagOptionsResolved,
+    parentTagOptions: TagOptionsInput,
     tagOverrideOptions?: Record<string, TagOptionsInput>,
   ) {
     // instance parameters overide udt parameters

@@ -46,7 +46,7 @@ export class UdtManager {
 
   getChildrenAsNode() {}
 
-  async loadAllFromDb() {
+  loadAllFromDb() {
     // SQLITE WIP
 
     const udts = [];

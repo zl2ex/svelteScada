@@ -23,5 +23,8 @@ export const tags = sqliteTable("tags", {
 
 export type TagSelect = typeof tags.$inferSelect;
 export type TagInsert = typeof tags.$inferInsert;
+export type TagInsertOptionalId = Omit<typeof tags.$inferInsert, "id"> & {
+  id?: string;
+};
 
 export const z_insertTag = createInsertSchema(tags);

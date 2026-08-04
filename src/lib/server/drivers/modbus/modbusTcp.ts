@@ -145,7 +145,7 @@ export class ModbusTCPDriver {
     //this.socket = undefined;
     for (const sub of Object.values(this.subscriptions)) {
       sub.tags.forEach((tag) => {
-        if (tag.resolvedOptions.nodeId) tag.unsubscribeToDriver();
+        if (tag.options.nodeId) tag.unsubscribeToDriver();
       });
     }
     //this.tags = undefined;
@@ -217,12 +217,12 @@ export class ModbusTCPDriver {
   }
 
   subscribeByTag(tag: Tag<any>, parent?: NodeIdLike): UAVariable | undefined {
-    if (!tag.resolvedOptions.nodeId) {
+    if (!tag.options.nodeId) {
       throw new Error(
         `[ModbusTCPDriver] subscribeByTag() no node id provided for tag ${tag.id}`,
       );
     }
-    const nodeId = tag.resolvedOptions.nodeId;
+    const nodeId = tag.options.nodeId;
     const resolvedPath = resolveOpcuaPath(nodeId);
 
     if (!resolvedPath.tagPath) {
@@ -249,7 +249,7 @@ export class ModbusTCPDriver {
     if (monitoredCount >= 1) {
       this.subscriptions[nodeId].tags.set(tag.id, tag);
       logger.trace(
-        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.resolvedOptions.nodeId} returning varible already set up to tag ${tag.id}`,
+        `[ModbusTcpDriver] subscribeByTag() varible already exists at ${tag.options.nodeId} returning varible already set up to tag ${tag.id}`,
       );
 
       if (this.subscriptions[nodeId].opcuaDataType !== tag.opcuaDataType) {
@@ -340,16 +340,16 @@ export class ModbusTCPDriver {
   }
 
   unsubscribeByTag(tag: Tag<any>) {
-    if (!tag.resolvedOptions.nodeId) return;
+    if (!tag.options.nodeId) return;
 
-    this.subscriptions[tag.resolvedOptions.nodeId].tags.delete(tag.id);
-    if (this.subscriptions[tag.resolvedOptions.nodeId].tags.size > 0) {
+    this.subscriptions[tag.options.nodeId].tags.delete(tag.id);
+    if (this.subscriptions[tag.options.nodeId].tags.size > 0) {
       logger.debug(
-        `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId} monitored count ${this.subscriptions[tag.resolvedOptions.nodeId].tags.size} not removing varible node`,
+        `[ModbusTCPDriver] unsubscribeByTag() ${tag.options.nodeId} monitored count ${this.subscriptions[tag.options.nodeId].tags.size} not removing varible node`,
       );
       return; // dont remove if there are more insances looking at the varible
     }
-    const resolvedPath = resolveOpcuaPath(tag.resolvedOptions.nodeId);
+    const resolvedPath = resolveOpcuaPath(tag.options.nodeId);
 
     if (!resolvedPath.tagPath) {
       throw new Error(
@@ -365,19 +365,17 @@ export class ModbusTCPDriver {
 
     if (!this.opcuaServer.engine.addressSpace) {
       throw new Error(
-        `[ModbusTCPDriver] unsubscribeByTag() pcuaServer.engine.addressSpace not defined, cannot remove opcua varible at ${tag.resolvedOptions.nodeId}`,
+        `[ModbusTCPDriver] unsubscribeByTag() pcuaServer.engine.addressSpace not defined, cannot remove opcua varible at ${tag.options.nodeId}`,
       );
     }
 
     gatewayOpcua.deleteOpcuaVariable(
       this.opcuaServer.engine.addressSpace,
-      this.subscriptions[tag.resolvedOptions.nodeId].driverOpcuaVarible,
+      this.subscriptions[tag.options.nodeId].driverOpcuaVarible,
     );
 
-    delete this.subscriptions[tag.resolvedOptions.nodeId]; // remove the subscription entirely
-    logger.debug(
-      `[ModbusTCPDriver] unsubscribeByTag() ${tag.resolvedOptions.nodeId}`,
-    );
+    delete this.subscriptions[tag.options.nodeId]; // remove the subscription entirely
+    logger.debug(`[ModbusTCPDriver] unsubscribeByTag() ${tag.options.nodeId}`);
   }
 
   private startPolling() {

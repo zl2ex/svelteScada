@@ -1,16 +1,13 @@
-import z from "zod";
+import z, { string } from "zod";
 
+// shared schemas should match the ones in /lib/server/sqlite/tables
 export const z_shared_insertTagFolder = z.object({
   id: z.string().optional(),
   name: z.string(),
-  tags: z.array(z.object()).optional(),
-  children: z.array(z.object()).optional(),
 });
 
-export const z_shared_insertTagFolderPaths = z.object({
-  ancestor: z.string(),
-  descendant: z.string(),
-  depth: z.number(),
+export const z_shared_insertClosureTableNode = z_shared_insertTagFolder.extend({
+  parentId: z.string(),
 });
 
 export const z_shared_insertTag = z.object({

@@ -24,7 +24,6 @@ import {
   NodeId,
   DataValue,
   StatusCode,
-  type UAObject,
 } from "node-opcua";
 import z, { ZodObject } from "zod";
 import { type UdtParams } from "./udt";
@@ -32,17 +31,16 @@ import { OpcuaFolder } from "./opcuaFolder";
 import { attempt } from "../../../lib/util/attempt";
 
 import vm from "node:vm";
-import { Z_BaseTypes, Z_TagOptionsResolved } from "../../client/tag/zodSchema";
+import { Z_BaseTypes } from "../../client/tag/zodSchema";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { tags, z_insertTag } from "../sqlite/tables";
 import { getTableDefaults } from "$lib/util/drizzle";
 import { tryCatch } from "$lib/util/tryCatch";
+import { err, ok } from "neverthrow";
 
 const tagTableDefaults = getTableDefaults(tags);
 
 export type TagOptionsInput = z.input<typeof z_insertTag>;
-
-export type TagOptionsResolved = z.input<typeof Z_TagOptionsResolved>;
 
 function validateExpression(expr: string): void {
   // Only allow safe characters and patterns
@@ -271,21 +269,6 @@ export function resolveOpcuaPath(path: string): ResolvedOpcuaPath {
   };
 }
 
-// TD WIP Make this auto generated from mongodb data
-export type TagTypeMapDefinition = {
-  "/demo/test": "Double";
-  "/demo/testInt32": "Int32";
-  "/demo/testInt16": "Int16";
-  "/demo/testBool": "Boolean";
-  "/demo/digitalIn": "DigitalIn";
-};
-
-export type TagTypeMap = {
-  [P in keyof TagTypeMapDefinition]: Tag<TagTypeMapDefinition[P]>;
-};
-
-export type TagPaths = keyof TagTypeMapDefinition | (string & {});
-
 export type TagOptionsFeildNames = keyof TagOptionsInput | (string & {});
 export class TagError extends Error {
   feildName: TagOptionsFeildNames;
@@ -303,7 +286,6 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   opcuaServer: OPCUAServer;
   opcuaFolder: OpcuaFolder;
   options: TagOptionsInput;
-  resolvedOptions: TagOptionsResolved;
 
   //nodeId?: string; // opcua node path that the tag references to get its value from a driver ect
   //dataType?: DataTypeString;
@@ -331,6 +313,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
   childTags: Map<string, Tag<any>>; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
   exposeOpcuaVarible?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
   driverOpcuaVarible?: UAVariable; // varible that nodeId points at
+  private disposed = false; // disposed flag
   //parameters?: UdtParams; // parameters for building udt path's ect
 
   error?: TagError; // if any errors exist with the tag
@@ -370,15 +353,9 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
     this.options = parsed.data;
 
-    this.resolvedOptions = {
-      dataType: "",
-      name: "",
-      path: "",
-      parentPath: "",
-      parameters: {},
-    };
-
     this.childTags = new Map();
+
+    /*
     const opts = attempt(() => resolveTagOptions(this.options));
 
     if ("error" in opts) {
@@ -391,7 +368,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       return;
     }
 
-    this.resolvedOptions = opts.data;
+    this.options = opts.data;*/
 
     //this.nodeId = opts.data.nodeId;
     //this.dataType = opts.data.dataType;
@@ -406,14 +383,14 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
-    const arrayMatch = this.resolvedOptions.dataType.match(/^(\w+)\[(\d*)\]$/);
-    this.isArray = !!arrayMatch || this.resolvedOptions.dataType.endsWith("[]"); // handles arrays of an unkown size
+    const arrayMatch = this.options.dataType.match(/^(\w+)\[(\d*)\]$/);
+    this.isArray = !!arrayMatch || this.options.dataType.endsWith("[]"); // handles arrays of an unkown size
     this.arrayLength = arrayMatch ? parseInt(arrayMatch[2], 10) : 0;
 
     // type without array size or brackets
     const baseDataType = arrayMatch
       ? arrayMatch[1]
-      : this.resolvedOptions.dataType.replace("[]", "");
+      : this.options.dataType.replace("[]", "");
 
     const dataType = Object.entries(DataType);
     // is a opcua primative datatype
@@ -422,7 +399,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
         return key == baseDataType;
       })?.[1] as unknown as DataType;
 
-      const result = attempt(() => getSchema(this.resolvedOptions.dataType));
+      const result = attempt(() => getSchema(this.options.dataType));
 
       if ("error" in result) {
         if (result.error instanceof TagError) {
@@ -441,11 +418,11 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     else {
       this.type = "UdtTag";
       this.opcuaDataType = DataType.ExtensionObject;
-      const udtDefinition = udtManager.udts.get(this.resolvedOptions.dataType);
+      const udtDefinition = udtManager.udts.get(this.options.dataType);
       if (!udtDefinition) {
         const err = new TagError(
           "dataType",
-          `[Tag] error while creating tag ${this.id} dataType ${this.resolvedOptions.dataType} does not exist in udtDefinitions`,
+          `[Tag] error while creating tag ${this.id} dataType ${this.options.dataType} does not exist in udtDefinitions`,
         );
         this.error = err;
         logger.error(err);
@@ -453,7 +430,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       }
 
       udtDefinition
-        .buildTagFeilds(this.resolvedOptions, this.options.children)
+        .buildTagFeilds(this.options, this.options.children)
         .forEach((tagOptions) => {
           const tag = new Tag(this.opcuaServer, this.opcuaFolder, tagOptions);
           this.childTags.set(tag.name, tag);
@@ -466,7 +443,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     }
 
     // subscribe to value from driver if nodeId provided
-    if (this.resolvedOptions.nodeId) {
+    if (this.options.nodeId) {
       const opcuaVarible = attempt(() => this.subscribeToDriver());
       if ("error" in opcuaVarible) {
         if (opcuaVarible.error instanceof TagError) {
@@ -479,7 +456,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       }
     }
 
-    if (this.resolvedOptions.exposeOverOpcua) {
+    if (this.options.exposeOverOpcua) {
       if (!this.opcuaServer?.engine) {
         throw new Error(
           `[Tag] no opcua server defined for tag ${this.id}  please call Tag.initOpcuaServer() and provide a server`,
@@ -490,10 +467,11 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       this.exposeOpcuaVarible = namespace.addVariable({
         componentOf: parent,
         browseName: this.name,
-        nodeId: this.resolvedOptions.nodeId,
+        nodeId: this.options.nodeId ?? undefined,
         dataType: this.opcuaDataType,
         valueRank: this.arrayLength ? 1 : 0,
         arrayDimensions: this.arrayLength ? [this.arrayLength] : null,
+        minimumSamplingInterval: 500,
         value: {
           get: () =>
             new Variant({
@@ -503,15 +481,17 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
             }),
           set: (variant: Variant) => {
             try {
-              this.value = this.validate(variant.value);
+              // this.value = this.validate(variant.value);
+              // dont send back to opcua client.  unless there are mutliple ?? TD WIP
+              this.update(variant.value, StatusCodes.Good, false);
               publishTagValue(this);
-              return { statusCode: StatusCodes.Good };
+              return this.statusCode;
             } catch (error) {
               logger.error(
                 error,
                 `[Tag] exposeOpcuaVariable set() value failed with error`,
               );
-              return { statusCode: StatusCodes.BadTypeMismatch };
+              return this.statusCode;
             }
           },
         },
@@ -521,9 +501,9 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     // TD WIP DataType
     let initalValue: any;
 
-    if (opts.data.initalValue) {
-      const result = attempt(() => this.validate(opts.data.initalValue));
-      if ("error" in result) {
+    if (options.value) {
+      const result = tryCatch(this.validate, options.value);
+      if (result.error) {
         if (result.error instanceof TagError) {
           this.error = result.error;
         } else if (result.error instanceof Error) {
@@ -537,12 +517,10 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       let getDefaults = undefined;
       if (this.schema instanceof ZodObject) getDefaults = {};
       // get intial value defaults from schema
-      const result = attempt(() => this.schema?.parse(getDefaults));
+      const result = this.schema?.safeParse(getDefaults);
 
-      if ("error" in result) {
-        if (result.error instanceof TagError) {
-          this.error = result.error;
-        } else if (result.error instanceof Error) {
+      if (!result.success) {
+        if (result.error instanceof Error) {
           this.error = new TagError("", result.error.message);
         }
         logger.error(this.error);
@@ -565,71 +543,47 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     );
   }
 
-  [Symbol.dispose]() {
-    this.dispose();
+  private validate(value: unknown) {
+    if (!this.schema) return err({ reason: "SCHEMA_UNDEFINED" } as const);
+    const parsed = this.schema.safeParse(value);
+    if (!parsed.success)
+      return err({ reason: "ZOD_PARSE_ERROR", cause: parsed.error } as const);
+    return ok(parsed.data);
   }
 
-  dispose() {
-    logger.trace(`[Tag] dispose() ${this.id}`);
-    try {
-      this.unsubscribeToDriver();
-
-      if (this.exposeOpcuaVarible) {
-        if (!this.opcuaServer.engine.addressSpace) {
-          throw new Error(
-            `[Tag] dispose() this.opcuaServer.engine.addressSpace undefined`,
-          );
-        }
-        gatewayOpcua.deleteOpcuaVariable(
-          this.opcuaServer.engine.addressSpace,
-          this.exposeOpcuaVarible,
-        );
-      }
-
-      this.childTags.forEach((child) => {
-        child.dispose();
-      });
-    } catch (error) {
-      logger.error(error);
-    }
-  }
-
-  // will throw ZodError if it fails
-  private validate(value: unknown): ResolveType<DataTypeString> {
-    return this.schema?.parse(value) as ResolveType<DataTypeString>;
-  }
-
-  private valueChanged = (newValue: DataValue) => {
+  private opcuaValueChanged(newValue: DataValue) {
     if (
       newValue.value.value == this.value &&
       newValue.statusCode == this.statusCode
     )
       return; // if the tag class called update() already so we have the current value and status code
-    logger.trace(
-      `[Tag] valueChanged() for ${this.id} = ${newValue.value.value} ${newValue.statusCode.toString()}`,
-    );
 
-    try {
-      if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
-        throw new Error(
-          `[Tag] new value for tag ${this.id} type ${newValue.value.dataType} is not assignable to ${this.opcuaDataType}`,
-        );
-      }
-
-      this.value = this.validate(newValue.value.value);
-      this.statusCode = newValue.statusCode;
-    } catch (error) {
-      logger.error(error);
+    if ((newValue.value.dataType as DataType) !== this.opcuaDataType) {
+      logger.warn(
+        `[Tag] opcuaValueChanged() data type ${newValue.value.dataType}  not assignable to ${this.opcuaDataType}`,
+      );
+      return;
     }
-  };
+
+    logger.trace(
+      `[Tag] opcuaValueChanged() for ${this.id} = ${newValue.value.value} ${newValue.statusCode.toString()}`,
+    );
+    const validated = this.validate(newValue.value.value);
+    if (validated.isErr()) {
+      logger.error(validated.error.reason);
+      return;
+    }
+    this.value = validated.value;
+    this.statusCode = newValue.statusCode;
+  }
 
   subscribeToDriver() {
-    if (!this.resolvedOptions.nodeId) return;
+    if (!this.options.nodeId) return;
 
-    const resolvedPath = resolveOpcuaPath(this.resolvedOptions.nodeId);
+    const resolvedPath = resolveOpcuaPath(this.options.nodeId);
     if (!resolvedPath.deviceName) {
       throw new Error(
-        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to create tag ${this.id}`,
+        `[Tag] Device at ${this.options.nodeId} not found while trying to create tag ${this.id}`,
       );
     }
 
@@ -639,7 +593,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
     if (!variable)
       throw new Error(
-        `[Tag] failed to subscribe to tag at ${this.resolvedOptions.nodeId} while trying to create tag ${this.id}`,
+        `[Tag] failed to subscribe to tag at ${this.options.nodeId} while trying to create tag ${this.id}`,
       );
     /*
     const addressSpace = server.engine.addressSpace;
@@ -660,29 +614,36 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     if (!variable) throw new Error(`[Tag] Variable not found for path ${path}`);
 */
     // listen to value changes
-    variable.on("value_changed", this.valueChanged);
+    variable.on("value_changed", this.opcuaValueChanged);
 
     this.driverOpcuaVarible = variable;
   }
 
   unsubscribeToDriver() {
-    if (!this.resolvedOptions.nodeId) return;
-    const resolvedPath = resolveOpcuaPath(this.resolvedOptions.nodeId);
+    if (!this.options.nodeId) return;
+    const resolvedPath = resolveOpcuaPath(this.options.nodeId);
     if (!resolvedPath.deviceName) {
       logger.error(
-        `[Tag] Device at ${this.resolvedOptions.nodeId} not found while trying to unsubscribe from tag ${this.id}`,
+        `[Tag] Device at ${this.options.nodeId} not found while trying to unsubscribe from tag ${this.id}`,
       );
       return;
     }
 
-    this.driverOpcuaVarible?.removeListener("value_changed", this.valueChanged);
+    this.driverOpcuaVarible?.removeListener(
+      "value_changed",
+      this.opcuaValueChanged,
+    );
     this.driverOpcuaVarible = undefined;
     const device = deviceManager.getDeviceFromPath(resolvedPath.deviceName);
     device.tagUnsubscribed(this);
   }
 
-  update(value: ResolveType<DataTypeString>, statusCode = StatusCodes.Good) {
-    if (this.resolvedOptions.writeable == false) {
+  update(
+    value: ResolveType<DataTypeString>,
+    statusCode = StatusCodes.Good,
+    opcuaWrite: boolean = true,
+  ) {
+    if (this.options.writeable == false) {
       logger.warn(
         `[Tag] update() ${this.id} failed because writeable is set to false`,
       );
@@ -690,14 +651,19 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       return;
     }
 
-    const newValue = this.validate(value);
+    const validated = this.validate(value);
+    if (validated.isErr()) {
+      logger.error(validated.error.reason);
+      return;
+    }
+    const newValue = validated.value;
     if (this.isArray !== Array.isArray(newValue))
       throw new TypeError(
-        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.resolvedOptions.dataType}`,
+        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}`,
       );
     if (this.isArray && this.arrayLength !== newValue?.length)
       throw new TypeError(
-        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.resolvedOptions.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
+        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
       );
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
 
@@ -716,13 +682,13 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
       );
     }
 
-    if (this.resolvedOptions.exposeOverOpcua) {
+    if (this.options.exposeOverOpcua && opcuaWrite) {
       if (!this.exposeOpcuaVarible) {
         throw new Error(
           `[Tag] update() id: ${this.id} cannot update exposeOpcuaVariable as it is not initalised`,
         );
       }
-      this.exposeOpcuaVarible?.setValueFromSource(
+      this.exposeOpcuaVarible.setValueFromSource(
         {
           dataType: this.opcuaDataType,
           arrayType: this.isArray ? VariantArrayType.Array : undefined,
@@ -736,5 +702,37 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     logger.trace(
       `[Tag] update() ${this.id} = ${value} : ${this.statusCode.name}`,
     );
+  }
+
+  [Symbol.dispose]() {
+    this.dispose();
+  }
+
+  dispose() {
+    logger.trace(`[Tag] dispose() ${this.id}`);
+    if (this.disposed) return;
+    this.disposed = true;
+    try {
+      this.unsubscribeToDriver();
+
+      if (this.exposeOpcuaVarible) {
+        if (!this.opcuaServer.engine.addressSpace) {
+          throw new Error(
+            `[Tag] dispose() this.opcuaServer.engine.addressSpace undefined`,
+          );
+        }
+        gatewayOpcua.deleteOpcuaVariable(
+          this.opcuaServer.engine.addressSpace,
+          this.exposeOpcuaVarible,
+        );
+        this.exposeOpcuaVarible = undefined;
+      }
+
+      this.childTags.forEach((child) => {
+        child.dispose();
+      });
+    } catch (error) {
+      logger.error(error);
+    }
   }
 }

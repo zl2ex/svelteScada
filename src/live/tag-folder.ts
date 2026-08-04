@@ -32,23 +32,82 @@ export const applyTagFolderPatches = live(
       const id = patch.path[0].toString();
       const value = patch.value as ClosureTableNode;
       if (patch.op == "add") {
-        folderManager.createFolder(value);
+        const result = folderManager.createFolder(value);
+        if (result.isErr()) {
+          const reason = result.error.reason;
+          switch (reason) {
+            case "DB_ERROR":
+            case "OPCUA_FOLDER_CREATE_FAILED":
+              throw new LiveError(reason, reason);
+
+            default:
+              throw Error(reason satisfies never, {
+                cause: result.error.cause,
+              });
+          }
+        }
       }
       if (patch.op == "remove") {
-        folderManager.deleteFolder(id);
+        const result = folderManager.deleteFolder(id);
+        if (result.isErr()) {
+          const reason = result.error.reason;
+          switch (reason) {
+            case "DB_ERROR":
+            case "FOLDER_NOT_FOUND":
+              throw new LiveError(reason, reason);
+
+            default:
+              throw Error(reason satisfies never, {
+                cause: result.error.cause,
+              });
+          }
+        }
       }
       if (patch.op == "replace") {
         let opcuaFolder = folderManager.get(id);
         if (!opcuaFolder)
-          throw Error(`cannot find node with id ${id} in table`);
+          throw new LiveError(
+            "FOLDER_NOT_FOUND",
+            `cannot find folder with id ${id}`,
+          );
 
         //only move if it has actually moved
         if (opcuaFolder.node.parentId !== value.parentId) {
-          folderManager.moveFolder(id, value.parentId ?? undefined);
+          const result = folderManager.moveFolder(
+            id,
+            value.parentId ?? undefined,
+          );
+          if (result.isErr()) {
+            const reason = result.error.reason;
+            switch (reason) {
+              case "DB_ERROR":
+              case "FOLDER_NOT_FOUND":
+                throw new LiveError(reason, reason);
+
+              default:
+                throw Error(reason satisfies never, {
+                  cause: result.error.cause,
+                });
+            }
+          }
         }
 
         if (opcuaFolder.node.name !== value.name) {
-          folderManager.renameFolder(id, value.name);
+          const result = folderManager.renameFolder(id, value.name);
+          if (result.isErr()) {
+            const reason = result.error.reason;
+            switch (reason) {
+              case "DB_ERROR":
+              case "FOLDER_NOT_FOUND":
+              case "OPCUA_RENAME_FAILED":
+                throw new LiveError(reason, reason);
+
+              default:
+                throw Error(reason satisfies never, {
+                  cause: result.error.cause,
+                });
+            }
+          }
         }
       }
     }

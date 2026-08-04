@@ -6,7 +6,9 @@ import type { TagOptionsInput } from "$lib/server/tag/tag";
 import { tagManager } from "../../../hooks.server";
 
 export async function load() {
-  const folderRows = tagFoldersClosureTable.getAll();
+  const folderResult = tagFoldersClosureTable.getAll();
+  if (folderResult.isErr()) throw folderResult.error;
+  const folderRows = folderResult.value;
   const tagRows = tagManager.getAllTags().map((t) => t.options);
   return {
     tagFolders: folderRows.reduce(

@@ -1,5 +1,5 @@
 import { OPCUAServer } from "node-opcua";
-import type { AddressSpace } from "node-opcua";
+import type { AddressSpace, UAVariable } from "node-opcua";
 import { db } from "$lib/server/sqlite/db";
 import { tables } from "$lib/server/sqlite/tables";
 export class OpcuaServerDriver {
@@ -71,6 +71,12 @@ export class OpcuaServerDriver {
 
   deleteOpcuaVariable(addressSpace: AddressSpace, varible: UAVariable) {
     if (!varible) return;
+
+    // The node may already have been removed from the address space, e.g. by a
+    // recursive deleteNode() on a parent folder or by a previous dispose call.
+    // Once deleted, node-opcua nulls the node's internal addressSpace reference,
+    // so calling findReferences() on it throws. Skip it if it's already gone.
+    if (addressSpace.findNode(varible.nodeId) !== varible) return;
 
     // Find its parent
     const parents = varible.findReferences("HasComponent", false);

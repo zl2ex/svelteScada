@@ -4,9 +4,10 @@
 declare module '$live/tag-folder' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';
+  import type { TravelPatches } from 'travels';
 
   export const applyTagFolderPatches: (patches: TravelPatches["patches"][number]) => Promise<any>;
-  export type ErrorCode = 'UNAUTHENTICATED';
+  export type ErrorCode = 'FOLDER_NOT_FOUND' | 'UNAUTHENTICATED';
   export const tagFolderPatches: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
   export const empty: Readable<undefined>;
 }
@@ -14,11 +15,13 @@ declare module '$live/tag-folder' {
 declare module '$live/tags' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';
+  import type { TravelPatches } from 'travels';
+  import type { TagValueState } from '$lib/server/tag/tagValueState';
 
   export const applyTagPatches: (patches: TravelPatches["patches"][number]) => Promise<any>;
   export const setTagValue: ({ id, value }: { id: string; value: unknown }) => Promise<any>;
-  export type ErrorCode = 'UNAUTHENTICATED';
+  export type ErrorCode = 'NOT_FOUND' | 'UNAUTHENTICATED';
   export const tagPatches: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
-  export const tagValues: ((lookup: string) => StreamStore<TagValueState | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<TagValueState> };
+  export const getTagValue: ((lookup: string) => StreamStore<TagValueState | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<TagValueState> };
   export const empty: Readable<undefined>;
 }

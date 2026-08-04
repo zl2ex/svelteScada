@@ -3,6 +3,11 @@ import { guard, live, LiveError, publish } from "svelte-realtime/server";
 import type { TravelPatches } from "travels";
 import { tagManager } from "../hooks.server";
 import type { Tag } from "$lib/server/tag/tag";
+import type {
+  StatusCodeName,
+  TagValueState,
+} from "$lib/server/tag/tagValueState";
+export type { TagValueState };
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -27,11 +32,52 @@ export const applyTagPatches = live(
       const value = patch.value as TagSelect;
 
       if (patch.op === "add") {
-        tagManager.createTag(value);
+        const result = tagManager.createTag(value);
+        if (result.isErr()) {
+          const reason = result.error.reason;
+          switch (reason) {
+            case "DB_ERROR":
+            case "OPCUA_FOLDER_CREATE_FAILED":
+            case "DUPLICATE_TAG":
+            case "TAG_ALREADY_EXISTS":
+              throw new LiveError(reason, reason);
+
+            default:
+              throw Error(reason satisfies never, {
+                cause: result.error.cause,
+              });
+          }
+        }
       } else if (patch.op === "remove") {
-        tagManager.deleteTag(id);
+        const result = tagManager.deleteTag(id);
+        if (result.isErr()) {
+          const reason = result.error.reason;
+          switch (reason) {
+            case "DB_ERROR":
+            case "TAG_NOT_FOUND":
+              throw new LiveError(reason, reason);
+
+            default:
+              throw Error(reason satisfies never, {
+                cause: result.error.cause,
+              });
+          }
+        }
       } else if (patch.op === "replace") {
-        tagManager.updateTag(id, value);
+        const result = tagManager.updateTag(id, value);
+        if (result.isErr()) {
+          const reason = result.error.reason;
+          switch (reason) {
+            case "DB_ERROR":
+            case "OPCUA_FOLDER_NOT_FOUND":
+              throw new LiveError(reason, reason);
+
+            default:
+              throw Error(reason satisfies never, {
+                cause: result.error.cause,
+              });
+          }
+        }
       }
     }
 
@@ -39,29 +85,22 @@ export const applyTagPatches = live(
   },
 );
 
-export interface TagValueState {
-  id: string;
-  name: string;
-  value: unknown;
-  statusCode: string;
-  errorMessage: string | null;
-  writeable: boolean;
-}
+export type ClientTag = TagValueState | undefined;
 
-export const tagValues = live.stream(
+export const getTagValue = live.stream(
   (ctx, lookup: string) => `tag-values:${lookup}`,
   async (ctx, lookup: string): Promise<TagValueState> => {
     const tag =
       tagManager.getTagById(lookup) ?? tagManager.getTagByPath(lookup);
-    if (!tag) throw new Error(`Tag not found: ${lookup}`);
+    if (!tag) throw new LiveError("NOT_FOUND", `Tag not found: ${lookup}`);
 
     return {
       id: tag.id,
       name: tag.name,
       value: tag.value,
-      statusCode: tag.statusCode.name,
-      errorMessage: tag.error?.message ?? null,
-      writeable: tag.resolvedOptions.writeable,
+      statusString: tag.statusCode.name as StatusCodeName,
+      errorString: tag.error?.message ?? undefined,
+      options: tag.options,
     } satisfies TagValueState;
   },
   { merge: "set" },
@@ -72,9 +111,9 @@ export function publishTagValue(tag: Tag<any>, ctx?: any) {
     id: tag.id,
     name: tag.name,
     value: tag.value,
-    statusCode: tag.statusCode.name,
-    errorMessage: tag.error?.message ?? null,
-    writeable: tag.resolvedOptions.writeable,
+    statusString: tag.statusCode.name as StatusCodeName,
+    errorString: tag.error?.message ?? undefined,
+    options: tag.options,
   };
 
   const path = tagManager.idToPath(tag.id);

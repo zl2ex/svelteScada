@@ -58,6 +58,7 @@
     "drizzle-orm": "^1.0.0-beta.22",
     "drizzle-zod": "^1.0.0-beta.14-a36c63d",
     "jsmodbus": "^4.0.10",
+    "neverthrow": "^8.2.0",
     "node-opcua": "^2.173.1",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",

@@ -1,8 +1,6 @@
 <script lang="ts">
-  import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import {
     Copy,
-    FileIcon,
     FolderIcon,
     FolderPlus,
     LoaderIcon,
@@ -19,15 +17,18 @@
     useTreeView,
   } from "@skeletonlabs/skeleton-svelte";
 
-  import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable.js";
+  import type {
+    ClosureTableNode,
+    ClosureTableNodeOptionalId,
+  } from "$lib/server/sqlite/util/tagClosureTable.js";
   import { tryCatch } from "$lib/util/tryCatch";
   import {
+    z_shared_insertClosureTableNode,
     z_shared_insertTag,
-    z_shared_insertTagFolder,
   } from "$lib/validation/zod";
   import { browser } from "$app/env";
 
-  let { id, data, children } = $props();
+  let { data, children } = $props();
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
@@ -43,6 +44,8 @@
     TagOptionsInput,
   } from "$lib/server/tag/tag.js";
   import { onMount } from "svelte";
+  import type { TagInsertOptionalId } from "$lib/server/sqlite/tables/tags.js";
+  import TagInput from "$lib/client/componets/scada/TagInput.svelte";
 
   const undoManager = new UnifiedUndoManager();
 
@@ -119,6 +122,7 @@
     }),
   );
 
+  const id = crypto.randomUUID();
   const TREE_EXPANDED_KEY = `editor-tree-expanded-${id}`;
 
   function loadExpandedFromStorage(): string[] {
@@ -267,12 +271,16 @@
       foldersDelete(folders);
       tagsDelete(tags);
     }
-    if (e.key === "F2" && onlyOneFolder) {
-      renamingFolderId = folders[0].id;
+
+    if (e.key === "F2") {
+      if (onlyOneFolder) renamingFolderId = folders[0].id;
+      if (onlyOneTag) renamingTagId = tags[0].id;
     }
+
     if (e.key === "f" && e.altKey && onlyOneFolder) {
       addFolder(folders[0]);
     }
+
     if (e.key === "t" && e.altKey && onlyOneFolder) {
       addTag(folders[0]);
     }
@@ -286,6 +294,19 @@
         ...getChildTags(folders),
       ]);
       copyToClipboard(json);
+    }
+
+    if (e.key === "x" && e.ctrlKey) {
+      let json = JSON.stringify([
+        ...tags,
+        ...folders,
+        ...getChildFolders(folders),
+        ...getChildTags(folders),
+      ]);
+      copyToClipboard(json);
+
+      foldersDelete(folders);
+      tagsDelete(tags);
     }
   }
 
@@ -428,48 +449,74 @@
     }
 
     // not an array
-    if (json.data.length <= 0)
+    if (json.value.length <= 0) {
       throw Error(
         `handlePaste() pasted data is not an array with at least one element ${text}`,
       );
+    }
 
-    // if multiple tags or folders added just create one history entry
-    undoManager.beginTransaction();
-    for (const data of json.data) {
-      let tagResult = tryCatch(z_shared_insertTag.parse, data);
-      let folderResult = tryCatch(z_shared_insertTagFolder.parse, data);
-      if (tagResult.error && folderResult.error) {
+    let tags: TagInsertOptionalId[] = [];
+    let folders: ClosureTableNodeOptionalId[] = [];
+
+    for (const data of json.value) {
+      let tagResult = z_shared_insertTag.safeParse(data);
+      let folderResult = z_shared_insertClosureTableNode.safeParse(data);
+      if (!tagResult.success && !folderResult.success) {
         throw Error(
-          `handlePaste() parse into tag or folder failed, wrong format ${data}`,
+          `handlePaste() parse into tag or folder failed, wrong format ${data}  ${tagResult.error} ${folderResult.error}`,
         );
       }
 
       // check tagResult first as folderResult also has id and name feilds
-      if (tagResult.data) {
-        const newId = crypto.randomUUID();
-        let name = checkDuplicateTagName(tagResult.data.name, parentNode);
-
-        tagPatchesCollection.add({
-          id: newId,
-          folderId: parentNode?.id ?? null,
-          name: name,
-          dataType: tagResult.data.dataType,
-          value: tagResult.data.value ?? null,
-          nodeId: tagResult.data.nodeId ?? null,
-          writeable: tagResult.data.writeable ?? true,
-          exposeOverOpcua: tagResult.data.exposeOverOpcua ?? true,
-          parameters: tagResult.data.parameters ?? null,
-        });
-      } else if (folderResult.data) {
-        const newId = crypto.randomUUID();
-        let name = checkDuplicateFolderName(folderResult.data.name, parentNode);
-        tagFolderPatchesCollection.add({
-          id: newId,
-          name,
-          parentId: parentNode?.id ?? null,
-        });
-      }
+      if (tagResult.data) tags.push(tagResult.data);
+      else if (folderResult.data) folders.push(folderResult.data);
     }
+
+    // if multiple tags or folders added just create one history entry
+    undoManager.beginTransaction();
+
+    for (const folder of folders) {
+      const newId = folder.id ?? crypto.randomUUID();
+      let name = checkDuplicateFolderName(folder.name, parentNode);
+      let parentId: string | null = null;
+
+      //if the pasted folders are nested and the child is referencing the parent
+      if (folders.find((f) => f.id == folder.parentId)) {
+        // assign the parentId from the pasted folder - else just insert it in the selected folder
+        parentId = folder.parentId;
+      }
+
+      tagFolderPatchesCollection.add({
+        id: newId,
+        name,
+        parentId: parentId ?? parentNode?.id ?? null,
+      });
+    }
+
+    for (const tag of tags) {
+      const newId = tag.id ?? crypto.randomUUID();
+      let name = checkDuplicateTagName(tag.name, parentNode);
+      let parentId: string | null | undefined = undefined;
+
+      //if the pasted folders are nested and the child is referencing the parent
+      if (folders.find((f) => f.id == tag.folderId)) {
+        // assign the folderId from the pasted tag - else just insert it in the selected folder
+        parentId = tag.folderId;
+      }
+
+      tagPatchesCollection.add({
+        id: newId,
+        folderId: parentId ?? parentNode?.id ?? null,
+        name: name,
+        dataType: tag.dataType,
+        value: tag.value ?? null,
+        nodeId: tag.nodeId ?? null,
+        writeable: tag.writeable ?? true,
+        exposeOverOpcua: tag.exposeOverOpcua ?? true,
+        parameters: tag.parameters ?? null,
+      });
+    }
+
     undoManager.endTransaction();
   }
 
@@ -551,6 +598,7 @@
           <input
             type="text"
             class="border-none p-0 m-0 text-inherit bg-inherit"
+            value={node.name}
             use:focusOnMount
             onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
             onkeydown={(e) => {
@@ -576,15 +624,20 @@
 
 <div class="flex flex-col">
   {#if tagFolderPatchesCollection.syncError || tagPatchesCollection.syncError}
-    <div class="bg-error-500 text-white text-xs px-2 py-1 flex items-center justify-between">
-      <span>Sync failed: {tagFolderPatchesCollection.syncError || tagPatchesCollection.syncError}</span>
+    <div
+      class="bg-error-500 text-white text-xs px-2 py-1 flex items-center justify-between"
+    >
+      <span
+        >Sync failed: {tagFolderPatchesCollection.syncError ||
+          tagPatchesCollection.syncError}</span
+      >
       <button
         class="ml-2 font-bold"
         onclick={() => {
           tagFolderPatchesCollection.syncError = null;
           tagPatchesCollection.syncError = null;
-        }}
-      >&times;</button>
+        }}>&times;</button
+      >
     </div>
   {/if}
   <div class="text-xs w-100">
@@ -605,7 +658,7 @@
               onkeyup={handleTreeKeyup}
               onpaste={(e) => {
                 e.stopPropagation();
-                handlePaste(e, undefined, [0]);
+                handlePaste(e, undefined);
               }}
             >
               {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders }, ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}

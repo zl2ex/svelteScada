@@ -310,8 +310,8 @@ export class DeviceManager {
     );
 
     for (const tag of tagManager.getAllTags()) {
-      if (tag.resolvedOptions.nodeId) {
-        const resolved = resolveOpcuaPath(tag.resolvedOptions.nodeId);
+      if (tag.options.nodeId) {
+        const resolved = resolveOpcuaPath(tag.options.nodeId);
         if (resolved.deviceName == newDevice.name) {
           tag.subscribeToDriver();
         }

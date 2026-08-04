@@ -46,9 +46,9 @@ export const init: ServerInit = async () => {
   );
 
   await deviceManager.loadAllFromDb();
-  await udtManager.loadAllFromDb();
-  await folderManager.loadAllFromDb();
-  await tagManager.loadAllFromDb();
+  udtManager.loadAllFromDb();
+  folderManager.loadAllFromDb();
+  tagManager.loadAllFromDb();
 };
 
 export const handle: Handle = async ({ event, resolve }) => {

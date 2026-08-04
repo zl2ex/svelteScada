@@ -1,59 +1,104 @@
 import type { UAObject, AddressSpace } from "node-opcua";
 import { logger } from "../pino/logger";
 import type { ClosureTableNode } from "../sqlite/util/tagClosureTable";
+import { err, ok, type Result } from "neverthrow";
+import { tryCatch } from "$lib/util/tryCatch";
 
 export class OpcuaFolder {
   node: ClosureTableNode;
-  // id: string;
-  //   // name: string;
-  // parentId: string | null = null;
   uaObject: UAObject;
 
-  constructor(
+  private constructor(
     private addressSpace: AddressSpace,
+    node: ClosureTableNode,
+    uaObject: UAObject,
+  ) {
+    this.node = node;
+    this.uaObject = uaObject;
+  }
+
+  static create(
+    addressSpace: AddressSpace,
     parent: UAObject,
     node: ClosureTableNode,
   ) {
-    this.node = node;
-    const namespace = addressSpace.getOwnNamespace();
-    const nodeId = `s=folder_${node.id}`;
+    const result = tryCatch(() => {
+      const namespace = addressSpace.getOwnNamespace();
+      const nodeId = `s=folder_${node.id}`;
 
-    const existing = addressSpace.findNode(nodeId);
-    if (existing) {
-      addressSpace.deleteNode(existing);
+      const existing = addressSpace.findNode(nodeId);
+      if (existing) {
+        addressSpace.deleteNode(existing);
+      }
+
+      const uaObject = namespace.addObject({
+        organizedBy: parent,
+        browseName: node.name,
+        nodeId,
+      });
+
+      return new OpcuaFolder(addressSpace, node, uaObject);
+    });
+
+    if (result.error) {
+      return err({
+        reason: "OPCUA_FOLDER_CREATE_FAILED",
+        cause: result.error,
+      } as const);
     }
 
-    this.uaObject = namespace.addObject({
-      organizedBy: parent,
-      browseName: node.name,
-      nodeId,
-    });
+    return ok(result.value);
   }
 
   rename(newName: string) {
-    this.node.name = newName;
-    this.uaObject.browseName.name = newName;
+    const result = tryCatch(() => {
+      this.node.name = newName;
+      this.uaObject.setDisplayName(newName);
+      // TD WIP Maybe delete and create a new node with browseName updated as well ??
+    });
+
+    if (result.error) {
+      return err({
+        reason: "OPCUA_RENAME_FAILED",
+        cause: result.error,
+      } as const);
+    }
+
+    return ok(result.value);
   }
 
   dispose() {
-    logger.trace(
-      `[OpcuaFolder] dispose() ${this.uaObject.browseName.toString()}`,
-    );
-    this.uaObject.removeAllListeners();
+    const result = tryCatch(() => {
+      logger.trace(
+        `[OpcuaFolder] dispose() ${this.uaObject.browseName.toString()}`,
+      );
+      this.uaObject.removeAllListeners();
 
-    const parents = this.uaObject.findReferences("HasComponent", false);
-    for (const p of parents) {
-      const parentNode = this.addressSpace.findNode(p.nodeId);
-      if (parentNode) {
-        try {
-          parentNode.removeReference({
-            referenceType: "HasComponent",
-            isForward: true,
-            nodeId: this.uaObject,
-          });
-        } catch {}
+      const parents = this.uaObject.findReferences("HasComponent", false);
+      for (const p of parents) {
+        const parentNode = this.addressSpace.findNode(p.nodeId);
+        if (parentNode) {
+          const removed = tryCatch(() =>
+            parentNode.removeReference({
+              referenceType: "HasComponent",
+              isForward: true,
+              nodeId: this.uaObject,
+            }),
+          );
+          //if(removed.error) // do nothing with the error at this stage WIP
+        }
       }
+      this.addressSpace.deleteNode(this.uaObject);
+      return true;
+    });
+
+    if (result.error) {
+      return err({
+        reason: "OPCUA_DISPOSE_FAILED",
+        cause: result.error,
+      } as const);
     }
-    this.addressSpace.deleteNode(this.uaObject);
+
+    return ok(result.value);
   }
 }
