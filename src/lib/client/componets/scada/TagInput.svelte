@@ -2,6 +2,8 @@
   import { setTagValue, getTagValue } from "$live/tags";
   import type { HTMLInputAttributes } from "svelte/elements";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
+  import { err, ok, type Result } from "neverthrow";
+  import type { RpcError } from "svelte-realtime/client";
 
   interface IdProps extends HTMLInputAttributes {
     id: string;
@@ -22,7 +24,13 @@
 
   let lookup = $derived.by(() => id ?? path ?? "");
 
-  const tag = getTagValue(lookup).rune();
+  const stream = getTagValue(lookup).rune();
+
+  const t = $derived.by(() => {
+    if (stream.current && "error" in stream.current)
+      return err(stream.current.error);
+    return ok(stream.current);
+  });
 
   let isFocus = $state(false);
 
@@ -34,9 +42,8 @@
 
   function classWithError(base: string): string {
     let err = false;
-    if (!tag.current) err = true;
-    else if ("error" in tag.current) err = true;
-    else if (tag.current.statusString !== "Good") err = true;
+    if (t.isErr()) err = true;
+    else if (t.value?.statusString !== "Good") err = true;
 
     return err
       ? `${base} outline -outline-offset-1 outline-error-400-600 ${clazz ?? ""}`
@@ -45,101 +52,97 @@
 </script>
 
 <svelte:boundary>
-  <label for="input" class="label">{label ?? tag.current?.name ?? lookup}</label
-  >
   <Tooltip positioning={{ placement: "top" }}>
-    <Tooltip.Trigger tabindex={-1}>
-      {#if tag.current && tag.current.value !== undefined}
-        {#if typeof tag.current.value === "boolean"}
-          <input
-            type="checkbox"
-            name="input"
-            class={classWithError("checkbox")}
-            checked={tag.current.value}
-            oninput={(ev) => write(Boolean(ev.currentTarget.checked))}
-            disabled={!tag.current.options.writeable}
-            {...rest}
-          />
-        {:else if typeof tag.current.value === "number"}
-          <input
-            type="number"
-            name="input"
-            class={classWithError("input")}
-            value={isFocus ? undefined : tag.current.value}
-            onkeyup={(ev) => {
-              if (ev.currentTarget) {
-                if (ev.key === "Enter") {
-                  write(Number(ev.currentTarget.value));
-                  ev.currentTarget.blur();
-                }
-                if (ev.key === "Escape") {
-                  ev.currentTarget.value = String(tag.current.value);
-                  ev.currentTarget.blur();
-                }
-              }
-            }}
-            onfocusout={(ev) => {
-              if (ev.currentTarget.value) {
-                write(Number(ev.currentTarget?.value));
-              } else {
-                ev.currentTarget.value = String(tag.current.value);
-              }
-              isFocus = false;
-            }}
-            onfocusin={() => {
-              isFocus = true;
-            }}
-            disabled={!tag.current.options.writeable}
-            {...rest}
-          />
-        {:else}
-          <input
-            type="text"
-            name="input"
-            class={classWithError("input")}
-            value={isFocus ? undefined : tag.current.value}
-            onkeyup={(ev) => {
-              if (ev.currentTarget) {
-                if (ev.key === "Enter") {
-                  write(String(ev.currentTarget.value));
-                  ev.currentTarget.blur();
-                }
-                if (ev.key === "Escape") {
-                  ev.currentTarget.value = String(tag.current.value);
-                  ev.currentTarget.blur();
-                }
-              }
-            }}
-            onfocusout={(ev) => {
-              if (ev.currentTarget.value) {
-                write(String(ev.currentTarget.value));
-              } else {
-                ev.currentTarget.value = String(tag.current.value);
-              }
-              isFocus = false;
-            }}
-            onfocusin={() => {
-              isFocus = true;
-            }}
-            disabled={!tag.current.options.writeable}
-            {...rest}
-          />
-        {/if}
-      {:else}
-        <span class="text-surface-500-800">loading...</span>
-      {/if}
-    </Tooltip.Trigger>
-    {#if tag.current?.statusString !== "Good" || tag.current?.error}
+    {#if t.isErr()}
       <Portal>
         <Tooltip.Positioner>
           <Tooltip.Content class="card p-2 preset-filled-error-400-600">
-            {#if tag.current?.statusString !== "Good"}
-              <p class="heading-font-weight">{tag.current?.statusString}</p>
-            {/if}
-            <p>{tag.current?.error?.message}</p>
+            <p>{t.error.message}</p>
           </Tooltip.Content>
         </Tooltip.Positioner>
       </Portal>
+    {:else}
+      <label for="input" class="label">{label ?? t.value?.name ?? lookup}</label
+      >
+      <Tooltip.Trigger tabindex={-1}>
+        {#if t.value}
+          {#if typeof t.value.value === "boolean"}
+            <input
+              type="checkbox"
+              name="input"
+              class={classWithError("checkbox")}
+              checked={t.value.value}
+              oninput={(ev) => write(Boolean(ev.currentTarget.checked))}
+              disabled={!t.value.options.writeable}
+              {...rest}
+            />
+          {:else if typeof t.value.value === "number"}
+            <input
+              type="number"
+              name="input"
+              class={classWithError("input")}
+              value={isFocus ? undefined : t.value.value}
+              onkeyup={(ev) => {
+                if (ev.currentTarget) {
+                  if (ev.key === "Enter") {
+                    write(Number(ev.currentTarget.value));
+                    ev.currentTarget.blur();
+                  }
+                  if (ev.key === "Escape") {
+                    ev.currentTarget.value = String(t.value?.value);
+                    ev.currentTarget.blur();
+                  }
+                }
+              }}
+              onfocusout={(ev) => {
+                if (ev.currentTarget.value) {
+                  write(Number(ev.currentTarget.value));
+                } else {
+                  ev.currentTarget.value = String(t.value?.value);
+                }
+                isFocus = false;
+              }}
+              onfocusin={() => {
+                isFocus = true;
+              }}
+              disabled={!t.value.options.writeable}
+              {...rest}
+            />
+          {:else}
+            <input
+              type="text"
+              name="input"
+              class={classWithError("input")}
+              value={isFocus ? undefined : t.value.value}
+              onkeyup={(ev) => {
+                if (ev.currentTarget) {
+                  if (ev.key === "Enter") {
+                    write(String(ev.currentTarget.value));
+                    ev.currentTarget.blur();
+                  }
+                  if (ev.key === "Escape") {
+                    ev.currentTarget.value = String(t.value?.value);
+                    ev.currentTarget.blur();
+                  }
+                }
+              }}
+              onfocusout={(ev) => {
+                if (ev.currentTarget.value) {
+                  write(String(ev.currentTarget.value));
+                } else {
+                  ev.currentTarget.value = String(t.value?.value);
+                }
+                isFocus = false;
+              }}
+              onfocusin={() => {
+                isFocus = true;
+              }}
+              disabled={!t.value.options.writeable}
+              {...rest}
+            />
+          {/if}
+        {/if}
+      </Tooltip.Trigger>
     {/if}
   </Tooltip>
 

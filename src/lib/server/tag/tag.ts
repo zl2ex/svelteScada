@@ -26,11 +26,9 @@ import {
   StatusCode,
 } from "node-opcua";
 import z, { ZodObject } from "zod";
-import { type UdtParams } from "./udt";
 import { OpcuaFolder } from "./opcuaFolder";
 import { attempt } from "../../../lib/util/attempt";
 
-import vm from "node:vm";
 import { Z_BaseTypes } from "../../client/tag/zodSchema";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { tags, z_insertTag } from "../sqlite/tables";
@@ -42,116 +40,11 @@ const tagTableDefaults = getTableDefaults(tags);
 
 export type TagOptionsInput = z.input<typeof z_insertTag>;
 
-function validateExpression(expr: string): void {
-  // Only allow safe characters and patterns
-  const safeExprRegex =
-    /^[0-9+\-*/%().\s]*([A-Za-z_][A-Za-z0-9_]*|Math\.[A-Za-z_][A-Za-z0-9_]*)*[0-9+\-*/%().\s]*$/;
-
-  if (!safeExprRegex.test(expr)) {
-    throw new Error(`Unsafe expression: ${expr}`);
-  }
-}
-
 export async function getAllDataTypeStrings() {
   const udtNames = udtManager.getAllUdts().map((udt) => {
     return udt.name;
   });
   return [...Object.keys(Z_BaseTypes), ...udtNames];
-}
-
-function resolveTemplate(
-  key: string,
-  expression: string,
-  context: Record<string, any>,
-): string {
-  return expression.replace(/\$\{([^}]+)\}/g, (_, expr) => {
-    try {
-      const sandbox = { ...context };
-      const script = new vm.Script(expr); // run in vm to prevent code leaks
-      const result = String(script.runInNewContext(sandbox));
-      return result;
-    } catch (e) {
-      throw new TagError(key, `[Tag] Failed to evaluate expression: ${expr}`);
-    }
-  });
-}
-
-function isExpression(expr: unknown): boolean {
-  return typeof expr === "string" && expr.includes("${") && expr.includes("}");
-}
-
-function resolveTagOptions(
-  instanceProps: TagOptionsInput,
-  udtParams?: UdtParams,
-): TagOptionsResolved {
-  //@ts-ignore
-  const resolved: TagOptionsResolved = {};
-  const inProgress = new Set<string>();
-
-  function resolveKey(key: keyof TagOptionsResolved, props: TagOptionsInput) {
-    //if (!isExpression(resolved[key])) return; // if it doesnt need to be evaluated
-
-    // TD WIP
-    if (
-      inProgress.has(key) &&
-      isExpression(resolved[key]) // &&
-      //resolved[key as keyof typeof resolved].includes(key)
-    ) {
-      throw new TagError(
-        key,
-        `[Tag] Circular reference detected while resolving "${key}"`,
-      );
-    }
-    inProgress.add(key);
-
-    const raw = props[key];
-    if (isExpression(raw)) {
-      // Pass udtProps + already resolved instance props into context
-      const res = resolveTemplate(key, raw, {
-        ...udtParams,
-        ...resolved,
-        ...props,
-        ...props.parameters,
-      });
-
-      if (!Z_TagOptionsResolved.shape[key]) {
-        throw new TagError(
-          key,
-          `[Tag] unexpected property ${key} in tagOptions`,
-        );
-      }
-
-      // if it expects a number
-      if (Z_TagOptionsResolved.shape[key].safeParse(0).success) {
-        resolved[key] = Number(res);
-      }
-      // if it expects a boolean
-      else if (Z_TagOptionsResolved.shape[key].safeParse(true).success) {
-        resolved[key] = Boolean(res);
-      }
-      // if it expects a string
-      else {
-        resolved[key] = res; // already a string from resolveTempalte
-      }
-    } else {
-      resolved[key] = raw;
-    }
-
-    if (!isExpression(resolved[key])) inProgress.delete(key);
-  }
-
-  for (const key of Object.keys(instanceProps)) {
-    resolveKey(key as keyof TagOptionsResolved, instanceProps);
-  }
-
-  let tries = 5;
-  while (inProgress.keys.length > 0 && tries > 0) {
-    for (const key in inProgress) {
-      resolveKey(key as keyof TagOptionsResolved, resolved);
-    }
-    tries--;
-  }
-  return resolved;
 }
 
 type OpcuaDataTypeMapping = {
@@ -416,7 +309,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
 
     // is a user defined datatype and therfore a opcua ExtentionObject
     else {
-      this.type = "UdtTag";
+      this.options.type = "udtTag";
       this.opcuaDataType = DataType.ExtensionObject;
       const udtDefinition = udtManager.udts.get(this.options.dataType);
       if (!udtDefinition) {
@@ -457,17 +350,17 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
     }
 
     if (this.options.exposeOverOpcua) {
-      if (!this.opcuaServer?.engine) {
+      if (!this.opcuaServer?.engine.addressSpace) {
         throw new Error(
           `[Tag] no opcua server defined for tag ${this.id}  please call Tag.initOpcuaServer() and provide a server`,
         );
       }
-      const namespace = this.opcuaServer.engine.addressSpace!.getOwnNamespace();
+      const namespace = this.opcuaServer.engine.addressSpace.getOwnNamespace();
       const parent = this.opcuaFolder.uaObject;
       this.exposeOpcuaVarible = namespace.addVariable({
         componentOf: parent,
-        browseName: this.name,
-        nodeId: this.options.nodeId ?? undefined,
+        browseName: this.id,
+        displayName: this.name,
         dataType: this.opcuaDataType,
         valueRank: this.arrayLength ? 1 : 0,
         arrayDimensions: this.arrayLength ? [this.arrayLength] : null,

@@ -4,27 +4,11 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "DebugSvelteServer",
-      "program": "${workspaceFolder}/build/server.js", // Adjust to your compiled server entry point
-      "preLaunchTask": "tsc: build - tsconfig.json", // Optional: Build before launching
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"], // Point to your compiled JS files
-      "sourceMaps": true
-    },
-    {
-      "type": "chrome", // or "msedge" for Microsoft Edge
-      "request": "launch",
-      "name": "DebugViteClient",
-      "url": "http://localhost:5173", // Adjust if your Vite dev server port is different
-      "webRoot": "${workspaceFolder}/src", // Point to your client-side source
-      "sourceMapPathOverrides": {
-        "webpack:///./src/*": "${webRoot}/*" // Adjust if using a different bundler or path structure
-      }
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Debug Full Stack",
-      "configurations": ["DebugSvelteServer", "DebugViteClient"]
+      "name": "Debug SvelteKit (Vite)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }

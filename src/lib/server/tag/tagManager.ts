@@ -64,45 +64,49 @@ export class TagManager {
   // -------------------------
 
   createTag(opts: TagOptionsInput, writeToDb: boolean = true) {
-    if (!this.opcuaServer || !this.folderManager) {
-      throw Error(
+    if (!this.opcuaServer) {
+      throw new Error(
         `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
       );
     }
 
-    if (this.tags.has(opts.id))
+    if (!this.folderManager) {
+      throw new Error(
+        `[TagManager] createTag() folderManager not initalised, please call initOpcuaServer() first`,
+      );
+    }
+
+    if (this.tags.has(opts.id)) {
       return err({ reason: "TAG_ALREADY_EXISTS" } as const);
+    }
 
     const newFolderId = opts.folderId ?? crypto.randomUUID();
     let opcuaFolder = this.folderManager.get(opts.folderId);
-    if (!opcuaFolder) {
-      const placeholder = this.folderManager.createFolder({
-        id: newFolderId,
-        name: "__PLACEHOLDER__",
-        parentId: null,
-      });
 
-      if (placeholder.isErr()) return err(placeholder.error);
-      opcuaFolder = placeholder.value;
+    if (!opcuaFolder) {
+      console.debug("DEBUG");
+      return err({ reason: "FOLDER_NOT_FOUND" } as const);
     }
 
     const duplicate = this.checkDuplicate(opts, opcuaFolder);
     if (duplicate.isErr()) return err(duplicate.error);
 
-    if (opcuaFolder.node.id)
-      // reference new folder if we had to create a placeholder
-      opts.folderId = newFolderId;
-
-    const tag = new Tag(this.opcuaServer, opcuaFolder, opts);
-
     if (writeToDb) {
       const dbWrite = tryCatch(() => {
-        db.insert(tables.tags).values(tag.options).run();
+        db.insert(tables.tags).values(opts).run();
       });
 
-      if (dbWrite.error)
+      if (dbWrite.error) {
         return err({ reason: "DB_ERROR", cause: dbWrite.error } as const);
+      }
     }
+
+    if (opcuaFolder.node.id) {
+      // reference new folder if we had to create a placeholder
+      opts.folderId = newFolderId;
+    }
+
+    const tag = new Tag(this.opcuaServer, opcuaFolder, opts);
 
     this.tags.set(tag.id, tag);
 
@@ -129,8 +133,25 @@ export class TagManager {
       );
     }
 
+    const dbResult = tryCatch(() =>
+      db
+        .update(tables.tags)
+        .set(tagUpdates)
+        .where(eq(tables.tags.id, id))
+        .run(),
+    );
+
+    if (dbResult.error) {
+      return err({ reason: "DB_ERROR", cause: dbResult.error } as const);
+    }
+
+    const opcuaFolder = this.folderManager.get(tagUpdates.folderId);
+    if (!opcuaFolder) return err({ reason: "OPCUA_FOLDER_NOT_FOUND" } as const);
+
+    const duplicate = this.checkDuplicate(tagUpdates, opcuaFolder);
+    if (duplicate.isErr()) return err(duplicate.error);
+
     const oldTag = this.tags.get(id);
-    const oldOptions = oldTag?.options;
     const oldPath = this.idToPath(id);
 
     if (oldTag) {
@@ -139,33 +160,9 @@ export class TagManager {
       if (oldPath) this.pathToId.delete(oldPath);
     }
 
-    const opcuaFolder = this.folderManager.get(tagUpdates.folderId);
-    if (!opcuaFolder) return err({ reason: "OPCUA_FOLDER_NOT_FOUND" } as const);
     const updatedTag = new Tag(this.opcuaServer, opcuaFolder, tagUpdates);
     this.tags.set(updatedTag.id, updatedTag);
     this.pathToId.set(tagUpdates.name, updatedTag.id);
-
-    const dbResult = tryCatch(() =>
-      db
-        .update(tables.tags)
-        .set(tagUpdates)
-        .where(eq(tables.tags.id, id))
-        .run(),
-    );
-    if (dbResult.error) {
-      return err({ reason: "DB_ERROR", cause: dbResult.error } as const);
-    }
-
-    updatedTag.dispose();
-    this.tags.delete(id);
-    this.pathToId.delete(tagUpdates.name);
-
-    if (oldOptions) {
-      const restoredFolder = this.folderManager.get(oldOptions.folderId)!;
-      const restoredTag = new Tag(this.opcuaServer, restoredFolder, oldOptions);
-      this.tags.set(restoredTag.id, restoredTag);
-      this.pathToId.set(oldOptions.name, restoredTag.id);
-    }
 
     return ok(updatedTag);
   }
@@ -181,17 +178,18 @@ export class TagManager {
 
     if (!tag) return err({ reason: "TAG_NOT_FOUND" } as const);
 
-    tag.dispose();
-    this.tags.delete(id);
-    const oldPath = this.idToPath(id);
-    if (oldPath) this.pathToId.delete(oldPath);
-
     const dbResult = tryCatch(() =>
       db.delete(tables.tags).where(eq(tables.tags.id, id)).run(),
     );
     if (dbResult.error) {
       return err({ reason: "DB_ERROR", cause: dbResult.error } as const);
     }
+
+    tag.dispose();
+    this.tags.delete(id);
+    const oldPath = this.idToPath(id);
+    if (oldPath) this.pathToId.delete(oldPath);
+
     return ok(true);
   }
 

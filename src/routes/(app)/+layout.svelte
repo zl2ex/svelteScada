@@ -20,8 +20,11 @@
     Popover,
     Portal,
     Navigation,
+    Toast,
   } from "@skeletonlabs/skeleton-svelte";
+  import { browser } from "$app/environment";
   import { themeManager } from "$lib/client/theme.svelte.js";
+  import { getToaster } from "$lib/client/toast.svelte";
   import { logout } from "$lib/remote/user.remote.js";
   import { goto } from "$app/navigation";
   import { configure } from "svelte-realtime/client";
@@ -122,3 +125,19 @@
     {@render children()}
   </main>
 </div>
+
+{#if browser}
+  <Toast.Group toaster={getToaster()}>
+    {#snippet children(toast)}
+      <Toast {toast}>
+        <Toast.Message>
+          <Toast.Title>{toast.title}</Toast.Title>
+          {#if toast.description}
+            <Toast.Description>{toast.description}</Toast.Description>
+          {/if}
+        </Toast.Message>
+        <Toast.CloseTrigger />
+      </Toast>
+    {/snippet}
+  </Toast.Group>
+{/if}

@@ -122,7 +122,7 @@
     }),
   );
 
-  const id = crypto.randomUUID();
+  const id = "TAGS_TREE";
   const TREE_EXPANDED_KEY = `editor-tree-expanded-${id}`;
 
   function loadExpandedFromStorage(): string[] {
@@ -229,8 +229,8 @@
     undoManager.beginTransaction();
     tagPatchesCollection.removeMany(childTags.map((t) => t.id));
     tagFolderPatchesCollection.removeMany([
-      ...childFolders.map((f) => f.id),
       ...nodes.map((n) => n.id),
+      ...childFolders.map((f) => f.id),
     ]);
     undoManager.endTransaction();
   }
@@ -268,8 +268,10 @@
 
     if (e.key === "Delete") {
       e.preventDefault();
-      foldersDelete(folders);
+      undoManager.beginTransaction();
       tagsDelete(tags);
+      foldersDelete(folders);
+      undoManager.endTransaction();
     }
 
     if (e.key === "F2") {
@@ -282,6 +284,7 @@
     }
 
     if (e.key === "t" && e.altKey && onlyOneFolder) {
+      console.debug("Alt+T");
       addTag(folders[0]);
     }
 
@@ -304,9 +307,10 @@
         ...getChildTags(folders),
       ]);
       copyToClipboard(json);
-
-      foldersDelete(folders);
+      undoManager.beginTransaction();
       tagsDelete(tags);
+      foldersDelete(folders);
+      undoManager.endTransaction();
     }
   }
 
@@ -456,7 +460,7 @@
     }
 
     let tags: TagInsertOptionalId[] = [];
-    let folders: ClosureTableNodeOptionalId[] = [];
+    let folders: ClosureTableNode[] = [];
 
     for (const data of json.value) {
       let tagResult = z_shared_insertTag.safeParse(data);
@@ -472,41 +476,61 @@
       else if (folderResult.data) folders.push(folderResult.data);
     }
 
+    // check for relationships betwen pasted folder and create new id's while keeping the relationships
+    for (const folder of folders) {
+      const oldId = folder.id;
+      const newId = crypto.randomUUID();
+      folder.id = newId;
+
+      //if the pasted folders are nested and the child is referencing the old id give the references the new id
+      for (const f of folders) {
+        if (oldId == f.parentId) {
+          f.parentId = newId;
+        }
+      }
+
+      for (const t of tags) {
+        if (oldId == t.folderId) {
+          t.folderId = newId;
+        }
+      }
+    }
+
     // if multiple tags or folders added just create one history entry
     undoManager.beginTransaction();
 
     for (const folder of folders) {
-      const newId = folder.id ?? crypto.randomUUID();
+      // no need to assign new id as it has already been done for the folders in the loop above
       let name = checkDuplicateFolderName(folder.name, parentNode);
-      let parentId: string | null = null;
+      let parentId: string | null = parentNode?.id ?? null;
 
       //if the pasted folders are nested and the child is referencing the parent
       if (folders.find((f) => f.id == folder.parentId)) {
-        // assign the parentId from the pasted folder - else just insert it in the selected folder
+        // assign the folderId from the pasted folder - else just insert it in the selected folder
         parentId = folder.parentId;
       }
 
       tagFolderPatchesCollection.add({
-        id: newId,
+        id: folder.id,
         name,
-        parentId: parentId ?? parentNode?.id ?? null,
+        parentId,
       });
     }
 
     for (const tag of tags) {
-      const newId = tag.id ?? crypto.randomUUID();
+      const newId = crypto.randomUUID();
       let name = checkDuplicateTagName(tag.name, parentNode);
-      let parentId: string | null | undefined = undefined;
+      let folderId: string | null | undefined = parentNode?.id ?? null;
 
       //if the pasted folders are nested and the child is referencing the parent
       if (folders.find((f) => f.id == tag.folderId)) {
         // assign the folderId from the pasted tag - else just insert it in the selected folder
-        parentId = tag.folderId;
+        folderId = tag.folderId;
       }
 
       tagPatchesCollection.add({
         id: newId,
-        folderId: parentId ?? parentNode?.id ?? null,
+        folderId: folderId ?? parentNode?.id ?? null,
         name: name,
         dataType: tag.dataType,
         value: tag.value ?? null,
@@ -592,7 +616,7 @@
         </TreeView.BranchContent>
       </TreeView.Branch>
     {:else if isTagOptions(node)}
-      <TreeView.Item class="flex items-center gap-2">
+      <TreeView.Item class="truncate">
         <TagIcon class="size-4 shrink-0" />
         {#if renamingTagId === node.id}
           <input
@@ -622,198 +646,191 @@
   </TreeView.NodeProvider>
 {/snippet}
 
-<div class="flex flex-col">
-  {#if tagFolderPatchesCollection.syncError || tagPatchesCollection.syncError}
-    <div
-      class="bg-error-500 text-white text-xs px-2 py-1 flex items-center justify-between"
+<div class="text-xs w-100">
+  <svelte:boundary>
+    <Menu
+      onOpenChange={(e) => {
+        if (e.open) {
+          const { folders, tags } = getSelectedItems();
+          contextMenuFolders = folders;
+          contextMenuTags = tags;
+        }
+      }}
     >
-      <span
-        >Sync failed: {tagFolderPatchesCollection.syncError ||
-          tagPatchesCollection.syncError}</span
-      >
-      <button
-        class="ml-2 font-bold"
-        onclick={() => {
-          tagFolderPatchesCollection.syncError = null;
-          tagPatchesCollection.syncError = null;
-        }}>&times;</button
-      >
-    </div>
-  {/if}
-  <div class="text-xs w-100">
-    <svelte:boundary>
-      <Menu
-        onOpenChange={(e) => {
-          if (e.open) {
-            const { folders, tags } = getSelectedItems();
-            contextMenuFolders = folders;
-            contextMenuTags = tags;
-          }
-        }}
-      >
-        <Menu.ContextTrigger class="w-full">
-          <TreeView.Provider value={treeView}>
-            <TreeView.Tree
-              class="w-full"
-              onkeyup={handleTreeKeyup}
-              onpaste={(e) => {
-                e.stopPropagation();
-                handlePaste(e, undefined);
-              }}
+      <Menu.ContextTrigger class="w-full pb-12">
+        <TreeView.Provider value={treeView}>
+          <TreeView.Tree
+            class="w-full"
+            onkeyup={handleTreeKeyup}
+            onpaste={(e) => {
+              e.stopPropagation();
+              handlePaste(e, undefined);
+            }}
+          >
+            {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders }, ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
+              {@render treeNode(node, [index])}
+            {/each}
+          </TreeView.Tree>
+        </TreeView.Provider>
+      </Menu.ContextTrigger>
+      <Portal>
+        <Menu.Positioner>
+          <Menu.Content class="min-w-auto">
+            <Menu.Item
+              value="newTag"
+              //disabled={contextMenuFolders.length !== 1}
             >
-              {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders }, ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
-                {@render treeNode(node, [index])}
-              {/each}
-            </TreeView.Tree>
-          </TreeView.Provider>
-        </Menu.ContextTrigger>
-        <Portal>
-          <Menu.Positioner>
-            <Menu.Content class="min-w-auto">
-              {#if contextMenuFolders.length > 0}
-                <Menu.Item
-                  value="newTag"
-                  disabled={contextMenuFolders.length !== 1}
+              <Menu.ItemText class="w-full">
+                <button
+                  class="flex items-center gap-2 w-full"
+                  //disabled={contextMenuFolders.length !== 1}
+                  onclick={() =>
+                    addTag(
+                      contextMenuFolders[0] ?? {
+                        id: "root",
+                        name: "root",
+                        parentId: null,
+                      },
+                    )}
                 >
-                  <Menu.ItemText class="w-full">
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      disabled={contextMenuFolders.length !== 1}
-                      onclick={() => addTag(contextMenuFolders[0])}
-                    >
-                      <TagPlus class="size-4" />
-                      <span>New Tag</span>
-                      <span class="text-xs text-neutral-500 ml-auto">Alt+T</span
-                      >
-                    </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Item
-                  value="newFolder"
-                  disabled={contextMenuFolders.length !== 1}
+                  <TagPlus class="size-4" />
+                  <span>New Tag</span>
+                  <span class="text-xs text-neutral-500 ml-auto">Alt+T</span>
+                </button>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Item
+              value="newFolder"
+              //disabled={contextMenuFolders.length !== 1}
+            >
+              <Menu.ItemText class="w-full">
+                <button
+                  class="flex items-center gap-2 w-full"
+                  //disabled={contextMenuFolders.length !== 1}
+                  onclick={() =>
+                    addFolder(
+                      contextMenuFolders[0] ?? {
+                        id: "root",
+                        name: "root",
+                        parentId: null,
+                      },
+                    )}
                 >
-                  <Menu.ItemText class="w-full">
-                    <button
-                      class="flex items-center gap-2 w-full"
-                      disabled={contextMenuFolders.length !== 1}
-                      onclick={() => addFolder(contextMenuFolders[0])}
-                    >
-                      <FolderPlus class="size-4" />
-                      <span>New Folder</span>
-                      <span class="text-xs text-neutral-500 ml-auto">Alt+F</span
-                      >
-                    </button>
-                  </Menu.ItemText>
-                </Menu.Item>
-                <Menu.Separator />
-              {/if}
-              <Menu.Item
-                value="cut"
-                disabled={contextMenuFolders.length === 0 &&
-                  contextMenuTags.length === 0}
-              >
-                <Menu.ItemText class="w-full">
-                  <button
-                    class="flex items-center gap-2 w-full"
-                    disabled={contextMenuFolders.length === 0 &&
-                      contextMenuTags.length === 0}
-                    onclick={() => {
-                      if (contextMenuFolders.length > 0)
-                        foldersCut(contextMenuFolders);
-                      else if (contextMenuTags.length > 0)
-                        tagsCut(contextMenuTags);
-                    }}
-                  >
-                    <Scissors class="size-4" />
-                    <span>Cut</span>
-                    <span class="text-xs text-neutral-500 ml-auto">Ctrl+X</span>
-                  </button>
-                </Menu.ItemText>
-              </Menu.Item>
-              <Menu.Item
-                value="copy"
-                disabled={contextMenuFolders.length === 0 &&
-                  contextMenuTags.length === 0}
-              >
-                <Menu.ItemText class="w-full">
-                  <button
-                    class="flex items-center gap-2 w-full"
-                    disabled={contextMenuFolders.length === 0 &&
-                      contextMenuTags.length === 0}
-                    onclick={() => {
-                      let json = JSON.stringify([
-                        ...contextMenuTags,
-                        ...contextMenuFolders,
-                      ]);
-                      copyToClipboard(json);
-                    }}
-                  >
-                    <Copy class="size-4" />
-                    <span>Copy</span>
-                    <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
-                  </button>
-                </Menu.ItemText>
-              </Menu.Item>
-              <Menu.Item
-                value="paste"
-                disabled={contextMenuFolders.length === 0 &&
-                  contextMenuTags.length === 0}
-              >
-                <Menu.ItemText class="w-full">
-                  <button
-                    class="flex items-center gap-2 w-full"
-                    disabled={contextMenuFolders.length === 0 &&
-                      contextMenuTags.length === 0}
-                    onclick={async () => {
-                      const text = await readClipboard();
-                      if (text) handlePasteText(text, contextMenuFolders[0]);
-                    }}
-                  >
-                    <Copy class="size-4" />
-                    <span>Paste</span>
-                    <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
-                  </button>
-                </Menu.ItemText>
-              </Menu.Item>
-              <Menu.Separator />
-              <Menu.Item
-                value="delete"
-                disabled={contextMenuFolders.length === 0 &&
-                  contextMenuTags.length === 0}
-              >
-                <Menu.ItemText class="w-full">
-                  <button
-                    class="flex items-center gap-2 w-full"
-                    disabled={contextMenuFolders.length === 0 &&
-                      contextMenuTags.length === 0}
-                    onclick={() => {
-                      foldersDelete(contextMenuFolders);
-                      tagsDelete(contextMenuTags);
-                    }}
-                  >
-                    <Trash2 class="size-4" />
-                    Delete
-                    <span class="text-xs text-neutral-500 ml-auto">Del</span>
-                  </button>
-                </Menu.ItemText>
-              </Menu.Item>
-            </Menu.Content>
-          </Menu.Positioner>
-        </Portal>
-      </Menu>
+                  <FolderPlus class="size-4" />
+                  <span>New Folder</span>
+                  <span class="text-xs text-neutral-500 ml-auto">Alt+F</span>
+                </button>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Separator />
+            <Menu.Item
+              value="cut"
+              disabled={contextMenuFolders.length === 0 &&
+                contextMenuTags.length === 0}
+            >
+              <Menu.ItemText class="w-full">
+                <button
+                  class="flex items-center gap-2 w-full"
+                  disabled={contextMenuFolders.length === 0 &&
+                    contextMenuTags.length === 0}
+                  onclick={() => {
+                    if (contextMenuFolders.length > 0)
+                      foldersCut(contextMenuFolders);
+                    else if (contextMenuTags.length > 0)
+                      tagsCut(contextMenuTags);
+                  }}
+                >
+                  <Scissors class="size-4" />
+                  <span>Cut</span>
+                  <span class="text-xs text-neutral-500 ml-auto">Ctrl+X</span>
+                </button>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Item
+              value="copy"
+              disabled={contextMenuFolders.length === 0 &&
+                contextMenuTags.length === 0}
+            >
+              <Menu.ItemText class="w-full">
+                <button
+                  class="flex items-center gap-2 w-full"
+                  disabled={contextMenuFolders.length === 0 &&
+                    contextMenuTags.length === 0}
+                  onclick={() => {
+                    let json = JSON.stringify([
+                      ...contextMenuTags,
+                      ...contextMenuFolders,
+                    ]);
+                    copyToClipboard(json);
+                  }}
+                >
+                  <Copy class="size-4" />
+                  <span>Copy</span>
+                  <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
+                </button>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Item
+              value="paste"
+              disabled={contextMenuFolders.length === 0 &&
+                contextMenuTags.length === 0}
+            >
+              <Menu.ItemText class="w-full">
+                <button
+                  class="flex items-center gap-2 w-full"
+                  disabled={contextMenuFolders.length === 0 &&
+                    contextMenuTags.length === 0}
+                  onclick={async () => {
+                    const text = await readClipboard();
+                    if (text) handlePasteText(text, contextMenuFolders[0]);
+                  }}
+                >
+                  <Copy class="size-4" />
+                  <span>Paste</span>
+                  <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
+                </button>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Separator />
+            <Menu.Item
+              value="delete"
+              disabled={contextMenuFolders.length === 0 &&
+                contextMenuTags.length === 0}
+            >
+              <Menu.ItemText class="w-full">
+                <button
+                  class="flex items-center gap-2 w-full"
+                  disabled={contextMenuFolders.length === 0 &&
+                    contextMenuTags.length === 0}
+                  onclick={() => {
+                    undoManager.beginTransaction();
+                    tagsDelete(contextMenuTags);
+                    foldersDelete(contextMenuFolders);
+                    undoManager.endTransaction();
+                  }}
+                >
+                  <Trash2 class="size-4" />
+                  Delete
+                  <span class="text-xs text-neutral-500 ml-auto">Del</span>
+                </button>
+              </Menu.ItemText>
+            </Menu.Item>
+          </Menu.Content>
+        </Menu.Positioner>
+      </Portal>
+    </Menu>
 
-      {#snippet pending()}
-        <LoaderIcon class="size-4 animate-spin" />
-      {/snippet}
-      {#snippet failed(error, reset)}
-        <p class="text-error-700-300">{error}</p>
-        <button onclick={reset} class="btn preset-filled">reset</button>
-      {/snippet}
-    </svelte:boundary>
-  </div>
-
-  {@render children?.()}
+    {#snippet pending()}
+      <LoaderIcon class="size-4 animate-spin" />
+    {/snippet}
+    {#snippet failed(error, reset)}
+      <p class="text-error-700-300">{error}</p>
+      <button onclick={reset} class="btn preset-filled">reset</button>
+    {/snippet}
+  </svelte:boundary>
 </div>
+
+{@render children?.()}
 
 <style>
   :global(

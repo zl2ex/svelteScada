@@ -24,7 +24,15 @@ type ContextEntry = {
 };
 
 type UndoRedoRecord = {
-  context: string;
+  // One timeline entry may cover several contexts — e.g. a transaction
+  // that touched both the tags and folders collections. Undo/redo then
+  // plays back every collection in the record.
+  contexts: string[];
+  // How many history steps each context moved while this entry was being
+  // recorded. A transaction that calls add() in a loop advances a single
+  // collection's Travels by N positions, so undoing it must step back N
+  // times, not once. Falls back to 1 for single-mutation entries.
+  steps: Record<string, number>;
   timestamp: number;
 };
 
@@ -37,8 +45,8 @@ export class UnifiedUndoManager {
   private activeDocument: string | null = null;
 
   // Transaction support
-  private transactionStack = 0;            // >0 when inside a begin/end pair
-  private transactionBuffer: string[] = []; // contexts recorded during transaction
+  private transactionStack = 0;                  // >0 when inside a begin/end pair
+  private transactionBuffer = new Map<string, number>(); // contexts -> # of mutations
 
   // ── registration ─────────────────────────────────────
 
@@ -77,15 +85,23 @@ export class UnifiedUndoManager {
    * with `onMutation` disabled for that purpose.
    */
   recordMutation(context: string) {
-    // During a transaction, buffer the context instead of adding to the timeline
+    // During a transaction, count the mutations per context instead of
+    // adding to the timeline. A batch op (e.g. pasting N folders) advances
+    // the collection's Travels by N positions, so the entry must remember
+    // N so undo/redo can step that far back/forward.
     if (this.transactionStack > 0) {
-      if (!this.transactionBuffer.includes(context)) {
-        this.transactionBuffer.push(context);
-      }
+      this.transactionBuffer.set(
+        context,
+        (this.transactionBuffer.get(context) ?? 0) + 1,
+      );
       return;
     }
 
-    this.undoTimeline.push({ context, timestamp: Date.now() });
+    this.undoTimeline.push({
+      contexts: [context],
+      steps: { [context]: 1 },
+      timestamp: Date.now(),
+    });
     // A new mutation clears the redo stack
     this.redoTimeline.length = 0;
   }
@@ -105,7 +121,9 @@ export class UnifiedUndoManager {
 
   /**
    * End a transaction. The buffered mutations are committed to the
-   * unified timeline as a single entry (per unique context).
+   * unified timeline as a single entry covering every context that
+   * was touched (so a transaction spanning multiple collections
+   * undoes/redoes as one action).
    */
   endTransaction() {
     if (this.transactionStack === 0) {
@@ -117,27 +135,34 @@ export class UnifiedUndoManager {
 
     if (this.transactionStack > 0) return; // still inside a nested transaction
 
-    // Flush the buffer — one timeline entry per unique context that was touched
-    for (const context of this.transactionBuffer) {
-      this.undoTimeline.push({ context, timestamp: Date.now() });
+    // Flush the buffer — one timeline entry for the whole transaction,
+    // regardless of how many distinct contexts were mutated.
+    if (this.transactionBuffer.size > 0) {
+      this.undoTimeline.push({
+        contexts: [...this.transactionBuffer.keys()],
+        steps: Object.fromEntries(this.transactionBuffer),
+        timestamp: Date.now(),
+      });
     }
     this.redoTimeline.length = 0;
-    this.transactionBuffer.length = 0;
+    this.transactionBuffer.clear();
   }
 
   /**
    * Record that a collection just undid or redid a step.
    * Called internally by `undo()` / `redo()` — not meant for external use.
    */
-  private recordMove(direction: "undo" | "redo") {
+  private recordMove(direction: "undo" | "redo", entry: UndoRedoRecord) {
     const timestamp = Date.now();
 
     if (direction === "undo") {
-      const last = this.undoTimeline.pop();
-      if (last) this.redoTimeline.push({ ...last, timestamp });
+      const index = this.undoTimeline.indexOf(entry);
+      if (index >= 0) this.undoTimeline.splice(index, 1);
+      this.redoTimeline.push({ ...entry, timestamp });
     } else {
-      const last = this.redoTimeline.pop();
-      if (last) this.undoTimeline.push({ ...last, timestamp });
+      const index = this.redoTimeline.indexOf(entry);
+      if (index >= 0) this.redoTimeline.splice(index, 1);
+      this.undoTimeline.push({ ...entry, timestamp });
     }
   }
 
@@ -151,16 +176,24 @@ export class UnifiedUndoManager {
    *    from it first.
    * 2. Otherwise undo from whatever context is on top of the timeline
    *    (most-recent-first, regardless of type).
+   *
+   * A single timeline entry may span several contexts; undoing it plays
+   * back each collection in reverse order.
    */
   undo() {
     const entry = this.peekUndoTimeline();
     if (!entry) return;
 
-    const ctx = this.contexts.get(entry.context);
-    if (!ctx) return;
+    this.recordMove("undo", entry);
 
-    this.recordMove("undo");
-    ctx.collection.undo();
+    // Undo in reverse of the order the contexts were mutated, stepping each
+    // collection back by the number of positions it advanced for this entry.
+    for (const context of [...entry.contexts].reverse()) {
+      const ctx = this.contexts.get(context);
+      if (!ctx) continue;
+      const steps = entry.steps[context] ?? 1;
+      for (let i = 0; i < steps; i++) ctx.collection.undo();
+    }
   }
 
   /**
@@ -170,11 +203,16 @@ export class UnifiedUndoManager {
     const entry = this.peekRedoTimeline();
     if (!entry) return;
 
-    const ctx = this.contexts.get(entry.context);
-    if (!ctx) return;
+    this.recordMove("redo", entry);
 
-    this.recordMove("redo");
-    ctx.collection.redo();
+    // Redo in the original mutation order, stepping each collection forward
+    // by the number of positions it moved for this entry.
+    for (const context of entry.contexts) {
+      const ctx = this.contexts.get(context);
+      if (!ctx) continue;
+      const steps = entry.steps[context] ?? 1;
+      for (let i = 0; i < steps; i++) ctx.collection.redo();
+    }
   }
 
   /**
@@ -187,8 +225,8 @@ export class UnifiedUndoManager {
     if (this.activeDocument) {
       for (let i = this.undoTimeline.length - 1; i >= 0; i--) {
         const entry = this.undoTimeline[i];
-        if (entry.context === this.activeDocument) {
-          const ctx = this.contexts.get(entry.context);
+        if (entry.contexts.includes(this.activeDocument)) {
+          const ctx = this.contexts.get(this.activeDocument);
           if (ctx && ctx.contextType === "document") return entry;
         }
       }
@@ -205,8 +243,8 @@ export class UnifiedUndoManager {
     if (this.activeDocument) {
       for (let i = this.redoTimeline.length - 1; i >= 0; i--) {
         const entry = this.redoTimeline[i];
-        if (entry.context === this.activeDocument) {
-          const ctx = this.contexts.get(entry.context);
+        if (entry.contexts.includes(this.activeDocument)) {
+          const ctx = this.contexts.get(this.activeDocument);
           if (ctx && ctx.contextType === "document") return entry;
         }
       }

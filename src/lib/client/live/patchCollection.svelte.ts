@@ -6,6 +6,7 @@
 
 import { createTravels, type Travels, type TravelPatches } from "travels";
 import { apply } from "mutative";
+import { toast } from "../toast.svelte";
 
 export interface Identifiable {
   id: string;
@@ -13,6 +14,7 @@ export interface Identifiable {
 
 type Ops = TravelPatches["patches"][number];
 
+export type PatchOp = TravelPatches["patches"][number][number];
 export interface PatchPayload {
   patches: Ops;
   versions?: Record<string, number>;
@@ -21,8 +23,8 @@ export interface PatchPayload {
 export interface PatchCollectionOptions<T extends Identifiable> {
   initial: Record<string, T>;
   // however your generated RPC/room action is shaped, as long as it
-  // takes ops and returns/rejects a promise
-  applyPatch: (ops: Ops) => Promise<unknown>;
+  // takes a single patch op and returns/rejects a promise
+  applyPatch: (patch: PatchOp) => Promise<unknown>;
   // adapt whatever store you're using (a live.stream, on(topic), etc.)
   // to this shape: call `notify` with each incoming payload, return an
   // unsubscribe function so destroy() can clean up.
@@ -97,16 +99,27 @@ export class PatchCollection<T extends Identifiable> {
   }
 
   private async sendOps(ops: Ops, inverseOps: Ops) {
+    let hadError = false;
     for (let i = 0; i < ops.length; i++) {
       try {
-        await this.applyPatch([ops[i]]);
-        this.syncError = null;
+        await this.applyPatch(ops[i]);
       } catch (e) {
-        apply(this.state, [inverseOps[i]], { mutable: true });
+        // The server rejected this op but will still receive the rest of the
+        // batch, so revert only the failing op locally and keep going —
+        // later ops are still sent and applied.
+        hadError = true;
+        apply(this.state, inverseOps.slice(i, i + 1), { mutable: true });
         this.syncError = (e as Error).message;
+        toast({
+          kind: "error",
+          title: "Sync Error",
+          description: this.syncError,
+          duration: 3000,
+        });
         this.onError?.(e as Error);
       }
     }
+    if (!hadError) this.syncError = null;
   }
 
   // Generic escape hatch: tracked mutation, goes through Travels exactly
@@ -197,6 +210,9 @@ export class PatchCollection<T extends Identifiable> {
     return this.travels.canForward();
   }
 
+  [Symbol.dispose]() {
+    this.dispose();
+  }
   // Call this from onDestroy (or wherever the owning component/page
   // tears down) if this collection's lifetime is scoped to something
   // shorter than the whole app — e.g. a per-document instance closed
