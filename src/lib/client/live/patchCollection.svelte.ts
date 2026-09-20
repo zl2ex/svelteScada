@@ -7,6 +7,8 @@
 import { createTravels, type Travels, type TravelPatches } from "travels";
 import { apply } from "mutative";
 import { toast } from "../toast.svelte";
+import { err, type Result } from "neverthrow";
+import type { NeverthrowError } from "$lib/server/tag/tag";
 
 export interface Identifiable {
   id: string;
@@ -24,7 +26,7 @@ export interface PatchCollectionOptions<T extends Identifiable> {
   initial: Record<string, T>;
   // however your generated RPC/room action is shaped, as long as it
   // takes a single patch op and returns/rejects a promise
-  applyPatch: (patch: PatchOp) => Promise<unknown>;
+  applyPatch: (patch: PatchOp) => Promise<Result<unknown, NeverthrowError>>;
   // adapt whatever store you're using (a live.stream, on(topic), etc.)
   // to this shape: call `notify` with each incoming payload, return an
   // unsubscribe function so destroy() can clean up.
@@ -36,7 +38,7 @@ export interface PatchCollectionOptions<T extends Identifiable> {
   // Used by UnifiedUndoManager to record entries on the unified timeline.
   onMutation?: () => void;
   // Called when a server sync fails for one or more patches.
-  onError?: (error: Error) => void;
+  onError?: (error: NeverthrowError) => void;
 }
 
 export class PatchCollection<T extends Identifiable> {
@@ -47,7 +49,7 @@ export class PatchCollection<T extends Identifiable> {
   private prevPosition: number;
   private applyPatch: PatchCollectionOptions<T>["applyPatch"];
   private onMutation?: () => void;
-  private onError?: (error: Error) => void;
+  private onError?: (error: NeverthrowError) => void;
   private unsubscribeTravels?: () => void;
   private unsubscribePatches?: () => void;
 
@@ -101,22 +103,21 @@ export class PatchCollection<T extends Identifiable> {
   private async sendOps(ops: Ops, inverseOps: Ops) {
     let hadError = false;
     for (let i = 0; i < ops.length; i++) {
-      try {
-        await this.applyPatch(ops[i]);
-      } catch (e) {
+      const res = await this.applyPatch(ops[i]);
+      if ("error" in res) {
         // The server rejected this op but will still receive the rest of the
         // batch, so revert only the failing op locally and keep going —
         // later ops are still sent and applied.
         hadError = true;
         apply(this.state, inverseOps.slice(i, i + 1), { mutable: true });
-        this.syncError = (e as Error).message;
+        this.syncError = res.error.reason;
         toast({
           kind: "error",
           title: "Sync Error",
           description: this.syncError,
           duration: 3000,
         });
-        this.onError?.(e as Error);
+        this.onError?.(res.error);
       }
     }
     if (!hadError) this.syncError = null;

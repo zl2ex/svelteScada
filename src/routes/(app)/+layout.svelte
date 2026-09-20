@@ -1,25 +1,9 @@
 <script lang="ts">
-  import {
-    CircleUserIcon,
-    MenuIcon,
-    SearchIcon,
-    ThermometerSnowflake,
-    User,
-    XIcon,
-    ArrowLeftRightIcon,
-    BikeIcon,
-    BookIcon,
-    HouseIcon,
-    TreePalmIcon,
-    TagIcon,
-    CpuIcon,
-  } from "@lucide/svelte";
+  import { CircleUserIcon, MenuIcon, SearchIcon, XIcon } from "@lucide/svelte";
   import {
     AppBar,
-    Avatar,
     Popover,
     Portal,
-    Navigation,
     Toast,
   } from "@skeletonlabs/skeleton-svelte";
   import { browser } from "$app/environment";

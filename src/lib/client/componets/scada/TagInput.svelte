@@ -2,8 +2,8 @@
   import { setTagValue, getTagValue } from "$live/tags";
   import type { HTMLInputAttributes } from "svelte/elements";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
-  import { err, ok, type Result } from "neverthrow";
-  import type { RpcError } from "svelte-realtime/client";
+  import { RpcError } from "svelte-realtime/client";
+  import type { ClientTagValue, FailedTag } from "$lib/server/tag/tag";
 
   interface IdProps extends HTMLInputAttributes {
     id: string;
@@ -24,129 +24,177 @@
 
   let lookup = $derived.by(() => id ?? path ?? "");
 
-  const stream = getTagValue(lookup).rune();
+  const streamStore = getTagValue(lookup);
 
-  const t = $derived.by(() => {
-    if (stream.current && "error" in stream.current)
-      return err(stream.current.error);
-    return ok(stream.current);
+  const streamRune = streamStore.rune();
+
+  // Discriminate the states `streamRune.current` can be:
+  // - `{ error: RpcError }`            - stream/transport level failure
+  // - `{ ok: false, error: FailedTag }` - the `Result` Err side (failed tag)
+  // - `{ ok: true, value: ClientTagValue }` - the `Result` Ok side (healthy tag)
+  type TagInputState =
+    | { kind: "rpcError"; error: RpcError }
+    | { kind: "failed"; error: FailedTag }
+    | { kind: "ok"; value: ClientTagValue }
+    | { kind: "loading" };
+
+  const streamState = $derived.by(() => {
+    const cur = streamRune.current;
+    if (!cur) return { kind: "loading" } as const;
+    if ("error" in cur) {
+      const err = cur.error;
+      return err instanceof RpcError
+        ? ({ kind: "rpcError", error: err } as const)
+        : ({ kind: "failed", error: err } as const);
+    }
+    if ("value" in cur && cur.value)
+      return { kind: "ok", value: cur.value } as const;
+    return { kind: "loading" } as const;
   });
 
   let isFocus = $state(false);
 
   function write(value: unknown) {
-    const key = lookup;
-    if (!key) return;
-    setTagValue({ id: key, value });
+    const id = streamState.value?.id ?? lookup;
+    setTagValue({ id, value });
   }
 
   function classWithError(base: string): string {
-    let err = false;
-    if (t.isErr()) err = true;
-    else if (t.value?.statusString !== "Good") err = true;
-
-    return err
+    return streamState.kind == "ok" && streamState.value.statusString !== "Good"
       ? `${base} outline -outline-offset-1 outline-error-400-600 ${clazz ?? ""}`
       : `${base} ${clazz ?? ""}`;
   }
 </script>
 
-<svelte:boundary>
-  <Tooltip positioning={{ placement: "top" }}>
-    {#if t.isErr()}
+<svelte:boundary
+  onerror={(err) => {
+    console.error(err);
+  }}
+>
+  {#if streamState.kind === "rpcError"}
+    <!-- RpcError - stream/transport level failure -->
+    <pre class="text-error-400-600">{streamState.error.message}</pre>
+  {:else if streamState.kind === "failed"}
+    <!-- Result<Error> - failed tag: reason + cause in a tooltip -->
+    <Tooltip positioning={{ placement: "top" }}>
       <Portal>
         <Tooltip.Positioner>
-          <Tooltip.Content class="card p-2 preset-filled-error-400-600">
-            <p>{t.error.message}</p>
+          <Tooltip.Content class="card p-2 preset-filled-error-400-600 text-xs">
+            <p class="heading-font-weight">{streamState.error.reason}</p>
+            {#if "cause" in streamState.error}
+              {#if streamState.error.cause instanceof String}
+                <p>{streamState.error.cause}</p>
+              {:else if "message" in streamState.error.cause}
+                <p>{streamState.error.cause.message}</p>
+              {:else}
+                <pre>{JSON.stringify(streamState.error.cause, null, 2)}</pre>
+              {/if}
+            {/if}
           </Tooltip.Content>
         </Tooltip.Positioner>
       </Portal>
-    {:else}
-      <label for="input" class="label">{label ?? t.value?.name ?? lookup}</label
-      >
       <Tooltip.Trigger tabindex={-1}>
-        {#if t.value}
-          {#if typeof t.value.value === "boolean"}
-            <input
-              type="checkbox"
-              name="input"
-              class={classWithError("checkbox")}
-              checked={t.value.value}
-              oninput={(ev) => write(Boolean(ev.currentTarget.checked))}
-              disabled={!t.value.options.writeable}
-              {...rest}
-            />
-          {:else if typeof t.value.value === "number"}
-            <input
-              type="number"
-              name="input"
-              class={classWithError("input")}
-              value={isFocus ? undefined : t.value.value}
-              onkeyup={(ev) => {
-                if (ev.currentTarget) {
-                  if (ev.key === "Enter") {
-                    write(Number(ev.currentTarget.value));
-                    ev.currentTarget.blur();
-                  }
-                  if (ev.key === "Escape") {
-                    ev.currentTarget.value = String(t.value?.value);
-                    ev.currentTarget.blur();
-                  }
-                }
-              }}
-              onfocusout={(ev) => {
-                if (ev.currentTarget.value) {
+        <label for="input" class="label">{label ?? lookup}</label>
+        <p class="text-error-400-600">{streamState.error.reason}</p>
+      </Tooltip.Trigger>
+    </Tooltip>
+  {:else if streamState.kind === "ok"}
+    <!-- Result<Ok> - healthy tag: render the input -->
+    <Tooltip positioning={{ placement: "top" }}>
+      {#if streamState.value.statusString !== "Good"}
+        <Portal>
+          <Tooltip.Positioner>
+            <Tooltip.Content
+              class="card p-2 preset-filled-error-400-600 text-xs"
+            >
+              <p>{streamState.value.statusString}</p>
+            </Tooltip.Content>
+          </Tooltip.Positioner>
+        </Portal>
+      {/if}
+      <Tooltip.Trigger tabindex={-1}>
+        <label for="input" class="label"
+          >{label ?? streamState.value.name ?? lookup}</label
+        >
+        {#if typeof streamState.value.value === "boolean"}
+          <input
+            type="checkbox"
+            name="input"
+            class={classWithError("checkbox")}
+            checked={streamState.value.value}
+            oninput={(ev) => write(Boolean(ev.currentTarget.checked))}
+            disabled={!streamState.value.options.writeable}
+            {...rest}
+          />
+        {:else if typeof streamState.value.value === "number"}
+          <input
+            type="number"
+            name="input"
+            class={classWithError("input")}
+            value={isFocus ? undefined : streamState.value.value}
+            onkeyup={(ev) => {
+              if (ev.currentTarget) {
+                if (ev.key === "Enter") {
                   write(Number(ev.currentTarget.value));
-                } else {
-                  ev.currentTarget.value = String(t.value?.value);
+                  ev.currentTarget.blur();
                 }
-                isFocus = false;
-              }}
-              onfocusin={() => {
-                isFocus = true;
-              }}
-              disabled={!t.value.options.writeable}
-              {...rest}
-            />
-          {:else}
-            <input
-              type="text"
-              name="input"
-              class={classWithError("input")}
-              value={isFocus ? undefined : t.value.value}
-              onkeyup={(ev) => {
-                if (ev.currentTarget) {
-                  if (ev.key === "Enter") {
-                    write(String(ev.currentTarget.value));
-                    ev.currentTarget.blur();
-                  }
-                  if (ev.key === "Escape") {
-                    ev.currentTarget.value = String(t.value?.value);
-                    ev.currentTarget.blur();
-                  }
+                if (ev.key === "Escape") {
+                  ev.currentTarget.value = String(streamState.value.value);
+                  ev.currentTarget.blur();
                 }
-              }}
-              onfocusout={(ev) => {
-                if (ev.currentTarget.value) {
+              }
+            }}
+            onfocusout={(ev) => {
+              if (ev.currentTarget.value) {
+                write(Number(ev.currentTarget.value));
+              } else {
+                ev.currentTarget.value = String(streamState.value.value);
+              }
+              isFocus = false;
+            }}
+            onfocusin={() => {
+              isFocus = true;
+            }}
+            disabled={!streamState.value.options.writeable}
+            {...rest}
+          />
+        {:else}
+          <input
+            type="text"
+            name="input"
+            class={classWithError("input")}
+            value={isFocus ? undefined : streamState.value.value}
+            onkeyup={(ev) => {
+              if (ev.currentTarget) {
+                if (ev.key === "Enter") {
                   write(String(ev.currentTarget.value));
-                } else {
-                  ev.currentTarget.value = String(t.value?.value);
+                  ev.currentTarget.blur();
                 }
-                isFocus = false;
-              }}
-              onfocusin={() => {
-                isFocus = true;
-              }}
-              disabled={!t.value.options.writeable}
-              {...rest}
-            />
-          {/if}
+                if (ev.key === "Escape") {
+                  ev.currentTarget.value = String(streamState.value.value);
+                  ev.currentTarget.blur();
+                }
+              }
+            }}
+            onfocusout={(ev) => {
+              if (ev.currentTarget.value) {
+                write(String(ev.currentTarget.value));
+              } else {
+                ev.currentTarget.value = String(streamState.value.value);
+              }
+              isFocus = false;
+            }}
+            onfocusin={() => {
+              isFocus = true;
+            }}
+            disabled={!streamState.value.options.writeable}
+            {...rest}
+          />
         {/if}
       </Tooltip.Trigger>
-    {/if}
-  </Tooltip>
-
-  {#snippet failed(error: unknown)}
-    <p class="text-error-400-600">{(error as any)?.message ?? String(error)}</p>
+    </Tooltip>
+  {/if}
+  {#snippet failed(error)}
+    <p class="text-error-400-600">{error}</p>
   {/snippet}
 </svelte:boundary>

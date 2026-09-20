@@ -1,17 +1,23 @@
 import type { OPCUAServer } from "node-opcua";
 import { logger } from "../pino/logger";
-import { Tag, type TagOptionsInput } from "./tag";
+import {
+  Tag,
+  type FailedTag,
+  type StatusCodeName,
+  type TagError,
+  type TagOptionsInput,
+} from "./tag";
 import { OpcuaFolder } from "./opcuaFolder";
 import { db } from "../sqlite/db";
 import { tables } from "../sqlite/tables";
 import { eq } from "drizzle-orm";
 import type { FolderManager } from "./folderManager";
-import { err, ok } from "neverthrow";
+import { err, ok, Result } from "neverthrow";
 import { tryCatch } from "$lib/util/tryCatch";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
-  private tags: Map<string, Tag<any>> = new Map();
+  private tags: Map<string, Result<Tag<any>, FailedTag>> = new Map();
   private pathToId: Map<string, string> = new Map();
   private folderManager: FolderManager | undefined;
 
@@ -41,24 +47,75 @@ export class TagManager {
   // Read Helpers
   // -------------------------
 
-  getTagByPath(path: string): Tag<any> | undefined {
+  getTagByPath(path: string) {
     const id = this.pathToId.get(path);
-    if (!id) return undefined;
-    return this.tags.get(id);
+    if (!id) {
+      return err({
+        reason: "TAG_NOT_FOUND",
+        cause: `no tag at path ${path}`,
+      } as const);
+    }
+    return ok(this.tags.get(id));
   }
 
-  getTagById(id: string): Tag<any> | undefined {
-    return this.tags.get(id);
+  getTagById(id: string) {
+    const tag = this.tags.get(id);
+    if (!tag) {
+      return err({
+        reason: "TAG_NOT_FOUND",
+        cause: `no tag at id ${id}`,
+      } as const);
+    }
+    return ok(tag);
   }
 
-  getAllTags(): Tag<any>[] {
+  getAllTags() {
     return Array.from(this.tags.values());
   }
 
   idToPath(findId: string) {
     return this.pathToId.entries().find(([id, path]) => id == findId)?.[0];
   }
+  /*
+  getClientTagByIdOrPath(lookup: string): ClientTag {
+    const tag = this.getTagById(lookup) ?? this.getTagByPath(lookup);
 
+    if (!tag) {
+      return {
+        ok: false,
+        error: {
+          error: {
+            reason: "NOT_FOUND",
+          },
+        },
+        value: undefined,
+      };
+    }
+
+    if (tag instanceof Tag) {
+      return {
+        ok: true,
+        value: {
+          id: tag.id,
+          name: tag.name,
+          value: tag.value,
+          statusString: tag.statusCode.name as StatusCodeName,
+          options: tag.options,
+        },
+        error: undefined,
+      };
+    }
+
+    return {
+      ok: false,
+      error: {
+        error: tag.error,
+        options: tag.options,
+      },
+      value: undefined,
+    };
+  }
+*/
   // -------------------------
   // Update Functions
   // -------------------------
@@ -84,7 +141,6 @@ export class TagManager {
     let opcuaFolder = this.folderManager.get(opts.folderId);
 
     if (!opcuaFolder) {
-      console.debug("DEBUG");
       return err({ reason: "FOLDER_NOT_FOUND" } as const);
     }
 
@@ -106,18 +162,19 @@ export class TagManager {
       opts.folderId = newFolderId;
     }
 
-    const tag = new Tag(this.opcuaServer, opcuaFolder, opts);
+    const tag = Tag.create(this.opcuaServer, opcuaFolder, opts);
 
-    this.tags.set(tag.id, tag);
+    this.tags.set(opts.id, tag);
 
     const path = this.buildPath(opts);
-    this.pathToId.set(path, tag.id);
+    this.pathToId.set(path, opts.id);
 
     logger.info(
-      `[TagManager] added tag ${tag.id}  ${tag.name}  into folder ${path}`,
+      `[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${path}`,
     );
 
-    return ok(tag);
+    if (tag.isErr()) return err(tag.error);
+    return ok(tag.value);
   }
 
   updateTag(id: string, tagUpdates: TagOptionsInput) {
@@ -148,22 +205,24 @@ export class TagManager {
     const opcuaFolder = this.folderManager.get(tagUpdates.folderId);
     if (!opcuaFolder) return err({ reason: "OPCUA_FOLDER_NOT_FOUND" } as const);
 
-    const duplicate = this.checkDuplicate(tagUpdates, opcuaFolder);
-    if (duplicate.isErr()) return err(duplicate.error);
+    // const duplicate = this.checkDuplicate(tagUpdates, opcuaFolder);
+    // if (duplicate.isErr()) return err(duplicate.error);
 
     const oldTag = this.tags.get(id);
     const oldPath = this.idToPath(id);
 
     if (oldTag) {
-      oldTag.dispose();
+      if (oldTag instanceof Tag) oldTag.dispose();
       this.tags.delete(id);
       if (oldPath) this.pathToId.delete(oldPath);
     }
 
-    const updatedTag = new Tag(this.opcuaServer, opcuaFolder, tagUpdates);
-    this.tags.set(updatedTag.id, updatedTag);
-    this.pathToId.set(tagUpdates.name, updatedTag.id);
+    const updatedTag = Tag.create(this.opcuaServer, opcuaFolder, tagUpdates);
 
+    this.tags.set(id, updatedTag);
+    this.pathToId.set(tagUpdates.name, id);
+
+    if (updatedTag.isErr()) return err(updatedTag.error);
     return ok(updatedTag);
   }
 
@@ -176,7 +235,8 @@ export class TagManager {
 
     const tag = this.tags.get(id);
 
-    if (!tag) return err({ reason: "TAG_NOT_FOUND" } as const);
+    if (!tag || !(tag instanceof Tag))
+      return err({ reason: "TAG_NOT_FOUND" } as const);
 
     const dbResult = tryCatch(() =>
       db.delete(tables.tags).where(eq(tables.tags.id, id)).run(),
@@ -196,6 +256,7 @@ export class TagManager {
   // check if a tag has a duplicate name in
   checkDuplicate(tag: TagOptionsInput, folder: OpcuaFolder) {
     for (const t of this.tags.values()) {
+      if (!(t instanceof Tag)) continue;
       if (
         t.name == tag.name &&
         t.opcuaFolder.node.parentId == folder.node.parentId
@@ -229,9 +290,10 @@ export class TagManager {
       const opcuaFolder = this.folderManager.get(tagOpt.folderId);
       if (!opcuaFolder) continue;
 
-      const newTag = new Tag(this.opcuaServer, opcuaFolder, tagOpt);
-      this.tags.set(newTag.id, newTag);
-      this.pathToId.set(tagOpt.name, newTag.id);
+      const newTag = Tag.create(this.opcuaServer, opcuaFolder, tagOpt);
+
+      this.tags.set(tagOpt.id, newTag);
+      this.pathToId.set(tagOpt.name, tagOpt.id);
     }
 
     logger.info(`[TagManager] loaded ${tagOptions.length} tags from database`);

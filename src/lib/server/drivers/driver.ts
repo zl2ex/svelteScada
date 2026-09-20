@@ -310,6 +310,7 @@ export class DeviceManager {
     );
 
     for (const tag of tagManager.getAllTags()) {
+      if (!(tag instanceof Tag)) continue; // skip tags that failed to load
       if (tag.options.nodeId) {
         const resolved = resolveOpcuaPath(tag.options.nodeId);
         if (resolved.deviceName == newDevice.name) {

@@ -14,7 +14,6 @@ import { z } from "zod";
 import {
   resolveOpcuaPath,
   Tag,
-  TagError,
   type BaseTypeStrings,
 } from "../../tag/tag";
 import { logger } from "../../pino/logger";
@@ -468,7 +467,7 @@ export class ModbusTCPDriver {
               if ("error" in response) {
                 logger.error(response.error);
                 for (const tag of sub.tags.values()) {
-                  tag.error = new TagError("nodeId", response.error.message);
+                  tag.statusCode = StatusCodes.BadNotConnected;
                 }
                 continue;
               }
@@ -498,7 +497,7 @@ export class ModbusTCPDriver {
                 console.debug(batches);
                 console.debug(sub.dataView);
                 console.debug(offset);
-                tag.error = new TagError("nodeId", decoded.error.message);
+                tag.statusCode = StatusCodes.BadTypeMismatch;
                 continue;
               }
 
@@ -520,11 +519,11 @@ export class ModbusTCPDriver {
                   },
                   StatusCodes.Good,
                 );
-                tag.error = undefined;
+                tag.statusCode = StatusCodes.Good;
               }
             } else {
               const errorMessage = `[ModbusTCPDriver] poll() driverOpcuaVarible.addressSpace undefined for tag ${tag.id}`;
-              tag.error = new TagError("nodeId", errorMessage);
+              tag.statusCode = StatusCodes.BadInternalError;
               logger.error(errorMessage);
             }
           }

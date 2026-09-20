@@ -3,24 +3,29 @@
     Copy,
     FolderIcon,
     FolderPlus,
+    GripVerticalIcon,
     LoaderIcon,
+    MaximizeIcon,
+    MinimizeIcon,
+    MinusIcon,
     Scissors,
+    Settings2Icon,
     TagIcon,
     TagPlus,
     Trash2,
+    XIcon,
   } from "@lucide/svelte";
   import {
     Menu,
     Portal,
     TreeView,
+    FloatingPanel,
     createTreeViewCollection,
     useTreeView,
+    Popover,
   } from "@skeletonlabs/skeleton-svelte";
 
-  import type {
-    ClosureTableNode,
-    ClosureTableNodeOptionalId,
-  } from "$lib/server/sqlite/util/tagClosureTable.js";
+  import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable.js";
   import { tryCatch } from "$lib/util/tryCatch";
   import {
     z_shared_insertClosureTableNode,
@@ -39,13 +44,14 @@
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import { UnifiedUndoManager } from "$lib/client/live/undoManager.svelte";
-  import type {
-    BaseTypeStringsWithArrays,
-    TagOptionsInput,
+  import {
+    type BaseTypeStringsWithArrays,
+    type TagOptionsInput,
   } from "$lib/server/tag/tag.js";
   import { onMount } from "svelte";
   import type { TagInsertOptionalId } from "$lib/server/sqlite/tables/tags.js";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
+  import { getDataTypeStrings } from "$lib/remote/tag.remote.js";
 
   const undoManager = new UnifiedUndoManager();
 
@@ -54,8 +60,16 @@
       initial: data.tagFolders,
       applyPatch: applyTagFolderPatches,
       subscribePatches: (notify) => {
-        // adapt tagPatches' store .subscribe() to the (payload) => void shape
-        const unsubscribe = tagFolderPatches.subscribe(notify);
+        // adapt tagPatches' store .subscribe() to the (payload) => void shape;
+        // the store value is `PatchPayload | undefined | { error }` - map
+        // undefined / transport errors to the null "no payload" signal
+        const unsubscribe = tagFolderPatches.subscribe((payload) => {
+          if (!payload || "error" in payload) {
+            notify(null);
+            return;
+          }
+          notify(payload);
+        });
         return unsubscribe; // svelte stores' subscribe() already returns an unsubscribe fn
       },
       maxHistory: 50,
@@ -69,7 +83,13 @@
       initial: data.tags,
       applyPatch: applyTagPatches,
       subscribePatches: (notify) => {
-        const unsubscribe = tagPatches.subscribe(notify);
+        const unsubscribe = tagPatches.subscribe((payload) => {
+          if (!payload || "error" in payload) {
+            notify(null);
+            return;
+          }
+          notify(payload);
+        });
         return unsubscribe;
       },
       maxHistory: 50,
@@ -587,7 +607,7 @@
             <LoaderIcon class="size-4" />
           </TreeView.BranchIndicator>
           <TreeView.BranchText class="truncate">
-            <FolderIcon class="size-4 shrink-0" />
+            <FolderIcon class="size-4 shrink-0 opacity-75" />
 
             {#if renamingFolderId === node.id}
               <input
@@ -616,32 +636,223 @@
         </TreeView.BranchContent>
       </TreeView.Branch>
     {:else if isTagOptions(node)}
-      <TreeView.Item class="truncate">
-        <TagIcon class="size-4 shrink-0" />
-        {#if renamingTagId === node.id}
-          <input
-            type="text"
-            class="border-none p-0 m-0 text-inherit bg-inherit"
-            value={node.name}
-            use:focusOnMount
-            onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
-            onkeydown={(e) => {
-              if (e.key === "Enter")
-                finalizeTagRename(node.id, e.currentTarget.value);
-              if (e.key === "Escape") cancelTagRename(node.id);
-            }}
-          />
-        {:else}
-          <span>{node.name}</span>
-          <TagInput
-            id={node.id}
-            label=""
-            class="py-0 px-1 border-none w-20"
-            onclick={(ev) => ev.stopPropagation()}
-            onkeydown={(ev) => ev.stopPropagation()}
-          />
-        {/if}
-      </TreeView.Item>
+      <Popover>
+        <TreeView.Item>
+          <Popover.Trigger
+            class="w-full flex items-center justify-between gap-2"
+          >
+            <div class="flex items-center gap-2">
+              <TagIcon class="size-4 shrink-0 opacity-75" />
+              {#if renamingTagId === node.id}
+                <input
+                  type="text"
+                  class="border-none p-0 m-0 text-inherit bg-inherit"
+                  value={node.name}
+                  use:focusOnMount
+                  onblur={(e) =>
+                    finalizeTagRename(node.id, e.currentTarget.value)}
+                  onkeydown={(e) => {
+                    if (e.key === "Enter")
+                      finalizeTagRename(node.id, e.currentTarget.value);
+                    if (e.key === "Escape") cancelTagRename(node.id);
+                  }}
+                />
+              {:else}
+                <span>{node.name}</span>
+              {/if}
+            </div>
+            {#if renamingTagId !== node.id}
+              <TagInput
+                id={node.id}
+                label=""
+                class="py-0 px-1 border-none w-20"
+                onclick={(ev) => ev.stopPropagation()}
+                onkeydown={(ev) => ev.stopPropagation()}
+              />
+            {/if}
+          </Popover.Trigger>
+        </TreeView.Item>
+
+        <Portal>
+          <Popover.Positioner>
+            <Popover.Content class="bg-surface-100-900 rounded-lg p-2">
+              <div class="flex flex-col gap-2 p-1">
+                <div class="flex items-center gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24"
+                    for={`nodeId-${node.id}`}>Node Id</label
+                  >
+                  <input
+                    id={`nodeId-${node.id}`}
+                    type="text"
+                    class="input py-0 px-1 border-none flex-1"
+                    value={node.nodeId ?? ""}
+                    onblur={(e) =>
+                      tagPatchesCollection.update(node.id, {
+                        nodeId: e.currentTarget.value || null,
+                      })}
+                    onkeydown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                      if (e.key === "Escape") {
+                        e.currentTarget.value = node.nodeId ?? "";
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24"
+                    for={`dataType-${node.id}`}>Data Type</label
+                  >
+                  <select
+                    id={`dataType-${node.id}`}
+                    class="input py-0 px-1 border-none flex-1"
+                    value={node.dataType}
+                    onchange={(e) =>
+                      tagPatchesCollection.update(node.id, {
+                        dataType: e.currentTarget.value,
+                      })}
+                  >
+                    {#each await getDataTypeStrings() as dataType}
+                      <option value={dataType}>{dataType}</option>
+                    {/each}
+                  </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24"
+                    for={`value-${node.id}`}>Value</label
+                  >
+                  <input
+                    id={`value-${node.id}`}
+                    type="number"
+                    step="any"
+                    class="input py-0 px-1 border-none flex-1"
+                    value={node.value ?? ""}
+                    onblur={(e) =>
+                      tagPatchesCollection.update(node.id, {
+                        value:
+                          e.currentTarget.value === ""
+                            ? null
+                            : Number(e.currentTarget.value),
+                      })}
+                    onkeydown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                      if (e.key === "Escape") {
+                        e.currentTarget.value = String(node.value ?? "");
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  />
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24"
+                    for={`writeable-${node.id}`}>Writeable</label
+                  >
+                  <input
+                    id={`writeable-${node.id}`}
+                    type="checkbox"
+                    class="checkbox"
+                    checked={node.writeable ?? true}
+                    onchange={(e) =>
+                      tagPatchesCollection.update(node.id, {
+                        writeable: e.currentTarget.checked,
+                      })}
+                  />
+                </div>
+                <div class="flex items-center gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24"
+                    for={`exposeOverOpcua-${node.id}`}>Expose OPC UA</label
+                  >
+                  <input
+                    id={`exposeOverOpcua-${node.id}`}
+                    type="checkbox"
+                    class="checkbox"
+                    checked={node.exposeOverOpcua ?? true}
+                    onchange={(e) =>
+                      tagPatchesCollection.update(node.id, {
+                        exposeOverOpcua: e.currentTarget.checked,
+                      })}
+                  />
+                </div>
+
+                <div class="flex items-start gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60 mt-1" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24 pt-1"
+                    for={`parameters-${node.id}`}>Parameters</label
+                  >
+                  <textarea
+                    id={`parameters-${node.id}`}
+                    rows="4"
+                    class="input py-0 px-1 border-none flex-1 font-mono text-xs"
+                    value={node.parameters
+                      ? JSON.stringify(node.parameters, null, 2)
+                      : ""}
+                    onblur={(e) => {
+                      const raw = e.currentTarget.value;
+                      if (!raw.trim()) {
+                        tagPatchesCollection.update(node.id, {
+                          parameters: null,
+                        });
+                        return;
+                      }
+                      const parsed = tryCatch(JSON.parse, raw);
+                      if (parsed.error) {
+                        e.currentTarget.value = JSON.stringify(
+                          node.parameters ?? null,
+                          null,
+                          2,
+                        );
+                        return;
+                      }
+                      tagPatchesCollection.update(node.id, {
+                        parameters: parsed.value,
+                      });
+                    }}
+                    onkeydown={(e) => {
+                      if (e.key === "Escape") {
+                        e.currentTarget.value = JSON.stringify(
+                          node.parameters ?? null,
+                          null,
+                          2,
+                        );
+                        e.currentTarget.blur();
+                      }
+                    }}
+                  ></textarea>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24"
+                    for={`type-${node.id}`}>Type</label
+                  >
+                  <input
+                    id={`type-${node.id}`}
+                    type="text"
+                    class="input py-0 px-1 border-none flex-1"
+                    value={node.type ?? "tag"}
+                    disabled
+                  />
+                </div>
+              </div>
+            </Popover.Content>
+          </Popover.Positioner>
+        </Portal>
+      </Popover>
     {/if}
   </TreeView.NodeProvider>
 {/snippet}
