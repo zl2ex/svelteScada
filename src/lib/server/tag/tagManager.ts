@@ -134,14 +134,20 @@ export class TagManager {
     }
 
     if (this.tags.has(opts.id)) {
-      return err({ reason: "TAG_ALREADY_EXISTS" } as const);
+      return err({
+        reason: "TAG_ALREADY_EXISTS",
+        cause: `Tag Already exists at ${opts.id} ${opts.name}`,
+      } as const);
     }
 
     const newFolderId = opts.folderId ?? crypto.randomUUID();
     let opcuaFolder = this.folderManager.get(opts.folderId);
 
     if (!opcuaFolder) {
-      return err({ reason: "FOLDER_NOT_FOUND" } as const);
+      return err({
+        reason: "FOLDER_NOT_FOUND",
+        cause: `opcua Folder not foind at ${opts.folderId}`,
+      } as const);
     }
 
     const duplicate = this.checkDuplicate(opts, opcuaFolder);
@@ -203,19 +209,26 @@ export class TagManager {
     }
 
     const opcuaFolder = this.folderManager.get(tagUpdates.folderId);
-    if (!opcuaFolder) return err({ reason: "OPCUA_FOLDER_NOT_FOUND" } as const);
+    if (!opcuaFolder)
+      return err({
+        reason: "OPCUA_FOLDER_NOT_FOUND",
+        cause: `no opcua folder at ${tagUpdates.folderId}`,
+      } as const);
 
     // const duplicate = this.checkDuplicate(tagUpdates, opcuaFolder);
     // if (duplicate.isErr()) return err(duplicate.error);
 
     const oldTag = this.tags.get(id);
     const oldPath = this.idToPath(id);
+    let oldTagOk: Tag<any> | undefined;
 
-    if (oldTag) {
-      if (oldTag instanceof Tag) oldTag.dispose();
-      this.tags.delete(id);
-      if (oldPath) this.pathToId.delete(oldPath);
+    if (oldTag?.isOk()) {
+      oldTagOk = Object.assign({}, oldTag.value);
+      oldTag.value.dispose();
     }
+    this.tags.delete(id);
+
+    if (oldPath) this.pathToId.delete(oldPath);
 
     const updatedTag = Tag.create(this.opcuaServer, opcuaFolder, tagUpdates);
 
@@ -223,6 +236,10 @@ export class TagManager {
     this.pathToId.set(tagUpdates.name, id);
 
     if (updatedTag.isErr()) return err(updatedTag.error);
+    // keep the old tag value if present
+    if (oldTagOk) {
+      updatedTag.value.update(oldTagOk.value);
+    }
     return ok(updatedTag);
   }
 
@@ -236,7 +253,10 @@ export class TagManager {
     const tag = this.tags.get(id);
 
     if (!tag || !(tag instanceof Tag))
-      return err({ reason: "TAG_NOT_FOUND" } as const);
+      return err({
+        reason: "TAG_NOT_FOUND",
+        cause: `Tag not found at ${id}`,
+      } as const);
 
     const dbResult = tryCatch(() =>
       db.delete(tables.tags).where(eq(tables.tags.id, id)).run(),
@@ -261,7 +281,10 @@ export class TagManager {
         t.name == tag.name &&
         t.opcuaFolder.node.parentId == folder.node.parentId
       ) {
-        return err({ reason: "DUPLICATE_TAG" } as const);
+        return err({
+          reason: "DUPLICATE_TAG",
+          cause: `Duplicate tag ${tag.id}  ${tag.name}`,
+        } as const);
       }
     }
     return ok(true);

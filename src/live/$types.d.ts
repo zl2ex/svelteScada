@@ -5,25 +5,10 @@ declare module '$live/tag-folder' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
-  import type { WireResult } from '$lib/util/wireResult';
-  import type { FolderManager } from '$lib/server/tag/folderManager';
+  import type { Result, ok } from 'neverthrow';
+  import type { NeverthrowError } from '$lib/server/tag/tag';
 
-  export const applyTagFolderPatches: (patch: PatchOp) => Promise<
-    | WireResult<
-        { applied: PatchOp },
-        ErrOf<ReturnType<FolderManager["createFolder"]>>
-      >
-    | WireResult<
-        { applied: PatchOp },
-        ErrOf<ReturnType<FolderManager["deleteFolder"]>>
-      >
-    | WireResult<
-        { applied: PatchOp },
-        | ErrOf<ReturnType<FolderManager["moveFolder"]>>
-        | ErrOf<ReturnType<FolderManager["renameFolder"]>>
-      >
-    | { ok: false; error: { reason: "FOLDER_NOT_FOUND"; message: string } }
-  >;
+  export const applyTagFolderPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, NeverthrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'UNAUTHENTICATED';
   export const tagFolderPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
   export const empty: Readable<undefined>;
@@ -34,13 +19,19 @@ declare module '$live/tags' {
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
   import type { Result, ok } from 'neverthrow';
-  import type { ClientTagValue, FailedTag } from '$lib/server/tag/tag';
+  import type { ClientTagValue, FailedTag, NeverthrowError } from '$lib/server/tag/tag';
 
-  export const applyTagPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, FailedTag>>;
+  export const applyTagPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, FailedTag | NeverthrowError>>;
   export const setTagValue: ({ id, value }: { id: string; value: unknown }) => Promise<Result<{ success: true }, SetTagValueError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'SERVER_ERROR' | 'UNAUTHENTICATED';
   export const tagPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
-  export const getTagValue: ((lookup: string) => StreamStore<Result<ClientTagValue, FailedTag> | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<Result<ClientTagValue, FailedTag>> };
+  export const getTagValue: ((lookup: string) => StreamStore<Result<
+      ClientTagValue,
+      FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }
+    > | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<Result<
+      ClientTagValue,
+      FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }
+    >> };
   export const empty: Readable<undefined>;
 }
 

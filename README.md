@@ -60,11 +60,13 @@ them from their original (non-relative) module specifier.
 
 ### 1. Insert one line in `_generateTypeDeclarations`
 
-After the `import type { Readable } from 'svelte/store';` push (around line 2430):
+After the `import type { Readable } from 'svelte/store';` push (around line 2490):
 
 ```js
-			declarations.push(`  import type { Readable } from 'svelte/store';`);
-			declarations.push(..._buildTypeImportLines(exports.join('\n'), _collectImportMap(source), rel));
+declarations.push(`  import type { Readable } from 'svelte/store';`);
+declarations.push(
+  ..._buildTypeImportLines(exports.join("\n"), _collectImportMap(source), rel),
+);
 ```
 
 ### 2. Add the three helper functions
@@ -73,42 +75,47 @@ Add these at file scope (e.g. right after `_generateTypeDeclarations`):
 
 ```js
 function _collectImportMap(source) {
-	const map = {};
-	const re = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/g;
-	let m;
-	while ((m = re.exec(source)) !== null) {
-		const spec = m[2];
-		for (const raw of m[1].split(',')) {
-			const part = raw.trim().replace(/^type\s+/, '');
-			if (!part) continue;
-			const name = part.split(/\s+as\s+/).pop().trim();
-			if (name) map[name] = spec;
-		}
-	}
-	return map;
+  const map = {};
+  const re = /\bimport\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"]([^'"]+)['"]/g;
+  let m;
+  while ((m = re.exec(source)) !== null) {
+    const spec = m[2];
+    for (const raw of m[1].split(",")) {
+      const part = raw.trim().replace(/^type\s+/, "");
+      if (!part) continue;
+      const name = part
+        .split(/\s+as\s+/)
+        .pop()
+        .trim();
+      if (name) map[name] = spec;
+    }
+  }
+  return map;
 }
 
 function _collectIdentifiers(text) {
-	const ids = new Set();
-	const re = /[A-Za-z_$][\w$]*/g;
-	let m;
-	while ((m = re.exec(text)) !== null) ids.add(m[0]);
-	return ids;
+  const ids = new Set();
+  const re = /[A-Za-z_$][\w$]*/g;
+  let m;
+  while ((m = re.exec(text)) !== null) ids.add(m[0]);
+  return ids;
 }
 
 function _buildTypeImportLines(exportsText, importMap, rel) {
-	const bySpec = new Map();
-	for (const name of _collectIdentifiers(exportsText)) {
-		if (importMap[name]) {
-			if (!bySpec.has(importMap[name])) bySpec.set(importMap[name], new Set());
-			bySpec.get(importMap[name]).add(name);
-		}
-	}
-	const lines = [];
-	for (const [spec, names] of bySpec) {
-		lines.push(`  import type { ${[...names].sort().join(', ')} } from '${spec}';`);
-	}
-	return lines;
+  const bySpec = new Map();
+  for (const name of _collectIdentifiers(exportsText)) {
+    if (importMap[name]) {
+      if (!bySpec.has(importMap[name])) bySpec.set(importMap[name], new Set());
+      bySpec.get(importMap[name]).add(name);
+    }
+  }
+  const lines = [];
+  for (const [spec, names] of bySpec) {
+    lines.push(
+      `  import type { ${[...names].sort().join(", ")} } from '${spec}';`,
+    );
+  }
+  return lines;
 }
 ```
 

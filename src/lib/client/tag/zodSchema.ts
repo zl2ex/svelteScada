@@ -1,4 +1,4 @@
-import { z_insertTag } from "$lib/server/sqlite/tables";
+import { z_insertTag } from "../../../lib/server/sqlite/tables";
 import z from "zod";
 
 // Base schemas for primitives
@@ -9,6 +9,11 @@ export const Z_BaseTypes = {
   Boolean: z.boolean().default(false),
   String: z.string().default(""),
 } as const;
+
+// runtime array of keys, typed as a tuple of literal strings
+export const baseTypeKeys = Object.keys(Z_BaseTypes) as [
+  keyof typeof Z_BaseTypes,
+];
 
 export const Z_UdtParams = z.record(
   z.string(),

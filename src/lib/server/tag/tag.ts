@@ -28,11 +28,10 @@ import {
 import z, { ZodObject } from "zod";
 import { OpcuaFolder } from "./opcuaFolder";
 import { attempt } from "../../../lib/util/attempt";
-import { Z_BaseTypes } from "../../client/tag/zodSchema";
+import { baseTypeKeys, Z_BaseTypes } from "../../client/tag/zodSchema";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { z_insertTag } from "../sqlite/tables";
 import { err, ok, type Result } from "neverthrow";
-import type { WireResult } from "$lib/util/wireResult";
 
 export type TagOptionsInput = z.input<typeof z_insertTag>;
 
@@ -40,7 +39,7 @@ export async function getAllDataTypeStrings() {
   const udtNames = udtManager.getAllUdts().map((udt) => {
     return udt.name;
   });
-  return [...Object.keys(Z_BaseTypes), ...udtNames];
+  return [...baseTypeKeys, ...udtNames];
 }
 
 type OpcuaDataTypeMapping = {
@@ -191,7 +190,6 @@ type TagUpdateError =
     };
 
 export type TagError =
-  | { reason: "NOT_FOUND"; options: TagOptionsInput }
   | {
       reason: "OPTIONS_PARSE_ERROR";
       cause: z.ZodError;
@@ -205,7 +203,7 @@ export type TagError =
       options: TagOptionsInput;
     }
   | {
-      reason: "EXPOSE_OPCUA_VARIBLE_FAILED";
+      reason: "EXPOSE_OPCUA_VARIABLE_FAILED";
       cause: unknown;
       options: TagOptionsInput;
     }
@@ -434,7 +432,7 @@ export class Tag<DataTypeString extends BaseTypeStringsWithArrays> {
         });
       } catch (e) {
         return err({
-          reason: "EXPOSE_OPCUA_VARIBLE_FAILED",
+          reason: "EXPOSE_OPCUA_VARIABLE_FAILED",
           cause: e,
           options: tag.options,
         } as const);

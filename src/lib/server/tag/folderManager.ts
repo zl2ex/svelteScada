@@ -43,7 +43,11 @@ export class FolderManager {
 
   private disposeOpcuaFolder(id: string) {
     const folder = this.opcuaFolders.get(id);
-    if (!folder) return err({ reason: "FOLDER_NOT_FOUND" } as const);
+    if (!folder)
+      return err({
+        reason: "OPCUA_FOLDER_NOT_FOUND",
+        cause: `opcua folder at ${id} not found`,
+      } as const);
 
     folder.dispose();
     this.opcuaFolders.delete(id);
@@ -74,7 +78,11 @@ export class FolderManager {
 
   renameFolder(id: string, newName: string) {
     const folder = this.opcuaFolders.get(id);
-    if (!folder) return err({ reason: "FOLDER_NOT_FOUND" } as const);
+    if (!folder)
+      return err({
+        reason: "FOLDER_NOT_FOUND",
+        cause: `Folder at ${id} not found`,
+      } as const);
     const rename = folder.rename(newName);
     if (rename.isErr()) return err(rename.error);
 

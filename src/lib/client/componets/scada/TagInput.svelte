@@ -3,7 +3,12 @@
   import type { HTMLInputAttributes } from "svelte/elements";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
   import { RpcError } from "svelte-realtime/client";
-  import type { ClientTagValue, FailedTag } from "$lib/server/tag/tag";
+  import {
+    type BaseTypeMap,
+    type ClientTagValue,
+    type FailedTag,
+  } from "$lib/server/tag/tag";
+  import { toast } from "$lib/client/toast.svelte";
 
   interface IdProps extends HTMLInputAttributes {
     id: string;
@@ -54,9 +59,28 @@
 
   let isFocus = $state(false);
 
-  function write(value: unknown) {
+  async function write(value: unknown) {
     const id = streamState.value?.id ?? lookup;
-    setTagValue({ id, value });
+    const result = await setTagValue({ id, value });
+    if ("error" in result) {
+      if (result.error instanceof RpcError) {
+        console.error(result.error);
+        toast({
+          kind: "error",
+          title: "Tag Write Error",
+          description: "internal server error",
+          duration: 3000,
+        });
+      } else {
+        toast({
+          kind: "error",
+          title: "Tag Write Error",
+          description: result.error.reason,
+          duration: 3000,
+        });
+      }
+    }
+    return result;
   }
 
   function classWithError(base: string): string {
@@ -64,6 +88,14 @@
       ? `${base} outline -outline-offset-1 outline-error-400-600 ${clazz ?? ""}`
       : `${base} ${clazz ?? ""}`;
   }
+
+  const BaseTypeStep: Record<keyof BaseTypeMap, string> = {
+    Boolean: "1",
+    Double: "any",
+    Int16: "1",
+    Int32: "1",
+    String: "any",
+  };
 </script>
 
 <svelte:boundary
@@ -122,7 +154,16 @@
             name="input"
             class={classWithError("checkbox")}
             checked={streamState.value.value}
-            oninput={(ev) => write(Boolean(ev.currentTarget.checked))}
+            oninput={async (ev) => {
+              if (!ev.target) return;
+              //@ts-ignore
+              const result = await write(Boolean(ev.target.checked));
+              // revert if write failed
+              if ("error" in result) {
+                //@ts-ignore
+                ev.target.checked = Boolean(streamState.value.value);
+              }
+            }}
             disabled={!streamState.value.options.writeable}
             {...rest}
           />
@@ -131,6 +172,7 @@
             type="number"
             name="input"
             class={classWithError("input")}
+            step={BaseTypeStep[streamState.value.options.dataType]}
             value={isFocus ? undefined : streamState.value.value}
             onkeyup={(ev) => {
               if (ev.currentTarget) {

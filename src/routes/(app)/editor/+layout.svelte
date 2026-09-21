@@ -46,6 +46,8 @@
   import { UnifiedUndoManager } from "$lib/client/live/undoManager.svelte";
   import {
     type BaseTypeStringsWithArrays,
+    type NeverthrowError,
+    type TagError,
     type TagOptionsInput,
   } from "$lib/server/tag/tag.js";
   import { onMount } from "svelte";
@@ -56,7 +58,7 @@
   const undoManager = new UnifiedUndoManager();
 
   let tagFolderPatchesCollection = $state(
-    new PatchCollection<ClosureTableNode>({
+    new PatchCollection<ClosureTableNode, NeverthrowError>({
       initial: data.tagFolders,
       applyPatch: applyTagFolderPatches,
       subscribePatches: (notify) => {
@@ -79,7 +81,7 @@
   );
 
   let tagPatchesCollection = $state(
-    new PatchCollection<TagOptionsInput>({
+    new PatchCollection<TagOptionsInput, TagError>({
       initial: data.tags,
       applyPatch: applyTagPatches,
       subscribePatches: (notify) => {
@@ -665,7 +667,7 @@
               <TagInput
                 id={node.id}
                 label=""
-                class="py-0 px-1 border-none w-20"
+                class="py-0 px-1 border-none max-w-20 rounded-sm"
                 onclick={(ev) => ev.stopPropagation()}
                 onkeydown={(ev) => ev.stopPropagation()}
               />
@@ -878,7 +880,7 @@
               handlePaste(e, undefined);
             }}
           >
-            {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders }, ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
+            {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders } ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
               {@render treeNode(node, [index])}
             {/each}
           </TreeView.Tree>

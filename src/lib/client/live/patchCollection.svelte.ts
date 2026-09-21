@@ -9,6 +9,7 @@ import { apply } from "mutative";
 import { toast } from "../toast.svelte";
 import { err, type Result } from "neverthrow";
 import type { NeverthrowError } from "$lib/server/tag/tag";
+import { RpcError } from "svelte-realtime/client";
 
 export interface Identifiable {
   id: string;
@@ -22,11 +23,14 @@ export interface PatchPayload {
   versions?: Record<string, number>;
 }
 
-export interface PatchCollectionOptions<T extends Identifiable> {
+export interface PatchCollectionOptions<
+  T extends Identifiable,
+  E extends NeverthrowError,
+> {
   initial: Record<string, T>;
   // however your generated RPC/room action is shaped, as long as it
   // takes a single patch op and returns/rejects a promise
-  applyPatch: (patch: PatchOp) => Promise<Result<unknown, NeverthrowError>>;
+  applyPatch: (patch: PatchOp) => Promise<Result<{ ok: true }, E>>;
   // adapt whatever store you're using (a live.stream, on(topic), etc.)
   // to this shape: call `notify` with each incoming payload, return an
   // unsubscribe function so destroy() can clean up.
@@ -41,19 +45,22 @@ export interface PatchCollectionOptions<T extends Identifiable> {
   onError?: (error: NeverthrowError) => void;
 }
 
-export class PatchCollection<T extends Identifiable> {
+export class PatchCollection<
+  T extends Identifiable,
+  E extends NeverthrowError,
+> {
   state = $state<Record<string, T>>({});
   syncError = $state<string | null>(null);
 
   private travels: Travels<Record<string, T>>;
   private prevPosition: number;
-  private applyPatch: PatchCollectionOptions<T>["applyPatch"];
+  private applyPatch: PatchCollectionOptions<T, E>["applyPatch"];
   private onMutation?: () => void;
-  private onError?: (error: NeverthrowError) => void;
+  private onError?: (error: E) => void;
   private unsubscribeTravels?: () => void;
   private unsubscribePatches?: () => void;
 
-  constructor(options: PatchCollectionOptions<T>) {
+  constructor(options: PatchCollectionOptions<T, E>) {
     Object.assign(this.state, options.initial);
 
     this.travels = createTravels(this.state, {
@@ -65,28 +72,27 @@ export class PatchCollection<T extends Identifiable> {
     this.onMutation = options.onMutation;
     this.onError = options.onError;
 
-    this.unsubscribeTravels = this.travels.subscribe(
-      (_state, patches, position) => {
-        if (position === this.prevPosition) {
-          this.prevPosition = position;
-          return;
-        }
+    this.unsubscribeTravels = this.travels.subscribe((event) => {
+      if (event.position === this.prevPosition) {
+        this.prevPosition = event.position;
+        return;
+      }
+      const patches = this.travels.getPatches();
 
-        if (position > this.prevPosition) {
-          this.sendOps(
-            patches.patches[this.prevPosition],
-            patches.inversePatches[this.prevPosition],
-          );
-        } else {
-          this.sendOps(
-            patches.inversePatches[position],
-            patches.patches[position],
-          );
-        }
+      if (event.position > this.prevPosition) {
+        this.sendOps(
+          patches.patches[this.prevPosition],
+          patches.inversePatches[this.prevPosition],
+        );
+      } else {
+        this.sendOps(
+          patches.inversePatches[event.position],
+          patches.patches[event.position],
+        );
+      }
 
-        this.prevPosition = position;
-      },
-    );
+      this.prevPosition = event.position;
+    });
 
     this.unsubscribePatches = options.subscribePatches((payload) => {
       if (!payload) return;
@@ -110,7 +116,12 @@ export class PatchCollection<T extends Identifiable> {
         // later ops are still sent and applied.
         hadError = true;
         apply(this.state, inverseOps.slice(i, i + 1), { mutable: true });
-        this.syncError = res.error.reason;
+
+        if (res.error instanceof RpcError) {
+          this.syncError = res.error.code;
+        } else {
+          this.syncError = res.error.reason;
+        }
         toast({
           kind: "error",
           title: "Sync Error",

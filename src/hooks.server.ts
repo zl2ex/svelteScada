@@ -6,7 +6,6 @@ import { UdtManager } from "$lib/server/tag/udtManager";
 import { TagManager } from "$lib/server/tag/tagManager";
 import { FolderManager } from "$lib/server/tag/folderManager";
 import { OpcuaServerDriver } from "$lib/server/drivers/opcua/opcuaServer";
-import { building } from "$app/environment";
 
 // for serialisiing errors
 Object.defineProperty(Error.prototype, "toJSON", {
@@ -34,7 +33,7 @@ export const init: ServerInit = async () => {
 
   await gatewayOpcua.start();
 
-  if (!gatewayOpcua.server) {
+  if (!gatewayOpcua.server || !gatewayOpcua.server.engine.addressSpace) {
     throw Error(`[hooks.server.ts] init() gatewayOpcua.server not initalised`);
   }
 

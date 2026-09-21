@@ -2,15 +2,12 @@ import { type TagSelect } from "$lib/server/sqlite/tables";
 import { guard, live, LiveError, publish } from "svelte-realtime/server";
 import { tagManager } from "../hooks.server";
 import {
-  Tag,
   type ClientTagValue,
-  type ClientTagWire,
   type FailedTag,
+  type NeverthrowError,
 } from "$lib/server/tag/tag";
 
-import type { TagManager } from "$lib/server/tag/tagManager";
 import { err, ok, type Result } from "neverthrow";
-import type { WireResult } from "$lib/util/wireResult";
 import { logger } from "$lib/server/pino/logger";
 import type {
   PatchOp,
@@ -35,7 +32,10 @@ export const tagPatches = live.stream(
 // mid-way through an array.
 
 export const applyTagPatches = live(
-  async (ctx, patch: PatchOp): Promise<Result<{ ok: true }, FailedTag>> => {
+  async (
+    ctx,
+    patch: PatchOp,
+  ): Promise<Result<{ ok: true }, FailedTag | NeverthrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(
@@ -57,7 +57,6 @@ export const applyTagPatches = live(
           case "DUPLICATE_TAG":
           case "FOLDER_NOT_FOUND":
           case "TAG_ALREADY_EXISTS":
-          case "NOT_FOUND":
             return err(result.error);
           case "INVALID_DEFAULTS":
           case "INVALID_INITIAL_VALUE":
@@ -65,10 +64,10 @@ export const applyTagPatches = live(
           case "SCHEMA_ERROR":
           case "DRIVER_SUBSCRIBE_ERROR":
           case "UDT_NOT_FOUND":
-          case "EXPOSE_OPCUA_VARIBLE_FAILED":
+          case "EXPOSE_OPCUA_VARIABLE_FAILED":
             // if its just a config issue dont fail the patch but inform the client
             publishTagValue(err(result.error));
-
+            break;
           default:
             logger.error(reason satisfies never);
             throw new LiveError("SERVER_ERROR");
@@ -97,7 +96,6 @@ export const applyTagPatches = live(
         switch (reason) {
           case "DB_ERROR":
           case "OPCUA_FOLDER_NOT_FOUND":
-          case "NOT_FOUND":
             return err(result.error);
           case "INVALID_DEFAULTS":
           case "INVALID_INITIAL_VALUE":
@@ -105,7 +103,7 @@ export const applyTagPatches = live(
           case "SCHEMA_ERROR":
           case "DRIVER_SUBSCRIBE_ERROR":
           case "UDT_NOT_FOUND":
-          case "EXPOSE_OPCUA_VARIBLE_FAILED":
+          case "EXPOSE_OPCUA_VARIABLE_FAILED":
             // if its just a config issue dont fail the patch but inform the client
             publishTagValue(err(result.error));
             break;
@@ -132,7 +130,15 @@ export const applyTagPatches = live(
 // value type textually from its return annotation.
 export const getTagValue = live.stream(
   (ctx, lookup: string) => `tag-values:${lookup}`,
-  async (ctx, lookup: string): Promise<Result<ClientTagValue, FailedTag>> => {
+  async (
+    ctx,
+    lookup: string,
+  ): Promise<
+    Result<
+      ClientTagValue,
+      FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }
+    >
+  > => {
     const id = tagManager.getTagById(lookup);
     const path = tagManager.getTagByPath(lookup);
     if (id.isErr() && path.isErr()) return err(id.error);

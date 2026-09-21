@@ -1,6 +1,7 @@
 import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { tag_folders } from "./tag_folders";
+import { baseTypeKeys } from "../../../../lib/client/tag/zodSchema";
 
 export const tags = sqliteTable("tags", {
   id: text("id").primaryKey(),
@@ -8,7 +9,7 @@ export const tags = sqliteTable("tags", {
     onDelete: "set null",
   }),
   name: text("name").notNull(),
-  dataType: text("dataType").notNull(),
+  dataType: text("dataType", { enum: baseTypeKeys }).notNull(),
   type: text("type", { enum: ["tag", "udtTag"] })
     .notNull()
     .default("tag"),
