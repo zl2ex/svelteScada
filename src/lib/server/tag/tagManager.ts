@@ -1,12 +1,6 @@
 import type { OPCUAServer } from "node-opcua";
 import { logger } from "../pino/logger";
-import {
-  Tag,
-  type FailedTag,
-  type StatusCodeName,
-  type TagError,
-  type TagOptionsInput,
-} from "./tag";
+import { Tag, type FailedTag, type TagOptionsInput } from "./tag";
 import { OpcuaFolder } from "./opcuaFolder";
 import { db } from "../sqlite/db";
 import { tables } from "../sqlite/tables";
@@ -14,10 +8,11 @@ import { eq } from "drizzle-orm";
 import type { FolderManager } from "./folderManager";
 import { err, ok, Result } from "neverthrow";
 import { tryCatch } from "$lib/util/tryCatch";
+import type { NeverThrowError } from "$lib/util/neverThrow";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
-  private tags: Map<string, Result<Tag<any>, FailedTag>> = new Map();
+  private tags: Map<string, Result<Tag, FailedTag>> = new Map();
   private pathToId: Map<string, string> = new Map();
   private folderManager: FolderManager | undefined;
 
@@ -53,7 +48,7 @@ export class TagManager {
       return err({
         reason: "TAG_NOT_FOUND",
         cause: `no tag at path ${path}`,
-      } as const);
+      } as const satisfies NeverThrowError);
     }
     return ok(this.tags.get(id));
   }
@@ -64,7 +59,7 @@ export class TagManager {
       return err({
         reason: "TAG_NOT_FOUND",
         cause: `no tag at id ${id}`,
-      } as const);
+      } as const satisfies NeverThrowError);
     }
     return ok(tag);
   }
@@ -137,7 +132,7 @@ export class TagManager {
       return err({
         reason: "TAG_ALREADY_EXISTS",
         cause: `Tag Already exists at ${opts.id} ${opts.name}`,
-      } as const);
+      } as const satisfies NeverThrowError);
     }
 
     const newFolderId = opts.folderId ?? crypto.randomUUID();
@@ -147,7 +142,7 @@ export class TagManager {
       return err({
         reason: "FOLDER_NOT_FOUND",
         cause: `opcua Folder not foind at ${opts.folderId}`,
-      } as const);
+      } as const satisfies NeverThrowError);
     }
 
     const duplicate = this.checkDuplicate(opts, opcuaFolder);
@@ -159,7 +154,10 @@ export class TagManager {
       });
 
       if (dbWrite.error) {
-        return err({ reason: "DB_ERROR", cause: dbWrite.error } as const);
+        return err({
+          reason: "DB_ERROR",
+          cause: dbWrite.error.message,
+        } as const satisfies NeverThrowError);
       }
     }
 
@@ -168,7 +166,9 @@ export class TagManager {
       opts.folderId = newFolderId;
     }
 
-    const tag = Tag.create(this.opcuaServer, opcuaFolder, opts);
+    const tag = this.tagConfigError(
+      Tag.create(this.opcuaServer, opcuaFolder, opts),
+    );
 
     this.tags.set(opts.id, tag);
 
@@ -179,8 +179,11 @@ export class TagManager {
       `[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${path}`,
     );
 
-    if (tag.isErr()) return err(tag.error);
-    return ok(tag.value);
+    if (tag.isErr()) {
+      return err(tag.error);
+    }
+
+    return ok(tag);
   }
 
   updateTag(id: string, tagUpdates: TagOptionsInput) {
@@ -205,7 +208,10 @@ export class TagManager {
     );
 
     if (dbResult.error) {
-      return err({ reason: "DB_ERROR", cause: dbResult.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: dbResult.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     const opcuaFolder = this.folderManager.get(tagUpdates.folderId);
@@ -213,33 +219,36 @@ export class TagManager {
       return err({
         reason: "OPCUA_FOLDER_NOT_FOUND",
         cause: `no opcua folder at ${tagUpdates.folderId}`,
-      } as const);
+      } as const satisfies NeverThrowError);
 
     // const duplicate = this.checkDuplicate(tagUpdates, opcuaFolder);
     // if (duplicate.isErr()) return err(duplicate.error);
 
     const oldTag = this.tags.get(id);
     const oldPath = this.idToPath(id);
-    let oldTagOk: Tag<any> | undefined;
 
     if (oldTag?.isOk()) {
-      oldTagOk = Object.assign({}, oldTag.value);
+      // keep old tag value when updating only if the datatype is the same
+      if (tagUpdates.dataType == oldTag.value.options.dataType) {
+        tagUpdates.initalValue = String(oldTag.value.value);
+      }
       oldTag.value.dispose();
     }
     this.tags.delete(id);
 
     if (oldPath) this.pathToId.delete(oldPath);
 
-    const updatedTag = Tag.create(this.opcuaServer, opcuaFolder, tagUpdates);
+    const updatedTag = this.tagConfigError(
+      Tag.create(this.opcuaServer, opcuaFolder, tagUpdates),
+    );
 
     this.tags.set(id, updatedTag);
     this.pathToId.set(tagUpdates.name, id);
 
-    if (updatedTag.isErr()) return err(updatedTag.error);
-    // keep the old tag value if present
-    if (oldTagOk) {
-      updatedTag.value.update(oldTagOk.value);
+    if (updatedTag.isErr()) {
+      return err(updatedTag.error);
     }
+
     return ok(updatedTag);
   }
 
@@ -252,20 +261,26 @@ export class TagManager {
 
     const tag = this.tags.get(id);
 
-    if (!tag || !(tag instanceof Tag))
+    if (!tag)
       return err({
         reason: "TAG_NOT_FOUND",
         cause: `Tag not found at ${id}`,
-      } as const);
+      } as const satisfies NeverThrowError);
 
     const dbResult = tryCatch(() =>
       db.delete(tables.tags).where(eq(tables.tags.id, id)).run(),
     );
     if (dbResult.error) {
-      return err({ reason: "DB_ERROR", cause: dbResult.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: dbResult.error.message,
+      } as const satisfies NeverThrowError);
     }
 
-    tag.dispose();
+    if (tag.isOk()) {
+      tag.value.dispose();
+    }
+
     this.tags.delete(id);
     const oldPath = this.idToPath(id);
     if (oldPath) this.pathToId.delete(oldPath);
@@ -276,18 +291,32 @@ export class TagManager {
   // check if a tag has a duplicate name in
   checkDuplicate(tag: TagOptionsInput, folder: OpcuaFolder) {
     for (const t of this.tags.values()) {
-      if (!(t instanceof Tag)) continue;
+      if (t.isErr()) continue;
       if (
-        t.name == tag.name &&
-        t.opcuaFolder.node.parentId == folder.node.parentId
+        t.value.name == tag.name &&
+        t.value.opcuaFolder.node.parentId == folder.node.parentId
       ) {
         return err({
           reason: "DUPLICATE_TAG",
           cause: `Duplicate tag ${tag.id}  ${tag.name}`,
-        } as const);
+        } as const satisfies NeverThrowError);
       }
     }
     return ok(true);
+  }
+
+  // wrap the Tag.create calls in this to lump all errors returned under TAG_CONFIG_ERROR
+  tagConfigError(newTag: Result<Tag, FailedTag>) {
+    // collect all tag errors into TAG_CONFIG_ERROR for consistency
+    if (newTag.isErr()) {
+      return err({
+        reason: "TAG_CONFIG_ERROR",
+        cause: newTag.error,
+        options: newTag.error.options,
+      } as const satisfies FailedTag);
+    } else {
+      return ok(newTag.value);
+    }
   }
 
   // -------------------------
@@ -313,9 +342,11 @@ export class TagManager {
       const opcuaFolder = this.folderManager.get(tagOpt.folderId);
       if (!opcuaFolder) continue;
 
-      const newTag = Tag.create(this.opcuaServer, opcuaFolder, tagOpt);
+      const tag = this.tagConfigError(
+        Tag.create(this.opcuaServer, opcuaFolder, tagOpt),
+      );
 
-      this.tags.set(tagOpt.id, newTag);
+      this.tags.set(tagOpt.id, tag);
       this.pathToId.set(tagOpt.name, tagOpt.id);
     }
 

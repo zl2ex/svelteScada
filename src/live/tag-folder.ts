@@ -7,7 +7,7 @@ import type {
   PatchPayload,
 } from "$lib/client/live/patchCollection.svelte";
 import { err, ok, type Result } from "neverthrow";
-import type { NeverthrowError } from "$lib/server/tag/tag";
+import type { NeverThrowError } from "$lib/util/neverThrow";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -33,7 +33,7 @@ export const applyTagFolderPatches = live(
   async (
     ctx,
     patch: PatchOp,
-  ): Promise<Result<{ ok: true }, NeverthrowError>> => {
+  ): Promise<Result<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(

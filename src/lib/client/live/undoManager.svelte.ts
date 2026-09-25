@@ -19,7 +19,7 @@ import type { PatchCollection } from "./patchCollection.svelte";
 export type ContextType = "project" | "document";
 
 type ContextEntry = {
-  collection: PatchCollection<any>;
+  collection: PatchCollection<any, any>;
   contextType: ContextType;
 };
 
@@ -45,14 +45,14 @@ export class UnifiedUndoManager {
   private activeDocument: string | null = null;
 
   // Transaction support
-  private transactionStack = 0;                  // >0 when inside a begin/end pair
+  private transactionStack = 0; // >0 when inside a begin/end pair
   private transactionBuffer = new Map<string, number>(); // contexts -> # of mutations
 
   // ── registration ─────────────────────────────────────
 
   register(
     name: string,
-    collection: PatchCollection<any>,
+    collection: PatchCollection<any, any>,
     contextType: ContextType = "project",
   ) {
     this.contexts.set(name, { collection, contextType });
@@ -127,7 +127,9 @@ export class UnifiedUndoManager {
    */
   endTransaction() {
     if (this.transactionStack === 0) {
-      console.warn("UnifiedUndoManager.endTransaction() called without a matching beginTransaction()");
+      console.warn(
+        "UnifiedUndoManager.endTransaction() called without a matching beginTransaction()",
+      );
       return;
     }
 

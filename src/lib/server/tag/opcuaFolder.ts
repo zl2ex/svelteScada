@@ -1,8 +1,9 @@
 import type { UAObject, AddressSpace } from "node-opcua";
 import { logger } from "../pino/logger";
 import type { ClosureTableNode } from "../sqlite/util/tagClosureTable";
-import { err, ok, type Result } from "neverthrow";
+import { err, ok } from "neverthrow";
 import { tryCatch } from "$lib/util/tryCatch";
+import type { NeverThrowError } from "$lib/util/neverThrow";
 
 export class OpcuaFolder {
   node: ClosureTableNode;
@@ -43,8 +44,8 @@ export class OpcuaFolder {
     if (result.error) {
       return err({
         reason: "OPCUA_FOLDER_CREATE_FAILED",
-        cause: result.error,
-      } as const);
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -60,8 +61,8 @@ export class OpcuaFolder {
     if (result.error) {
       return err({
         reason: "OPCUA_RENAME_FAILED",
-        cause: result.error,
-      } as const);
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -95,8 +96,8 @@ export class OpcuaFolder {
     if (result.error) {
       return err({
         reason: "OPCUA_DISPOSE_FAILED",
-        cause: result.error,
-      } as const);
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);

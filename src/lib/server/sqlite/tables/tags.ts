@@ -1,7 +1,7 @@
-import { sqliteTable, text, real, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { tag_folders } from "./tag_folders";
-import { baseTypeKeys } from "../../../../lib/client/tag/zodSchema";
+import { baseTypeKeys } from "../../../../lib/validation/zod";
 
 export const tags = sqliteTable("tags", {
   id: text("id").primaryKey(),
@@ -13,7 +13,7 @@ export const tags = sqliteTable("tags", {
   type: text("type", { enum: ["tag", "udtTag"] })
     .notNull()
     .default("tag"),
-  value: real("value"),
+  initalValue: text("intialValue"),
   nodeId: text("nodeId"),
   writeable: integer("writeable", { mode: "boolean" }).default(true),
   exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).default(

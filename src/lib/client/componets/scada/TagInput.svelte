@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setTagValue, getTagValue } from "$live/tags";
+  import { writeTagValue, getTagValue } from "$live/tags";
   import type { HTMLInputAttributes } from "svelte/elements";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
   import { RpcError } from "svelte-realtime/client";
@@ -7,8 +7,13 @@
     type BaseTypeMap,
     type ClientTagValue,
     type FailedTag,
+    type TagValue,
   } from "$lib/server/tag/tag";
   import { toast } from "$lib/client/toast.svelte";
+  import {
+    neverThrowErrorToString,
+    type NeverThrowError,
+  } from "$lib/util/neverThrow";
 
   interface IdProps extends HTMLInputAttributes {
     id: string;
@@ -59,9 +64,9 @@
 
   let isFocus = $state(false);
 
-  async function write(value: unknown) {
+  async function write(value: TagValue) {
     const id = streamState.value?.id ?? lookup;
-    const result = await setTagValue({ id, value });
+    const result = await writeTagValue({ id, value });
     if ("error" in result) {
       if (result.error instanceof RpcError) {
         console.error(result.error);
@@ -75,7 +80,7 @@
         toast({
           kind: "error",
           title: "Tag Write Error",
-          description: result.error.reason,
+          description: neverThrowErrorToString(result.error),
           duration: 3000,
         });
       }
@@ -93,10 +98,23 @@
     Boolean: "1",
     Double: "any",
     Int16: "1",
+    UInt16: "1",
     Int32: "1",
+    UInt32: "1",
+    Int64: "1",
+    UInt64: "1",
     String: "any",
   };
 </script>
+
+{#snippet neverThrowError(error: NeverThrowError)}
+  <p class="heading-font-weight">{error.reason}</p>
+  {#if typeof error.cause === "string"}
+    <p>{error.cause}</p>
+  {:else if typeof error.cause === "object"}
+    {@render neverThrowError(error.cause)}
+  {/if}
+{/snippet}
 
 <svelte:boundary
   onerror={(err) => {
@@ -112,22 +130,17 @@
       <Portal>
         <Tooltip.Positioner>
           <Tooltip.Content class="card p-2 preset-filled-error-400-600 text-xs">
-            <p class="heading-font-weight">{streamState.error.reason}</p>
-            {#if "cause" in streamState.error}
-              {#if streamState.error.cause instanceof String}
-                <p>{streamState.error.cause}</p>
-              {:else if "message" in streamState.error.cause}
-                <p>{streamState.error.cause.message}</p>
-              {:else}
-                <pre>{JSON.stringify(streamState.error.cause, null, 2)}</pre>
-              {/if}
-            {/if}
+            {@render neverThrowError(streamState.error)}
           </Tooltip.Content>
         </Tooltip.Positioner>
       </Portal>
-      <Tooltip.Trigger tabindex={-1}>
-        <label for="input" class="label">{label ?? lookup}</label>
-        <p class="text-error-400-600">{streamState.error.reason}</p>
+      <Tooltip.Trigger tabindex={-1} class="shrink min-w-0">
+        <p class="truncate">
+          {label ?? streamState.error?.options?.name ?? lookup}
+        </p>
+        <p class="text-error-400-600 truncate">
+          {streamState.error.reason}
+        </p>
       </Tooltip.Trigger>
     </Tooltip>
   {:else if streamState.kind === "ok"}

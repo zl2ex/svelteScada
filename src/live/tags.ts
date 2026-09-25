@@ -4,7 +4,7 @@ import { tagManager } from "../hooks.server";
 import {
   type ClientTagValue,
   type FailedTag,
-  type NeverthrowError,
+  type TagValue,
 } from "$lib/server/tag/tag";
 
 import { err, ok, type Result } from "neverthrow";
@@ -13,6 +13,7 @@ import type {
   PatchOp,
   PatchPayload,
 } from "$lib/client/live/patchCollection.svelte";
+import type { NeverThrowError } from "$lib/util/neverThrow";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -35,7 +36,7 @@ export const applyTagPatches = live(
   async (
     ctx,
     patch: PatchOp,
-  ): Promise<Result<{ ok: true }, FailedTag | NeverthrowError>> => {
+  ): Promise<Result<{ ok: true }, FailedTag | NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(
@@ -58,13 +59,7 @@ export const applyTagPatches = live(
           case "FOLDER_NOT_FOUND":
           case "TAG_ALREADY_EXISTS":
             return err(result.error);
-          case "INVALID_DEFAULTS":
-          case "INVALID_INITIAL_VALUE":
-          case "OPTIONS_PARSE_ERROR":
-          case "SCHEMA_ERROR":
-          case "DRIVER_SUBSCRIBE_ERROR":
-          case "UDT_NOT_FOUND":
-          case "EXPOSE_OPCUA_VARIABLE_FAILED":
+          case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client
             publishTagValue(err(result.error));
             break;
@@ -97,13 +92,7 @@ export const applyTagPatches = live(
           case "DB_ERROR":
           case "OPCUA_FOLDER_NOT_FOUND":
             return err(result.error);
-          case "INVALID_DEFAULTS":
-          case "INVALID_INITIAL_VALUE":
-          case "OPTIONS_PARSE_ERROR":
-          case "SCHEMA_ERROR":
-          case "DRIVER_SUBSCRIBE_ERROR":
-          case "UDT_NOT_FOUND":
-          case "EXPOSE_OPCUA_VARIABLE_FAILED":
+          case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client
             publishTagValue(err(result.error));
             break;
@@ -185,35 +174,28 @@ export function publishTagValue(
   publish(`tag-values:${path}`, "set", tag);
 }
 
-// Expected outcomes (tag missing, failed tag, bad value) are returned over
-// the wire as an `{ ok: false, error }` result. Only truly unexpected
-// failures should throw.
-export type SetTagValueError =
-  | { reason: "TAG_NOT_FOUND"; cause: string }
-  | { reason: "TAG_ERROR"; cause: string }
-  | { reason: "VALIDATION_ERROR"; cause: string };
-
-export const setTagValue = live(
+export const writeTagValue = live(
   async (
     ctx,
-    { id, value }: { id: string; value: unknown },
-  ): Promise<Result<{ success: true }, SetTagValueError>> => {
+    { id, value }: { id: string; value: TagValue },
+  ): Promise<Result<{ success: true }, NeverThrowError>> => {
     const tag = tagManager.getTagById(id);
     if (tag.isErr()) {
       return err(tag.error);
     }
 
     if (tag.value.isErr()) {
-      return err({ reason: "TAG_ERROR", cause: tag.value.error.reason });
+      return err({ reason: "TAG_ERROR", cause: tag.value.error });
     }
 
     const tagOk = tag.value;
-    const update = tagOk.value.update(value);
+    const update = await tagOk.value.write(value);
     if (update.isErr()) {
-      return err({ reason: "VALIDATION_ERROR", cause: update.error.reason });
+      return err({ reason: "VALIDATION_ERROR", cause: update.error });
     }
 
-    publishTagValue(ok(tagOk.value.getClientValueTag()), ctx);
+    // TD WIP tag.write() should do this
+    //publishTagValue(ok(tagOk.value.getClientValueTag()), ctx);
 
     return ok({ success: true });
   },

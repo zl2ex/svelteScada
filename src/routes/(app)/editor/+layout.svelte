@@ -3,23 +3,17 @@
     Copy,
     FolderIcon,
     FolderPlus,
-    GripVerticalIcon,
     LoaderIcon,
-    MaximizeIcon,
-    MinimizeIcon,
-    MinusIcon,
     Scissors,
     Settings2Icon,
     TagIcon,
     TagPlus,
     Trash2,
-    XIcon,
   } from "@lucide/svelte";
   import {
     Menu,
     Portal,
     TreeView,
-    FloatingPanel,
     createTreeViewCollection,
     useTreeView,
     Popover,
@@ -44,21 +38,23 @@
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import { UnifiedUndoManager } from "$lib/client/live/undoManager.svelte";
-  import {
-    type BaseTypeStringsWithArrays,
-    type NeverthrowError,
-    type TagError,
-    type TagOptionsInput,
+  import type {
+    BaseTypeStrings,
+    TagOptionsInput,
   } from "$lib/server/tag/tag.js";
   import { onMount } from "svelte";
   import type { TagInsertOptionalId } from "$lib/server/sqlite/tables/tags.js";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import { getDataTypeStrings } from "$lib/remote/tag.remote.js";
+  import type { NeverThrowError } from "$lib/util/neverThrow.js";
+  import { PanelLayout } from "$lib/client/util/panelLayout.svelte.js";
+
+  const panelLayout = new PanelLayout();
 
   const undoManager = new UnifiedUndoManager();
 
   let tagFolderPatchesCollection = $state(
-    new PatchCollection<ClosureTableNode, NeverthrowError>({
+    new PatchCollection<ClosureTableNode, NeverThrowError>({
       initial: data.tagFolders,
       applyPatch: applyTagFolderPatches,
       subscribePatches: (notify) => {
@@ -81,7 +77,7 @@
   );
 
   let tagPatchesCollection = $state(
-    new PatchCollection<TagOptionsInput, TagError>({
+    new PatchCollection<TagOptionsInput, NeverThrowError>({
       initial: data.tags,
       applyPatch: applyTagPatches,
       subscribePatches: (notify) => {
@@ -104,6 +100,7 @@
   undoManager.register("tags", tagPatchesCollection);
 
   onMount(() => {
+    panelLayout.loadFromLocalStorage();
     // unmount
     return () => {
       undoManager.unregister("folders");
@@ -367,7 +364,7 @@
       id: newId,
       folderId: parentNode.id ?? null,
       name: "New Tag",
-      dataType: "Double" as BaseTypeStringsWithArrays,
+      dataType: "Double" as BaseTypeStrings,
     };
     renamingTagId = newId;
     treeView().expand([parentNode.id]);
@@ -555,7 +552,7 @@
         folderId: folderId ?? parentNode?.id ?? null,
         name: name,
         dataType: tag.dataType,
-        value: tag.value ?? null,
+        initalValue: tag.initalValue ?? null,
         nodeId: tag.nodeId ?? null,
         writeable: tag.writeable ?? true,
         exposeOverOpcua: tag.exposeOverOpcua ?? true,
@@ -641,9 +638,10 @@
       <Popover>
         <TreeView.Item>
           <Popover.Trigger
-            class="w-full flex items-center justify-between gap-2"
+            tabindex={-1}
+            class="w-full flex items-center justify-between gap-2 min-w-0 focus-visible:outline-none"
           >
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 shrink min-w-0">
               <TagIcon class="size-4 shrink-0 opacity-75" />
               {#if renamingTagId === node.id}
                 <input
@@ -660,7 +658,7 @@
                   }}
                 />
               {:else}
-                <span>{node.name}</span>
+                <span class="truncate">{node.name}</span>
               {/if}
             </div>
             {#if renamingTagId !== node.id}
@@ -716,7 +714,7 @@
                     value={node.dataType}
                     onchange={(e) =>
                       tagPatchesCollection.update(node.id, {
-                        dataType: e.currentTarget.value,
+                        dataType: e.currentTarget.value as BaseTypeStrings,
                       })}
                   >
                     {#each await getDataTypeStrings() as dataType}
@@ -729,25 +727,24 @@
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
                   <label
                     class="whitespace-nowrap opacity-60 w-24"
-                    for={`value-${node.id}`}>Value</label
+                    for={`initalValue-${node.id}`}>Inital Value</label
                   >
                   <input
-                    id={`value-${node.id}`}
-                    type="number"
-                    step="any"
+                    id={`initalValue-${node.id}`}
+                    type="text"
                     class="input py-0 px-1 border-none flex-1"
-                    value={node.value ?? ""}
+                    value={node.initalValue}
                     onblur={(e) =>
                       tagPatchesCollection.update(node.id, {
-                        value:
+                        initalValue:
                           e.currentTarget.value === ""
                             ? null
-                            : Number(e.currentTarget.value),
+                            : String(e.currentTarget.value),
                       })}
                     onkeydown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
                       if (e.key === "Escape") {
-                        e.currentTarget.value = String(node.value ?? "");
+                        e.currentTarget.value = String(node.initalValue ?? "");
                         e.currentTarget.blur();
                       }
                     }}
@@ -859,7 +856,11 @@
   </TreeView.NodeProvider>
 {/snippet}
 
-<div class="text-xs w-100">
+<div
+  id="left-panel"
+  style={panelLayout.width.left ? `width: ${panelLayout.width.left}px` : ""}
+  class="text-xs"
+>
   <svelte:boundary>
     <Menu
       onOpenChange={(e) => {
@@ -1042,8 +1043,31 @@
     {/snippet}
   </svelte:boundary>
 </div>
+<button
+  class="w-0.5 bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
+  onmousedown={() => {
+    panelLayout.dragging.left = true;
+  }}
+  title="drag to resize left panel"
+></button>
 
-{@render children?.()}
+<div id="center-panel" class="grow">
+  {@render children?.()}
+</div>
+<button
+  class="w-0.5 bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
+  onmousedown={() => {
+    panelLayout.dragging.right = true;
+  }}
+  title="drag to resize right panel"
+></button>
+
+<div
+  id="right-panel"
+  style={panelLayout.width.right ? `width: ${panelLayout.width.right}px` : ""}
+>
+  Right panel
+</div>
 
 <style>
   :global(

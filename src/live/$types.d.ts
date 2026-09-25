@@ -6,9 +6,9 @@ declare module '$live/tag-folder' {
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
   import type { Result, ok } from 'neverthrow';
-  import type { NeverthrowError } from '$lib/server/tag/tag';
+  import type { NeverThrowError } from '$lib/util/neverThrow';
 
-  export const applyTagFolderPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, NeverthrowError>>;
+  export const applyTagFolderPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, NeverThrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'UNAUTHENTICATED';
   export const tagFolderPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
   export const empty: Readable<undefined>;
@@ -19,10 +19,11 @@ declare module '$live/tags' {
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
   import type { Result, ok } from 'neverthrow';
-  import type { ClientTagValue, FailedTag, NeverthrowError } from '$lib/server/tag/tag';
+  import type { ClientTagValue, FailedTag, TagValue } from '$lib/server/tag/tag';
+  import type { NeverThrowError } from '$lib/util/neverThrow';
 
-  export const applyTagPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, FailedTag | NeverthrowError>>;
-  export const setTagValue: ({ id, value }: { id: string; value: unknown }) => Promise<Result<{ success: true }, SetTagValueError>>;
+  export const applyTagPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, FailedTag | NeverThrowError>>;
+  export const writeTagValue: ({ id, value }: { id: string; value: TagValue }) => Promise<Result<{ success: true }, NeverThrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'SERVER_ERROR' | 'UNAUTHENTICATED';
   export const tagPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
   export const getTagValue: ((lookup: string) => StreamStore<Result<

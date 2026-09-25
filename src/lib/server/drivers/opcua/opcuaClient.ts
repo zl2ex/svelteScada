@@ -1,5 +1,6 @@
 import type {
   BrowseDescriptionLike,
+  BrowseResult,
   ClientSession,
   ClientSubscription,
 } from "node-opcua-client";
@@ -10,8 +11,10 @@ import {
 } from "node-opcua-client";
 
 import { logger } from "../../pino/logger";
-import type { OPCUAServer } from "node-opcua";
+import type { OPCUAServer, UAVariable, NodeIdLike } from "node-opcua";
 import z from "zod";
+import { err, ok, type Result } from "neverthrow";
+import type { Tag } from "../../tag/tag";
 
 const nodeIdToMonitor = "ns=2;g=1D545837-3EDB-43F5-A4B8-073C0775FCBE";
 
@@ -20,6 +23,10 @@ export const Z_OpcuaClientDriverOptions = z.object({
 });
 
 type OpcuaClientDriverOptions = z.infer<typeof Z_OpcuaClientDriverOptions>;
+
+export type OpcuaClientDriverError =
+  | { reason: "NOT_IMPLEMENTED"; cause: string }
+  | { reason: "SESSION_NOT_INITIALISED"; cause: string };
 
 export class OpcuaClientDriver {
   client: OPCUAClient;
@@ -85,6 +92,7 @@ export class OpcuaClientDriver {
         nodeId: nodeIdToMonitor,
         attributeId: AttributeIds.Value,
       };
+
       const parameters = {
         samplingInterval: 100,
         discardOldest: true,
@@ -115,11 +123,15 @@ export class OpcuaClientDriver {
     }
   }
 
-  async browse(nodeId: BrowseDescriptionLike) {
-    if (!this.session)
-      throw new Error(
-        `[opcuaClientDriver] browse() session not initalised, call connect() first`,
-      );
+  async browse(
+    nodeId: BrowseDescriptionLike,
+  ): Promise<Result<BrowseResult, OpcuaClientDriverError>> {
+    if (!this.session) {
+      return err({
+        reason: "SESSION_NOT_INITIALISED",
+        cause: `[opcuaClientDriver] browse() session not initalised, call connect() first`,
+      } as const);
+    }
     // Standard NodeId for the Objects folder is "ns=0;i=85"
     const browseResult = await this.session.browse(nodeId);
 
@@ -133,7 +145,7 @@ export class OpcuaClientDriver {
       );
     });
 
-    return browseResult;
+    return ok(browseResult);
   }
 
   async browseRecursive(nodeId: BrowseDescriptionLike) {
@@ -143,9 +155,13 @@ export class OpcuaClientDriver {
 */
     try {
       const browseResult = await this.browse(nodeId);
-      if (!browseResult.references) return;
+      if (browseResult.isErr()) {
+        logger.error(browseResult.error.cause);
+        return;
+      }
+      if (!browseResult.value.references) return;
 
-      for (const reference of browseResult.references) {
+      for (const reference of browseResult.value.references) {
         let type = undefined;
         if (reference.nodeClass.valueOf() === 1) type = "folder";
         if (reference.nodeClass.valueOf() === 2) type = "object";
@@ -160,7 +176,10 @@ export class OpcuaClientDriver {
         }
       }
     } catch (err) {
-      console.error("Browse error:", err.message);
+      console.error(
+        "Browse error:",
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -171,9 +190,21 @@ export class OpcuaClientDriver {
     if (this.client) await this.client.disconnect();
   }
 
-  subscribeByTag() {}
+  subscribeByTag(
+    tag: Tag,
+    parent?: NodeIdLike,
+  ): Result<UAVariable, OpcuaClientDriverError> {
+    logger.warn(`[OpcuaClientDriver] subscribeByTag() not implemented yet`);
+    return err({
+      reason: "NOT_IMPLEMENTED",
+      cause: `[OpcuaClientDriver] subscribeByTag() not implemented yet`,
+    } as const);
+  }
 
-  unsubscribeByTag() {}
+  unsubscribeByTag(tag: Tag): Result<void, OpcuaClientDriverError> {
+    logger.warn(`[OpcuaClientDriver] unsubscribeByTag() not implemented yet`);
+    return ok(undefined);
+  }
 
   dispose() {
     logger.debug(`[opcuaClientDriver] dispose()`);

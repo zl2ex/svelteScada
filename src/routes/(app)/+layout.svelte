@@ -105,7 +105,7 @@
     </AppBar>
   </header>
 
-  <main>
+  <main class="flex">
     {@render children()}
   </main>
 </div>

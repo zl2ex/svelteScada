@@ -7,9 +7,12 @@
 import { createTravels, type Travels, type TravelPatches } from "travels";
 import { apply } from "mutative";
 import { toast } from "../toast.svelte";
-import { err, type Result } from "neverthrow";
-import type { NeverthrowError } from "$lib/server/tag/tag";
+import { type Result } from "neverthrow";
 import { RpcError } from "svelte-realtime/client";
+import {
+  neverThrowErrorToString,
+  type NeverThrowError,
+} from "$lib/util/neverThrow";
 
 export interface Identifiable {
   id: string;
@@ -25,7 +28,7 @@ export interface PatchPayload {
 
 export interface PatchCollectionOptions<
   T extends Identifiable,
-  E extends NeverthrowError,
+  E extends NeverThrowError,
 > {
   initial: Record<string, T>;
   // however your generated RPC/room action is shaped, as long as it
@@ -42,15 +45,15 @@ export interface PatchCollectionOptions<
   // Used by UnifiedUndoManager to record entries on the unified timeline.
   onMutation?: () => void;
   // Called when a server sync fails for one or more patches.
-  onError?: (error: NeverthrowError) => void;
+  onError?: (error: NeverThrowError) => void;
 }
 
 export class PatchCollection<
   T extends Identifiable,
-  E extends NeverthrowError,
+  E extends NeverThrowError,
 > {
   state = $state<Record<string, T>>({});
-  syncError = $state<string | null>(null);
+  syncError = $state<string | NeverThrowError | null>(null);
 
   private travels: Travels<Record<string, T>>;
   private prevPosition: number;
@@ -73,18 +76,22 @@ export class PatchCollection<
     this.onError = options.onError;
 
     this.unsubscribeTravels = this.travels.subscribe((event) => {
-      if (event.position === this.prevPosition) {
-        this.prevPosition = event.position;
-        return;
-      }
       const patches = this.travels.getPatches();
 
       if (event.position > this.prevPosition) {
+        // foward
         this.sendOps(
           patches.patches[this.prevPosition],
           patches.inversePatches[this.prevPosition],
         );
+      } else if (event.position == this.prevPosition) {
+        // full histroy buffer
+        this.sendOps(
+          patches.patches[this.prevPosition - 1],
+          patches.inversePatches[this.prevPosition - 1],
+        );
       } else {
+        // reverse
         this.sendOps(
           patches.inversePatches[event.position],
           patches.patches[event.position],
@@ -120,12 +127,12 @@ export class PatchCollection<
         if (res.error instanceof RpcError) {
           this.syncError = res.error.code;
         } else {
-          this.syncError = res.error.reason;
+          this.syncError = res.error;
         }
         toast({
           kind: "error",
           title: "Sync Error",
-          description: this.syncError,
+          description: neverThrowErrorToString(this.syncError),
           duration: 3000,
         });
         this.onError?.(res.error);

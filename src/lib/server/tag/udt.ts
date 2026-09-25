@@ -1,11 +1,8 @@
-import { DataType, OPCUAServer, type UAObject } from "node-opcua";
+import { DataType } from "node-opcua";
 import { type TagOptionsInput } from "./tag";
 import z from "zod";
 import { logger } from "../pino/logger";
-import {
-  Z_UdtParams,
-  Z_UdtDefinitionOptions,
-} from "../../client/tag/zodSchema";
+import type { Z_UdtDefinitionOptions, Z_UdtParams } from "$lib/validation/zod";
 
 export type BaseDataTypeMap = {
   Double: number;

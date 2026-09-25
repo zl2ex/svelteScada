@@ -1,12 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import Popup from "$lib/client/componets/Popup.svelte";
-  import CheckboxInput from "$lib/client/componets/remoteFormElements/CheckboxInput.svelte";
-  import NumberInput from "$lib/client/componets/remoteFormElements/NumberInput.svelte";
-  import SelectInput from "$lib/client/componets/remoteFormElements/SelectInput.svelte";
-  import TextInput from "$lib/client/componets/remoteFormElements/TextInput.svelte";
-  import Tree from "$lib/client/componets/Tree.svelte";
+  import CheckboxInput from "$lib/client/componets/remoteFormElements/RemoteForm";
+  import NumberInput from "$lib/client/componets/remoteFormElements/RemoteForm";
+  import SelectInput from "$lib/client/componets/remoteFormElements/RemoteForm";
+  import TextInput from "$lib/client/componets/remoteFormElements/RemoteForm";
   import {
     deleteDevice,
     getAvalibleDrivers,

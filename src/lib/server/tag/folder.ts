@@ -1,25 +1,24 @@
-import { TagNode } from "../../client/tag/clientTag.svelte";
 import { logger } from "../pino/logger";
 import type { Tag } from "./tag";
 
 export interface TagFolderOptions extends Omit<TagNode, "type"> {}
 
 export class TagFolder extends TagNode {
-  children: Map<string, TagFolder | Tag<any>> = new Map();
+  children: Map<string, TagFolder | Tag> = new Map();
 
   constructor(opts: Omit<TagFolderOptions, "path">) {
     super({ ...opts, type: "Folder" });
   }
 
-  /* addChild(node: TagFolder | Tag<any>) {
+  /* addChild(node: TagFolder | Tag) {
     this.children.set(node.name, node);
   }
 
-  getChild(name: string): TagFolder | Tag<any> | undefined {
+  getChild(name: string): TagFolder | Tag | undefined {
     return this.children.get(name);
   }
 
-  getChildren(): (TagFolder | Tag<any>)[] {
+  getChildren(): (TagFolder | Tag)[] {
     return this.children.values().toArray();
   }*/
 

@@ -5,10 +5,10 @@ import {
   tag_folder_paths,
   tags,
   type TagFolderSelect,
-  type TagSelect,
 } from "../tables";
-import { err, ok, type Result } from "neverthrow";
+import { err, ok } from "neverthrow";
 import { tryCatch } from "$lib/util/tryCatch";
+import type { NeverThrowError } from "$lib/util/neverThrow";
 
 export interface ClosureTableNode extends TagFolderSelect {
   parentId: string | null;
@@ -80,7 +80,10 @@ export class ClosureTable {
     );
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -115,7 +118,10 @@ export class ClosureTable {
     });
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -150,7 +156,10 @@ export class ClosureTable {
     });
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -202,7 +211,10 @@ export class ClosureTable {
     );
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -219,15 +231,16 @@ export class ClosureTable {
     );
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError satisfies NeverThrowError);
     }
 
     return ok(result.value);
   }
 
-  getAll(
-    parentId: string | null = null,
-  ): Result<ClosureTableNode[], { reason: "DB_ERROR"; cause: Error }> {
+  getAll(parentId: string | null = null) {
     const result = tryCatch(() => {
       let items: TagFolderSelect[];
       if (parentId === null) {
@@ -275,7 +288,10 @@ export class ClosureTable {
     });
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -305,7 +321,10 @@ export class ClosureTable {
     });
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);
@@ -333,7 +352,10 @@ export class ClosureTable {
     );
 
     if (result.error) {
-      return err({ reason: "DB_ERROR", cause: result.error } as const);
+      return err({
+        reason: "DB_ERROR",
+        cause: result.error.message,
+      } as const satisfies NeverThrowError);
     }
 
     return ok(result.value);

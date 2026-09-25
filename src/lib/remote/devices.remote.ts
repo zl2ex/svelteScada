@@ -5,11 +5,9 @@ import {
   z_DeviceOptions,
 } from "$lib/server/drivers/driver";
 import { z } from "zod";
-import { deviceManager } from "../../server";
 import { error, redirect } from "@sveltejs/kit";
 import { OpcuaClientDriver } from "$lib/server/drivers/opcua/opcuaClient";
-import { TagNode } from "$lib/client/tag/clientTag.svelte";
-import { attempt } from "$lib/util/attempt";
+import { deviceManager } from "../../hooks.server";
 
 export const getAvalibleDrivers = prerender(async () => {
   return avalibeDrivers;
@@ -54,14 +52,20 @@ export const updateDeviceEnabled = form(
 );*/
 
 export const updateDevice = form(z_DeviceOptions, async (deviceOptions) => {
-  await deviceManager.updateDevice(deviceOptions);
+  const result = await deviceManager.updateDevice(deviceOptions);
+  if (result.isErr()) {
+    error(500, result.error.reason);
+  }
   redirect(308, "/editor/devices");
 });
 
 export const deleteDevice = command(
   z.string().nonempty(),
   async (deviceName) => {
-    await deviceManager.removeDevice(deviceName);
+    const removed = deviceManager.removeDevice(deviceName);
+    if (removed.isErr()) {
+      error(500, removed.error.cause);
+    }
   },
 );
 
@@ -78,13 +82,14 @@ export const browseOpcua = query(
       );
     }
 
-    const browse = await attempt(device.driver.browse(x.nodeId));
-    if ("error" in browse) {
-      error(500, browse.error.message);
+    const browse = await device.driver.browse(x.nodeId);
+    if (browse.isErr()) {
+      error(500, browse.error.cause);
     }
 
     let nodes: TagNode[] = [];
-    browse.data.references?.forEach((ref) => {
+    const references = browse.value.references ?? [];
+    references.forEach((ref: (typeof references)[number]) => {
       let type = undefined;
       if (ref.nodeClass.valueOf() === 1) type = "Folder";
       if (ref.nodeClass.valueOf() === 2) type = "Tag";

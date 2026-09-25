@@ -37,7 +37,6 @@ export const init: ServerInit = async () => {
     throw Error(`[hooks.server.ts] init() gatewayOpcua.server not initalised`);
   }
 
-  deviceManager.initOpcuaServer(gatewayOpcua.server);
   tagManager.initOpcuaServer(gatewayOpcua.server, folderManager);
   folderManager.initOpcuaServer(
     gatewayOpcua.server,

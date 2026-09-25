@@ -6,8 +6,7 @@ export const devices = sqliteTable("devices", {
     .$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull().unique(),
   driverName: text("driverName").notNull(),
-  displayName: text("displayName").notNull(),
-  enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 });
 
 export type DeviceSelect = typeof devices.$inferSelect;
