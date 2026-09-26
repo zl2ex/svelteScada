@@ -1,4 +1,3 @@
-import { publishTagValue } from "../../../live/tags";
 import { logger } from "$lib/server/pino/logger";
 import {
   OPCUAServer,
@@ -20,9 +19,6 @@ import {
   type UInt64,
   type Float,
   type ByteString,
-  resolveNodeId,
-  NodeId,
-  DataValue,
   StatusCode,
 } from "node-opcua";
 import z from "zod";
@@ -30,9 +26,9 @@ import { OpcuaFolder } from "$lib/server/tag/opcuaFolder";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { z_insertTag } from "$lib/server/sqlite/tables";
 import { err, ok, type Result } from "neverthrow";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { baseTypeKeys, Z_BaseTypes } from "$lib/validation/zod";
-import { tryCatch } from "$lib/util/tryCatch";
+import { attempt } from "$lib/util/attempt";
 import type { DriverVariable } from "$lib/server/drivers/driver";
 
 export type TagOptionsInput = z.input<typeof z_insertTag>;
@@ -134,13 +130,16 @@ export const baseTypeMap: {
 export type TagValue =
   string | number | boolean | Array<string | number | boolean>;
 
+export type UpdateSource =
+  "WebClient" | "GatewayOpcua" | "TagInternal" | "TagDriver";
+
 export function getSchema<DataType extends string>(dataType: DataType) {
   const parsed = dataType.match(/^(?<base>[A-Za-z0-9]+)(?:\[(?<len>\d*?)\])?$/);
   if (!parsed?.groups) {
     return err({
       reason: "INVALID_DATATYPE_STRING",
       cause: `Invalid dataType: ${dataType}`,
-    } as const);
+    } as const satisfies NeverThrowError);
   }
 
   const base = String(parsed.groups.base);
@@ -151,7 +150,7 @@ export function getSchema<DataType extends string>(dataType: DataType) {
     return err({
       reason: "UNKOWN_BASE_DATATYPE",
       cause: `[Tag] Unknown base type: ${base}`,
-    } as const);
+    } as const satisfies NeverThrowError);
 
   if (len === undefined) return ok(baseSchema); // scalar
   if (len === "") return ok(z.array(baseSchema)); // dynamic array
@@ -182,6 +181,13 @@ export function resolveOpcuaPath(path: string): ResolvedDriverPath {
 }
 
 export type StatusCodeName = Exclude<keyof typeof StatusCodes, "prototype">;
+
+// onChange listener
+export type ChangeListener = (
+  value: TagValue,
+  source: UpdateSource,
+  statusCode: StatusCode,
+) => void;
 
 // the client-facing representation of a healthy tag
 export type ClientTagValue = Pick<Tag, "id" | "name" | "value" | "options"> & {
@@ -224,18 +230,21 @@ export class Tag {
   exposeOpcuaVarible?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
   driverVarible?: DriverVariable<TagValue>; // driver subscription varible
   driverUnsubscribe?: () => void; // driver cleanup function
+  onChange?: ChangeListener; // on change event for listeners
   private disposed = false; // disposed flag
 
   private constructor(
     opcuaServer: OPCUAServer,
     opcuaFolder: OpcuaFolder,
     options: TagOptionsInput,
+    onChange?: ChangeListener,
   ) {
     this.id = options.id;
     this.name = options.name;
     this.opcuaServer = opcuaServer;
     this.opcuaFolder = opcuaFolder;
     this.options = options;
+    this.onChange = onChange;
     this.childTags = new Map();
   }
 
@@ -250,6 +259,7 @@ export class Tag {
     opcuaServer: OPCUAServer,
     opcuaFolder: OpcuaFolder,
     opts: TagOptionsInput,
+    onChange?: ChangeListener,
   ): Result<Tag, FailedTag> {
     // parse for any errors but also to get default values
     const parsed = z_insertTag.safeParse(opts);
@@ -258,12 +268,12 @@ export class Tag {
         reason: "OPTIONS_PARSE_ERROR",
         cause: parsed.error.message,
         options: opts,
-      } as const);
+      } as const satisfies FailedTag);
     }
 
     const options = parsed.data;
 
-    const tag = new Tag(opcuaServer, opcuaFolder, options);
+    const tag = new Tag(opcuaServer, opcuaFolder, options, onChange);
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
@@ -287,7 +297,7 @@ export class Tag {
 
       if (schema.isErr()) {
         logger.error(schema.error);
-        return err({ ...schema.error, options } as const);
+        return err({ ...schema.error, options } as const satisfies FailedTag);
       }
 
       tag.schema = schema.value;
@@ -306,7 +316,7 @@ export class Tag {
           reason: "UDT_NOT_FOUND",
           cause: `[Tag] error while creating tag ${tag.id} ${tag.name} dataType ${options.dataType} does not exist in udtDefinitions`,
           options,
-        } as const);
+        } as const satisfies FailedTag);
       }
 
       for (const tagOptions of udtDefinition
@@ -346,7 +356,7 @@ export class Tag {
           reason: "INVALID_DEFAULTS",
           cause: result.error.message,
           options,
-        } as const);
+        } as const satisfies FailedTag);
       }
 
       if (tag.isArray) {
@@ -357,20 +367,23 @@ export class Tag {
     }
 
     if (options.exposeOverOpcua) {
-      if (!tag.opcuaServer?.engine.addressSpace) {
-        throw new Error(
-          `[Tag] create() id: ${tag.id} cannot initalise exposeOpcuaVariable as no opcuaServer provided`,
-        );
+      const addressSpace = tag.opcuaServer?.engine.addressSpace;
+      if (!addressSpace) {
+        return err({
+          reason: "OPCUA_NOT_INITIALISED",
+          cause: `[Tag] create() id: ${tag.id} cannot initalise exposeOpcuaVariable as no opcuaServer provided`,
+          options,
+        } as const satisfies FailedTag);
       }
-      try {
-        const namespace = tag.opcuaServer.engine.addressSpace.getOwnNamespace();
+      const exposed = attempt(() => {
+        const namespace = addressSpace.getOwnNamespace();
         const parent = tag.opcuaFolder.uaObject;
 
         // delete varible from
         const node = parent.getComponentByName(tag.id);
         if (node) namespace.deleteNode(node.nodeId);
 
-        tag.exposeOpcuaVarible = namespace.addVariable({
+        return namespace.addVariable({
           componentOf: parent,
           browseName: tag.id,
           displayName: tag.name,
@@ -386,23 +399,47 @@ export class Tag {
                 value: tag.value,
               }),
             set: async (variant: Variant) => {
+              console.trace(variant);
               const update = await tag.update(
                 variant.value,
+                "GatewayOpcua",
                 StatusCodes.Good,
-                false, // dont write back to gatewayOpcua
               );
+              if (update.isErr()) {
+                logger.error(update.error);
+                const reason = update.error.reason;
+                switch (reason) {
+                  case "ARRAY_SIZE_MISMATCH":
+                  case "ARRAY_TYPE_MISMATCH":
+                  case "ZOD_PARSE_ERROR":
+                    return StatusCodes.BadTypeMismatch;
+                  case "DRIVER_WRITE_FAILED":
+                    return StatusCodes.BadServerNotConnected;
+                  case "OPCUA_NOT_INITIALISED":
+                  case "OPCUA_WRITE_FAILED":
+                  case "SCHEMA_UNDEFINED":
+                    return StatusCodes.BadInternalError;
+                  default:
+                    logger.error(reason satisfies never);
+                    return StatusCodes.BadUnexpectedError;
+                }
+              }
 
               return tag.statusCode;
             },
           },
         });
-      } catch (e) {
+      });
+
+      if (exposed.error) {
         return err({
           reason: "EXPOSE_OPCUA_VARIABLE_FAILED",
-          cause: (e as Error).message,
+          cause: errorToString(exposed.error),
           options,
-        } as const);
+        } as const satisfies FailedTag);
       }
+
+      tag.exposeOpcuaVarible = exposed.data;
     }
 
     // subscribe to value from driver if nodeId provided
@@ -414,28 +451,17 @@ export class Tag {
           reason: "DRIVER_CONFIG_ERROR",
           cause: driverSub.error,
           options,
-        } as const);
+        } as const satisfies FailedTag);
       }
       tag.driverVarible = driverSub.value;
     }
 
     // update tag value when created if it is there, if not set to inital value
-    tag.update(
-      tag.value,
-      StatusCodes.Good,
-      true, // do write to gatewayOpcua
-      false, // dont write to driver
-    );
-
-    /*
-    if (initialUpdate.isErr()) {
-      logger.error(initialUpdate.error);
-      return err({
-        reason: "INVALID_INITIAL_VALUE",
-        cause: initialUpdate.error,
-        options,
-      } as const);
-    }*/
+    tag.update(tag.value, "TagInternal", StatusCodes.Good).then((updated) => {
+      if (updated.isErr()) {
+        logger.error(updated.error);
+      }
+    });
 
     logger.debug(`[Tag] created new tag ${tag.id}  ${tag.name} = ${tag.value}`);
 
@@ -445,9 +471,9 @@ export class Tag {
   // parse intialValue string stored in database into one of the required datatypes
   private stringToTagValue(value: string): TagValue {
     // Handle arrays stored in json format
-    const parsed = tryCatch(() => JSON.parse(value));
-    if (parsed.value) {
-      return parsed.value;
+    const parsed = attempt(() => JSON.parse(value));
+    if (!parsed.error && parsed.data) {
+      return parsed.data;
     }
     // Handle booleans
     if (value.toLowerCase() === "true") return true;
@@ -468,14 +494,14 @@ export class Tag {
         reason: "SCHEMA_UNDEFINED",
         cause: `[Tag] validate() schema undefined for tag ${this.id} ${this.name}`,
         options: this.options,
-      } as const);
+      } as const satisfies FailedTag);
     const parsed = this.schema.safeParse(value);
     if (!parsed.success) {
       return err({
         reason: "ZOD_PARSE_ERROR",
         cause: parsed.error.message,
         options: this.options,
-      } as const);
+      } as const satisfies FailedTag);
     }
     return ok(parsed.data);
   }
@@ -495,24 +521,24 @@ export class Tag {
       return err({
         reason: "NODE_ID_UNDEFINED",
         cause: `no nodeId provided for tag ${this.id}  ${this.name}`,
-      } as const);
+      } as const satisfies NeverThrowError);
 
     const resolvedPath = resolveOpcuaPath(this.options.nodeId);
     if (!resolvedPath.deviceName) {
       return err({
         reason: "RESOLVE_DEVICE_NAME_FAILED",
         cause: `[Tag] Device at ${this.options.nodeId} not found while trying to subscribe to driver tag ${this.id} ${this.name}`,
-      } as const);
+      } as const satisfies NeverThrowError);
     }
 
     if (!resolvedPath.driverPath) {
       return err({
         reason: "RESOLVE_DEVICE_DRIVER_PATH_FAILED",
         cause: `[Tag] Driver Path at ${this.options.nodeId} not found while trying to subscribe to driver tag ${this.id} ${this.name}`,
-      } as const);
+      } as const satisfies NeverThrowError);
     }
 
-    const device = deviceManager.getDeviceFromPath(resolvedPath.deviceName);
+    const device = deviceManager.getDeviceByName(resolvedPath.deviceName);
     if (device.isErr()) return err(device.error);
     const variableResult = device.value.subscribe(
       resolvedPath.driverPath,
@@ -524,12 +550,10 @@ export class Tag {
     // driver values subscription
     this.driverUnsubscribe = driverVariable.onChange(
       async ({ value, status }) => {
-        await this.update(
-          value,
-          status,
-          true, // do write to gatewayOpcua
-          false, // dont write back to driver
-        );
+        const updated = await this.update(value, "TagDriver", status);
+        if (updated.isErr()) {
+          logger.error(updated.error);
+        }
       },
     );
 
@@ -544,17 +568,27 @@ export class Tag {
         reason: "NOT_WRITEABLE",
         cause: `[Tag] update() ${this.id} failed because writeable is set to false`,
         options: this.options,
-      } as const);
+      } as const satisfies FailedTag);
     }
 
-    return await this.update(value);
+    return await this.update(value, "WebClient");
   }
 
+  /**
+   * update the tag's value from one source and notify / write to other's
+   *
+   * @param value - The new value to be written
+   * @param source - The source of the update so the value is not written back to the caller
+   * @param statusCode - The OPCUA status code, defaults to Good
+   * @returns statusCode, either the one passed or if something went wrong with the write
+   *
+   * @example
+   * const statusCode = await update(50.1, "TagInternal", StatusCodes.Good);
+   */
   private async update(
     value: TagValue,
+    source: UpdateSource,
     statusCode: StatusCode = StatusCodes.Good,
-    opcuaWrite: boolean = true,
-    driverWrite: boolean = true,
   ) {
     const validated = this.validate(value);
     if (validated.isErr()) {
@@ -563,37 +597,46 @@ export class Tag {
     }
     const newValue = validated.value;
     if (this.isArray !== Array.isArray(newValue))
-      throw new TypeError(
-        `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}`,
-      );
+      return err({
+        reason: "ARRAY_TYPE_MISMATCH",
+        cause: `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}`,
+        options: this.options,
+      } as const satisfies FailedTag);
     if (
       this.isArray &&
       Array.isArray(newValue) &&
       this.arrayLength !== newValue?.length
     )
-      throw new TypeError(
-        `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
-      );
+      return err({
+        reason: "ARRAY_SIZE_MISMATCH",
+        cause: `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
+        options: this.options,
+      } as const satisfies FailedTag);
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
 
-    if (this.driverVarible && driverWrite) {
+    if (this.driverVarible && source !== "TagDriver") {
       const write = await this.driverVarible.write(newValue);
       if (write.isErr()) {
+        this.statusCode = write.error.opcuaStatus;
+        // TD WIP Pubslish status code ??
+
         return err({
           reason: "DRIVER_WRITE_FAILED",
           cause: write.error.reason,
           options: this.options,
-        } as const);
+        } as const satisfies FailedTag);
       }
     }
 
-    if (this.options.exposeOverOpcua && opcuaWrite) {
+    if (this.options.exposeOverOpcua && source !== "GatewayOpcua") {
       if (!this.exposeOpcuaVarible) {
-        throw new Error(
-          `[Tag] update() id: ${this.id} cannot update exposeOpcuaVariable as it is not initalised`,
-        );
+        return err({
+          reason: "OPCUA_NOT_INITIALISED",
+          cause: `[Tag] update() id: ${this.id} cannot update exposeOpcuaVariable as it is not initalised`,
+          options: this.options,
+        } as const satisfies FailedTag);
       }
-      try {
+      const written = attempt(() =>
         this.exposeOpcuaVarible.setValueFromSource(
           {
             dataType: this.opcuaDataType,
@@ -602,14 +645,15 @@ export class Tag {
               this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
             value: newValue,
           },
-          this.statusCode,
-        );
-      } catch (e) {
+          statusCode,
+        ),
+      );
+      if (written.error) {
         return err({
           reason: "OPCUA_WRITE_FAILED",
-          cause: (e as Error).message,
+          cause: errorToString(written.error),
           options: this.options,
-        } as const);
+        } as const satisfies FailedTag);
       }
     }
 
@@ -620,42 +664,75 @@ export class Tag {
       `[Tag] update() ${this.id} = ${value} : ${this.statusCode.name}`,
     );
 
-    // notify frontend of updates
-    publishTagValue(ok(this.getClientValueTag()));
+    this.onChange?.(newValue, source, statusCode);
+
     return ok(this.statusCode);
   }
 
   [Symbol.dispose]() {
-    this.dispose();
+    const disposed = this.dispose();
+    if (disposed.isErr()) {
+      logger.error(disposed.error);
+    }
   }
 
   dispose() {
     logger.trace(`[Tag] dispose() ${this.id}`);
-    if (this.disposed) return;
+    if (this.disposed) return ok(true);
     this.disposed = true;
-    try {
-      // driver cleanup
-      this.driverUnsubscribe?.();
-      this.driverVarible?.release();
 
-      if (this.exposeOpcuaVarible) {
-        if (!this.opcuaServer.engine.addressSpace) {
-          throw new Error(
-            `[Tag] dispose() this.opcuaServer.engine.addressSpace undefined`,
-          );
-        }
-        gatewayOpcua.deleteOpcuaVariable(
-          this.opcuaServer.engine.addressSpace,
-          this.exposeOpcuaVarible,
-        );
-        this.exposeOpcuaVarible = undefined;
+    // driver cleanup
+    const unsub = attempt(() => this.driverUnsubscribe?.());
+    if (unsub.error) {
+      return err({
+        reason: "TAG_DISPOSE_FAILED",
+        cause: errorToString(unsub.error),
+        options: this.options,
+      } as const satisfies FailedTag);
+    }
+
+    const released = attempt(() => this.driverVarible?.release());
+    if (released.error) {
+      return err({
+        reason: "TAG_DISPOSE_FAILED",
+        cause: errorToString(released.error),
+        options: this.options,
+      } as const satisfies FailedTag);
+    }
+
+    if (this.exposeOpcuaVarible) {
+      const addressSpace = this.opcuaServer?.engine.addressSpace;
+      if (!addressSpace) {
+        return err({
+          reason: "TAG_DISPOSE_FAILED",
+          cause: `[Tag] dispose() this.opcuaServer.engine.addressSpace undefined`,
+          options: this.options,
+        } as const satisfies FailedTag);
       }
 
-      this.childTags.forEach((child) => {
-        child.dispose();
-      });
-    } catch (error) {
-      logger.error(error);
+      const deleted = attempt(() =>
+        gatewayOpcua.deleteOpcuaVariable(
+          addressSpace,
+          this.exposeOpcuaVarible!,
+        ),
+      );
+      if (deleted.error) {
+        return err({
+          reason: "TAG_DISPOSE_FAILED",
+          cause: errorToString(deleted.error),
+          options: this.options,
+        } as const satisfies FailedTag);
+      }
+      this.exposeOpcuaVarible = undefined;
     }
+
+    this.childTags.forEach((child) => {
+      const disposed = child.dispose();
+      if (disposed.isErr()) {
+        logger.error(disposed.error);
+      }
+    });
+
+    return ok(true);
   }
 }

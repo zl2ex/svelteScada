@@ -58,6 +58,8 @@ export const applyTagPatches = live(
           case "DUPLICATE_TAG":
           case "FOLDER_NOT_FOUND":
           case "TAG_ALREADY_EXISTS":
+          case "TAG_SERVER_NOT_INITIALISED":
+          case "FOLDER_MANAGER_NOT_INITIALISED":
             return err(result.error);
           case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client
@@ -91,6 +93,8 @@ export const applyTagPatches = live(
         switch (reason) {
           case "DB_ERROR":
           case "OPCUA_FOLDER_NOT_FOUND":
+          case "TAG_SERVER_NOT_INITIALISED":
+          case "FOLDER_MANAGER_NOT_INITIALISED":
             return err(result.error);
           case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client
@@ -138,7 +142,7 @@ export const getTagValue = live.stream(
       return err({
         reason: "TAG_NOT_FOUND",
         cause: `no tag found at path or id ${lookup}`,
-      } as const);
+      } as const satisfies { reason: "TAG_NOT_FOUND"; cause: string });
     }
     if (tag.isErr()) return err(tag.error);
     return ok(tag.value.getClientValueTag());
@@ -185,13 +189,16 @@ export const writeTagValue = live(
     }
 
     if (tag.value.isErr()) {
-      return err({ reason: "TAG_ERROR", cause: tag.value.error });
+      return err({
+        reason: "TAG_ERROR",
+        cause: tag.value.error,
+      } as const satisfies NeverThrowError);
     }
 
     const tagOk = tag.value;
     const update = await tagOk.value.write(value);
     if (update.isErr()) {
-      return err({ reason: "VALIDATION_ERROR", cause: update.error });
+      return err(update.error);
     }
 
     // TD WIP tag.write() should do this

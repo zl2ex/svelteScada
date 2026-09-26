@@ -1,4 +1,5 @@
 import { guard, live, LiveError, publish } from "svelte-realtime/server";
+import { newId } from "$lib/util/newId";
 
 export type ToastKind = "info" | "success" | "warning" | "error";
 
@@ -25,8 +26,4 @@ export const toastPush = live.stream("toast-push", async () => null, {
 // all connected clients.
 export function pushToast(message: Omit<ToastMessage, "id">) {
   publish("toast-push", "set", { ...message, id: newId() });
-}
-
-function newId(): string {
-  return crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }

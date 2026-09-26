@@ -6,6 +6,7 @@ import {
   type ClosureTableNode,
 } from "../sqlite/util/tagClosureTable";
 import { err, ok } from "neverthrow";
+import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export class FolderManager {
   opcuaServer: OPCUAServer | undefined;
@@ -21,9 +22,10 @@ export class FolderManager {
 
   private createOpcuaFolder(folder: ClosureTableNode) {
     if (!this.opcuaServer?.engine.addressSpace || !this.rootFolder) {
-      throw Error(
-        `[FolderManager] createOpcuaFolder() ocpuaServer not initalised, call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "OPCUA_NOT_INITIALISED",
+        cause: `[FolderManager] createOpcuaFolder() ocpuaServer not initalised, call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
 
     const parent =
@@ -47,9 +49,11 @@ export class FolderManager {
       return err({
         reason: "OPCUA_FOLDER_NOT_FOUND",
         cause: `opcua folder at ${id} not found`,
-      } as const);
+      } as const satisfies NeverThrowError);
 
-    folder.dispose();
+    const disposed = folder.dispose();
+    if (disposed.isErr()) return err(disposed.error);
+
     this.opcuaFolders.delete(id);
     return ok(true);
   }
@@ -82,7 +86,7 @@ export class FolderManager {
       return err({
         reason: "FOLDER_NOT_FOUND",
         cause: `Folder at ${id} not found`,
-      } as const);
+      } as const satisfies NeverThrowError);
     const rename = folder.rename(newName);
     if (rename.isErr()) return err(rename.error);
 
@@ -104,13 +108,23 @@ export class FolderManager {
       parentId: newParentId ?? null,
     };
 
-    this.createOpcuaFolder(newFolder);
+    const recreated = this.createOpcuaFolder(newFolder);
+    if (recreated.isErr()) return err(recreated.error);
 
     const moveResult = tagFoldersClosureTable.move(id, newParentId);
     if (moveResult.isErr()) {
       // revert the changes to memory if the db operation fails
-      this.disposeOpcuaFolder(id);
-      this.createOpcuaFolder(oldDbFolder.value);
+      const rollback = this.disposeOpcuaFolder(id);
+      if (rollback.isErr()) {
+        return err({
+          reason: "FOLDER_MOVE_ROLLBACK_FAILED",
+          cause: `[FolderManager] moveFolder() failed to rollback folder ${id}: ${errorToString(
+            rollback.error,
+          )}`,
+        } as const satisfies NeverThrowError);
+      }
+      const restore = this.createOpcuaFolder(oldDbFolder.value);
+      if (restore.isErr()) return err(restore.error);
       return err(moveResult.error);
     }
 
@@ -138,7 +152,9 @@ export class FolderManager {
     if (folders.isErr()) return err(folders.error);
     for (const folder of folders.value) {
       const newFolder = this.createOpcuaFolder(folder);
-      // if(newFolder.isErr()) // do nothing if it fails yet WIP
+      if (newFolder.isErr()) {
+        logger.error(newFolder.error);
+      }
     }
     logger.info(
       `[FolderManager] loaded ${folders.value.length} folders to OPC UA`,

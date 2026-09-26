@@ -1,16 +1,26 @@
 import net from "net";
 import Modbus, { ModbusTCPClient } from "jsmodbus";
 import { StatusCodes, type StatusCode } from "node-opcua";
-import { err, errAsync, ok, ResultAsync, type Result } from "neverthrow";
+import { err, ok } from "neverthrow";
 import { z } from "zod";
 import { logger } from "../../pino/logger";
 import {
   z_insertDeviceModbusTcpOptions,
   type DeviceModbusTcpOptionsSelect,
 } from "$lib/server/sqlite/tables";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import { attempt } from "$lib/util/attempt";
+import {
+  errorToString,
+  neverThrowErrorToString,
+  type NeverThrowError,
+} from "$lib/util/neverThrow";
 import type { BaseTypeMap } from "$lib/server/tag/tag";
-import type { DriverVariable, Reading, SubscribeOptions } from "../driver";
+import type {
+  DriverVariable,
+  DriverWriteError,
+  Reading,
+  SubscribeOptions,
+} from "../driver";
 
 /* -------------------------------------------------------------------------- */
 /*  Public types                                                              */
@@ -29,9 +39,6 @@ export type ModbusTCPDriverOptions = z.input<
 >;
 export type ModbusTCPDriverError = NeverThrowError & {
   options: ModbusTCPDriverOptions;
-};
-export type ModbusTCPWriteError = ModbusTCPDriverError & {
-  opcuaStatus: StatusCode;
 };
 
 /**
@@ -200,6 +207,7 @@ const codecFor = (dataType: ModbusDataType) =>
 /* -------------------------------------------------------------------------- */
 
 type Listener = (reading: Reading<ModbusValue>) => void;
+type ConnectionListener = (connected: boolean) => void;
 
 type ParsedModbusPath = {
   registerType: ModbusRegisterType;
@@ -230,9 +238,8 @@ type Batch = {
 type RawRead =
   { kind: "words"; bytes: Uint8Array } | { kind: "bits"; bits: boolean[] };
 
-type ReadFailure = {
-  status: StatusCode;
-  message: string;
+type ReadFailure = NeverThrowError & {
+  opcuaStatus: StatusCode;
   deviceException: boolean;
 };
 
@@ -263,6 +270,8 @@ export class ModbusTCPDriver {
 
   options: DeviceModbusTcpOptionsSelect;
   connected = false;
+  /** fired whenever `connected` flips, see onConnectedChange() */
+  private connectionListeners = new Set<ConnectionListener>();
 
   private constructor(config: DeviceModbusTcpOptionsSelect) {
     this.options = config;
@@ -271,8 +280,7 @@ export class ModbusTCPDriver {
     this.client = new Modbus.client.TCP(this.socket, this.options.unitId);
 
     this.socket.on("connect", () => {
-      if (this.connected) return;
-      this.connected = true;
+      this.setConnected(true);
       logger.info(
         `[ModbusTCPDriver] Connected to Modbus device at ${this.options.ip}:${this.options.port}`,
       );
@@ -294,7 +302,17 @@ export class ModbusTCPDriver {
         options: opts,
       } as const satisfies ModbusTCPDriverError);
     }
-    return ok(new ModbusTCPDriver(parsed.data as DeviceModbusTcpOptionsSelect));
+    const created = attempt(
+      () => new ModbusTCPDriver(parsed.data as DeviceModbusTcpOptionsSelect),
+    );
+    if (created.error) {
+      return err({
+        reason: "DRIVER_CREATE_FAILED",
+        cause: `[ModbusTCPDriver] create() ${errorToString(created.error)}`,
+        options: opts,
+      } as const satisfies ModbusTCPDriverError);
+    }
+    return ok(created.data);
   }
 
   [Symbol.dispose]() {
@@ -304,7 +322,8 @@ export class ModbusTCPDriver {
   dispose() {
     this.disposed = true;
     this.shouldReconnect = false;
-    this.connected = false;
+    this.setConnected(false);
+    this.connectionListeners.clear();
     this.stopPolling();
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
@@ -318,10 +337,44 @@ export class ModbusTCPDriver {
 
   /* ------------------------------ connection ------------------------------ */
 
+  /**
+   * Subscribe to connection state changes. Called once immediately with the
+   * current state, then on every change. Returns an unsubscribe function.
+   */
+  onConnectedChange(cb: ConnectionListener) {
+    const entry: ConnectionListener = (connected) => cb(connected);
+    this.connectionListeners.add(entry);
+    entry(this.connected);
+    return () => {
+      this.connectionListeners.delete(entry);
+    };
+  }
+
+  private setConnected(next: boolean) {
+    if (this.connected === next) return;
+    this.connected = next;
+    for (const cb of this.connectionListeners) {
+      try {
+        cb(next);
+      } catch (e) {
+        logger.error(
+          e,
+          `[ModbusTCPDriver] connection listener for ${this.options.ip}:${this.options.port} threw`,
+        );
+      }
+    }
+  }
+
   connect() {
-    if (this.disposed) return;
+    if (this.disposed) {
+      return err({
+        reason: "CONNECT_DISPOSED",
+        cause: `[ModbusTCPDriver] connect() driver is disposed`,
+        options: this.options,
+      } as const satisfies ModbusTCPDriverError);
+    }
     this.shouldReconnect = true;
-    this.openSocket();
+    return this.openSocket();
   }
 
   disconnect() {
@@ -329,22 +382,36 @@ export class ModbusTCPDriver {
     clearTimeout(this.reconnectTimer);
     this.reconnectTimer = undefined;
     this.stopPolling();
-    this.connected = false;
+    this.setConnected(false);
     this.publishAll(StatusCodes.BadConditionDisabled);
     this.socket.destroy();
     logger.info(
       `[ModbusTCPDriver] Disconnected from Modbus device at ${this.options.ip}:${this.options.port}`,
     );
+    return ok(true);
   }
 
   private openSocket() {
-    if (this.connected || this.socket.connecting) return;
-    this.socket.connect(this.options.port, this.options.ip);
+    if (this.connected || this.socket.connecting) return ok(true);
+    const connecting = attempt(() =>
+      this.socket.connect(this.options.port, this.options.ip),
+    );
+    if (connecting.error) {
+      this.setConnected(false);
+      return err({
+        reason: "SOCKET_CONNECT_FAILED",
+        cause: `socket.connect() to ${this.options.ip}:${this.options.port} failed: ${errorToString(
+          connecting.error,
+        )}`,
+        options: this.options,
+      } as const satisfies ModbusTCPDriverError);
+    }
+    return ok(true);
   }
 
   private onSocketDown() {
     this.stopPolling();
-    this.connected = false;
+    this.setConnected(false);
     if (this.disposed || !this.shouldReconnect) return;
     this.publishAll(StatusCodes.BadNotConnected);
     this.scheduleReconnect();
@@ -357,7 +424,11 @@ export class ModbusTCPDriver {
     );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
-      if (this.shouldReconnect) this.openSocket();
+      if (!this.shouldReconnect) return;
+      const opened = this.openSocket();
+      if (opened.isErr()) {
+        logger.error(opened.error.cause);
+      }
     }, this.options.reconnectInervalMs);
   }
 
@@ -396,12 +467,11 @@ export class ModbusTCPDriver {
     if (dataType === "String") {
       const n = opts.stringLength;
       if (!n || n < 1) {
-        return err(
-          this.fail(
-            "STRING_LENGTH_REQUIRED",
-            `String at ${path} needs stringLength > 0`,
-          ),
-        );
+        return err({
+          reason: "STRING_LENGTH_REQUIRED",
+          cause: `String at ${path} needs stringLength > 0`,
+          options: this.options,
+        } as const satisfies ModbusTCPDriverError);
       }
       registerLength = Math.ceil(n / 2);
     } else {
@@ -410,32 +480,29 @@ export class ModbusTCPDriver {
 
     if (isBitType) {
       if (dataType !== "Boolean" || p.bit !== undefined) {
-        return err(
-          this.fail(
-            "SUBSCRIBE_DATATYPE_MISMATCH",
-            `${dataType}${p.bit !== undefined ? " with bit" : ""} is not valid for ${p.registerType} at ${path}`,
-          ),
-        );
+        return err({
+          reason: "SUBSCRIBE_DATATYPE_MISMATCH",
+          cause: `${dataType}${p.bit !== undefined ? " with bit" : ""} is not valid for ${p.registerType} at ${path}`,
+          options: this.options,
+        } as const satisfies ModbusTCPDriverError);
       }
       registerLength = 1;
     }
 
     if (p.bit !== undefined && (dataType !== "Boolean" || p.bit > 15)) {
-      return err(
-        this.fail(
-          "SUBSCRIBE_BIT_INVALID",
-          `bit ${p.bit} invalid for ${dataType} at ${path}`,
-        ),
-      );
+      return err({
+        reason: "SUBSCRIBE_BIT_INVALID",
+        cause: `bit ${p.bit} invalid for ${dataType} at ${path}`,
+        options: this.options,
+      } as const satisfies ModbusTCPDriverError);
     }
 
     if (p.address < 0 || p.address + registerLength > 65536) {
-      return err(
-        this.fail(
-          "SUBSCRIBE_ADDRESS_OUT_OF_RANGE",
-          `${path} resolves to register ${p.address}..${p.address + registerLength - 1} (startAddress ${this.options.startAddress})`,
-        ),
-      );
+      return err({
+        reason: "SUBSCRIBE_ADDRESS_OUT_OF_RANGE",
+        cause: `${path} resolves to register ${p.address}..${p.address + registerLength - 1} (startAddress ${this.options.startAddress})`,
+        options: this.options,
+      } as const satisfies ModbusTCPDriverError);
     }
 
     const stringLength = dataType === "String" ? opts.stringLength : undefined;
@@ -460,9 +527,7 @@ export class ModbusTCPDriver {
         refs: 0,
         last: {
           value: handler.default,
-          status: this.connected
-            ? StatusCodes.BadWaitingForInitialData
-            : StatusCodes.BadNotConnected,
+          status: StatusCodes.BadWaitingForInitialData,
         },
         listeners: new Set(),
       };
@@ -493,17 +558,15 @@ export class ModbusTCPDriver {
           sub.listeners.delete(entry);
         };
       },
-      write: (value) => {
+      write: async (value) => {
         if (released) {
-          return errAsync(
-            this.writeFail(
-              "WRITE_HANDLE_RELEASED",
-              `handle for ${sub.key} was released`,
-              StatusCodes.BadInternalError,
-            ),
-          );
+          return err({
+            reason: "WRITE_HANDLE_RELEASED",
+            cause: `handle for ${sub.key} was released`,
+            opcuaStatus: StatusCodes.BadInternalError,
+          } as const satisfies DriverWriteError);
         }
-        return this.write(sub, value);
+        return await this.write(sub, value);
       },
       release: () => {
         if (released) return;
@@ -593,7 +656,6 @@ export class ModbusTCPDriver {
   private async poll() {
     for (const batch of this.buildBatches()) {
       if (!this.connected) return;
-      logger.trace(batch);
       await this.readBatch(batch);
     }
   }
@@ -643,7 +705,6 @@ export class ModbusTCPDriver {
     );
 
     if (result.isOk()) {
-      logger.trace(result.value);
       for (const sub of batch.subs) this.applyRead(batch, sub, result.value);
       return;
     }
@@ -666,13 +727,17 @@ export class ModbusTCPDriver {
     }
 
     logger.warn(
-      `[ModbusTCPDriver] read ${batch.type}${batch.start}..${batch.end - 1} failed: ${failure.message}`,
+      `[ModbusTCPDriver] read ${batch.type}${batch.start}..${batch.end - 1} failed: ${neverThrowErrorToString(failure.cause)}`,
     );
-    for (const sub of batch.subs) this.publishStatus(sub, failure.status);
+    for (const sub of batch.subs) this.publishStatus(sub, failure.opcuaStatus);
   }
 
-  private readRaw(type: ModbusRegisterType, start: number, length: number) {
-    return ResultAsync.fromPromise(
+  private async readRaw(
+    type: ModbusRegisterType,
+    start: number,
+    length: number,
+  ) {
+    const read = await attempt(() =>
       this.enqueue(async (): Promise<RawRead> => {
         switch (type) {
           case "hr": {
@@ -709,57 +774,57 @@ export class ModbusTCPDriver {
           }
         }
       }),
-      classifyModbusError,
     );
+    if (read.error) {
+      return err(classifyModbusError(read.error));
+    }
+    return ok(read.data);
   }
 
   private applyRead(batch: Batch, sub: Sub, raw: RawRead) {
     const offset = sub.address - batch.start;
-    try {
-      let value: ModbusValue;
+    const from = offset * 2;
+    const to = from + sub.registerLength * 2;
+    const shortResponse =
+      raw.kind === "bits" ? offset >= raw.bits.length : to > raw.bytes.length;
 
-      if (raw.kind === "bits") {
-        if (offset >= raw.bits.length) throw new Error("short response");
-        value = raw.bits[offset];
-      } else {
-        const from = offset * 2;
-        const to = from + sub.registerLength * 2;
-        if (to > raw.bytes.length) throw new Error("short response");
-        value = decodeWords(sub, raw.bytes.slice(from, to));
-      }
+    const decoded = shortResponse
+      ? undefined
+      : raw.kind === "bits"
+        ? { data: raw.bits[offset], error: undefined }
+        : attempt(() => decodeWords(sub, raw.bytes.slice(from, to)));
 
-      logger.trace(value);
-
-      this.publish(sub, { value, status: StatusCodes.Good });
-    } catch (e) {
-      logger.error(e, `[ModbusTCPDriver] decode failed for ${sub.key}`);
+    if (!decoded || decoded.error) {
+      logger.error(
+        decoded?.error ?? "short response",
+        `[ModbusTCPDriver] decode failed for ${sub.key}`,
+      );
       this.publishStatus(sub, StatusCodes.BadDecodingError);
+      return;
     }
+
+    this.publish(sub, { value: decoded.data, status: StatusCodes.Good });
   }
 
   /* --------------------------------- writing ------------------------------- */
 
   private async write(sub: Sub, value: ModbusValue) {
     if (sub.registerType === "ir" || sub.registerType === "di") {
-      return errAsync(
-        this.writeFail(
-          "WRITE_NOT_SUPPORTED",
-          `write not supported for modbus type ${sub.registerType}`,
-          StatusCodes.BadNotWritable,
-        ),
-      );
+      return err({
+        reason: "WRITE_NOT_SUPPORTED",
+        cause: `write not supported for modbus type ${sub.registerType}`,
+        opcuaStatus: StatusCodes.BadNotWritable,
+      } as const satisfies DriverWriteError);
     }
     if (!this.connected) {
-      return errAsync(
-        this.writeFail(
-          "WRITE_NOT_CONNECTED",
-          "device not connected",
-          StatusCodes.BadNotConnected,
-        ),
-      );
+      return err({
+        reason: "WRITE_NOT_CONNECTED",
+        cause: "device not connected",
+        opcuaStatus: StatusCodes.BadNotConnected,
+      } as const satisfies DriverWriteError);
     }
 
-    return ResultAsync.fromPromise(
+    const written = await attempt(() =>
       this.enqueue(async () => {
         if (sub.registerType === "co") {
           await this.client.writeSingleCoil(sub.address, Boolean(value));
@@ -795,47 +860,32 @@ export class ModbusTCPDriver {
           );
         }
       }),
-      (e) => {
-        const f = classifyModbusError(e);
-        logger.error(`[ModbusTCPDriver] write ${sub.key} failed: ${f.message}`);
-        return this.writeFail("WRITE_FAILED", f.message, f.status);
-      },
-    ).map(() => {
-      // reflect immediately; the next poll confirms what the device actually holds
-      this.publish(sub, { value, status: StatusCodes.Good });
-    });
+    );
+    if (written.error) {
+      const f = classifyModbusError(written.error);
+      logger.error(`[ModbusTCPDriver] write ${sub.key} failed: ${f.cause}`);
+      return err({
+        reason: "WRITE_FAILED",
+        cause: f.cause,
+        opcuaStatus: f.opcuaStatus,
+      } as const satisfies DriverWriteError);
+    }
+
+    // reflect immediately; the next poll confirms what the device actually holds
+    this.publish(sub, { value, status: StatusCodes.Good });
+    return ok(undefined);
   }
 
   /* --------------------------------- helpers ------------------------------- */
 
-  private fail<R extends string>(reason: R, cause: string) {
-    return {
-      reason,
-      cause: `[ModbusTCPDriver] ${cause}`,
-      options: this.options,
-    } as const satisfies ModbusTCPDriverError;
-  }
-
-  private writeFail<R extends string>(
-    reason: R,
-    cause: string,
-    opcuaStatus: StatusCode,
-  ) {
-    return {
-      ...this.fail(reason, cause),
-      opcuaStatus,
-    } satisfies ModbusTCPWriteError;
-  }
-
   private parsePath(path: string) {
     const m = path.match(PATH_REGEX);
     if (!m?.groups) {
-      return err(
-        this.fail(
-          "PARSE_PATH_FAILED",
-          `cannot parse modbus path "${path}"   expects a structure like (le|sw)hr20.1`,
-        ),
-      );
+      return err({
+        reason: "PARSE_PATH_FAILED",
+        cause: `cannot parse modbus path "${path}"   expects a structure like (le|sw)hr20.1`,
+        options: this.options,
+      } as const satisfies ModbusTCPDriverError);
     }
 
     let endian: Endian = this.options.endian as Endian;
@@ -848,12 +898,11 @@ export class ModbusTCPDriver {
         else if (flag === "be") endian = "BigEndian";
         else if (flag === "sw") swapWords = !this.options.swapWords;
         else
-          return err(
-            this.fail(
-              "PARSE_PATH_UNKNOWN_FLAG",
-              `unknown flag "${flag}" in "${path}"`,
-            ),
-          );
+          return err({
+            reason: "PARSE_PATH_UNKNOWN_FLAG",
+            cause: `unknown flag "${flag}" in "${path}"`,
+            options: this.options,
+          } as const satisfies ModbusTCPDriverError);
       }
     }
 
@@ -913,35 +962,35 @@ function classifyModbusError(e: unknown): ReadFailure {
         response?: { body?: { code?: number } };
       }
     | undefined;
-  const message = x?.message ?? (e instanceof Error ? e.message : String(e));
+  const message = x?.message ?? errorToString(e);
 
   switch (x?.err) {
     case "ModbusException":
-      return {
-        status:
-          x?.response?.body?.code === 2 // illegal data address
-            ? StatusCodes.BadOutOfRange
-            : StatusCodes.BadDeviceFailure,
+      return readFailure(
         message,
-        deviceException: true,
-      };
+        x?.response?.body?.code === 2 // illegal data address
+          ? StatusCodes.BadOutOfRange
+          : StatusCodes.BadDeviceFailure,
+        true,
+      );
     case "Timeout":
-      return {
-        status: StatusCodes.BadTimeout,
-        message,
-        deviceException: false,
-      };
+      return readFailure(message, StatusCodes.BadTimeout, false);
     case "Offline":
-      return {
-        status: StatusCodes.BadNotConnected,
-        message,
-        deviceException: false,
-      };
+      return readFailure(message, StatusCodes.BadNotConnected, false);
     default:
-      return {
-        status: StatusCodes.BadCommunicationError,
-        message,
-        deviceException: false,
-      };
+      return readFailure(message, StatusCodes.BadCommunicationError, false);
   }
+}
+
+function readFailure(
+  cause: string,
+  status: StatusCode,
+  deviceException: boolean,
+) {
+  return {
+    reason: "MODBUS_REQUEST_FAILED",
+    cause,
+    opcuaStatus: status,
+    deviceException,
+  } as const satisfies ReadFailure;
 }

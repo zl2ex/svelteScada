@@ -6,8 +6,11 @@ import {
 } from "$lib/server/drivers/driver";
 import { z } from "zod";
 import { error, redirect } from "@sveltejs/kit";
+import { err } from "neverthrow";
 import { OpcuaClientDriver } from "$lib/server/drivers/opcua/opcuaClient";
 import { deviceManager } from "../../hooks.server";
+import { attempt } from "$lib/util/attempt";
+import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export const getAvalibleDrivers = prerender(async () => {
   return avalibeDrivers;
@@ -22,12 +25,34 @@ export const getDevice = query(z.string(), async (deviceName) => {
   if (!device) {
     error(404, `device name ${deviceName} not found`);
   }
-  return device.getOptionsAndStatus();
+
+  const options = attempt(() => device.getOptionsAndStatus());
+  if (options.error) {
+    const failure = err({
+      reason: "DEVICE_STATUS_FAILED",
+      cause: `[devices.remote.ts] getDevice() failed to read status of device ${deviceName}: ${errorToString(
+        options.error,
+      )}`,
+    } as const satisfies NeverThrowError);
+    error(500, `${failure.error.reason}: ${failure.error.cause}`);
+  }
+
+  return options.data;
 });
 
 export const getDevices = query("unchecked", async () => {
   return deviceManager.getAllDevices().map((device) => {
-    return device.getOptionsAndStatus();
+    const options = attempt(() => device.getOptionsAndStatus());
+    if (options.error) {
+      const failure = err({
+        reason: "DEVICE_STATUS_FAILED",
+        cause: `[devices.remote.ts] getDevices() failed to read device status: ${errorToString(
+          options.error,
+        )}`,
+      } as const satisfies NeverThrowError);
+      error(500, `${failure.error.reason}: ${failure.error.cause}`);
+    }
+    return options.data;
   });
 });
 
@@ -52,7 +77,18 @@ export const updateDeviceEnabled = form(
 );*/
 
 export const updateDevice = form(z_DeviceOptions, async (deviceOptions) => {
-  const result = await deviceManager.updateDevice(deviceOptions);
+  const updated = attempt(() => deviceManager.updateDevice(deviceOptions));
+  if (updated.error) {
+    const failure = err({
+      reason: "DEVICE_UPDATE_FAILED",
+      cause: `[devices.remote.ts] updateDevice() failed to update device ${deviceOptions.name}: ${errorToString(
+        updated.error,
+      )}`,
+    } as const satisfies NeverThrowError);
+    error(500, `${failure.error.reason}: ${failure.error.cause}`);
+  }
+
+  const result = updated.data;
   if (result.isErr()) {
     error(500, result.error.reason);
   }
@@ -62,7 +98,18 @@ export const updateDevice = form(z_DeviceOptions, async (deviceOptions) => {
 export const deleteDevice = command(
   z.string().nonempty(),
   async (deviceName) => {
-    const removed = deviceManager.removeDevice(deviceName);
+    const attempted = attempt(() => deviceManager.removeDevice(deviceName));
+    if (attempted.error) {
+      const failure = err({
+        reason: "DEVICE_REMOVE_FAILED",
+        cause: `[devices.remote.ts] deleteDevice() failed to remove device ${deviceName}: ${errorToString(
+          attempted.error,
+        )}`,
+      } as const satisfies NeverThrowError);
+      error(500, `${failure.error.reason}: ${failure.error.cause}`);
+    }
+
+    const removed = attempted.data;
     if (removed.isErr()) {
       error(500, removed.error.cause);
     }
@@ -82,7 +129,18 @@ export const browseOpcua = query(
       );
     }
 
-    const browse = await device.driver.browse(x.nodeId);
+    const attempted = await attempt(() => device.driver.browse(x.nodeId));
+    if (attempted.error) {
+      const failure = err({
+        reason: "OPCUA_BROWSE_FAILED",
+        cause: `[devices.remote.ts] browseOpcua() failed to browse node ${x.nodeId} on device ${x.deviceName}: ${errorToString(
+          attempted.error,
+        )}`,
+      } as const satisfies NeverThrowError);
+      error(500, `${failure.error.reason}: ${failure.error.cause}`);
+    }
+
+    const browse = attempted.data;
     if (browse.isErr()) {
       error(500, browse.error.cause);
     }

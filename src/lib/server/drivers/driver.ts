@@ -1,22 +1,33 @@
-import type { NodeIdLike, OPCUAServer, StatusCode } from "node-opcua";
-import { ModbusTCPDriver } from "./modbus/modbusTcp";
-import { ModbusRTUDriver } from "./modbus/modbusRtu";
+import type { StatusCode } from "node-opcua";
+import {
+  ModbusTCPDriver,
+  type ModbusTCPDriverOptions,
+} from "./modbus/modbusTcp";
+import {
+  ModbusRTUDriver,
+  type ModbusRTUDriverOptions,
+} from "./modbus/modbusRtu";
 import { z } from "zod";
-import { err, ok, ResultAsync, type Result } from "neverthrow";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import { err, ok, type Result } from "neverthrow";
+import {
+  errorToString,
+  neverThrowErrorToString,
+  type NeverThrowError,
+} from "$lib/util/neverThrow";
 import { logger } from "$lib/server/pino/logger";
 import { attempt } from "$lib/util/attempt";
 import {
   resolveOpcuaPath,
   Tag,
-  type BaseTypeMap,
   type BaseTypeStrings,
 } from "$lib/server/tag/tag";
 import {
   OpcuaClientDriver,
   Z_OpcuaClientDriverOptions,
+  type OpcuaClientDriverOptions,
 } from "./opcua/opcuaClient";
 import { tagManager } from "../../../hooks.server";
+import { publishDeviceStatus } from "../../../live/devices";
 import { db } from "../sqlite/db";
 import {
   devices,
@@ -30,6 +41,10 @@ import {
 } from "../sqlite/tables";
 import { eq } from "drizzle-orm";
 
+export type DriverWriteError = NeverThrowError & {
+  opcuaStatus: StatusCode;
+};
+
 /** What a subscriber sees: the last good value (kept while bad) plus a status. */
 export type Reading<T> = { value: T; status: StatusCode };
 
@@ -42,7 +57,7 @@ export interface DriverVariable<T> {
    */
   onChange(cb: (reading: Reading<T>) => void): () => void;
   /** Resolves once the device accepted the write. */
-  write(value: T): ResultAsync<void, NeverThrowError>;
+  write(value: T): Promise<Result<void, DriverWriteError>>;
   /** Drops this handle. When the last handle on an address is released it stops being polled. */
   release(): void;
 }
@@ -51,16 +66,6 @@ export type SubscribeOptions = {
   /** Length in bytes. Required for `String`. */
   stringLength?: number;
 };
-
-export class DriverStatusError extends Error {
-  opcuaStatus: StatusCode;
-  message: string;
-  constructor(opcuaStatus: StatusCode, message: string) {
-    super(message);
-    this.message = message;
-    this.opcuaStatus = opcuaStatus;
-  }
-}
 
 // list of all avalible drivers
 export const z_DeviceOptions = z.discriminatedUnion("driverName", [
@@ -94,7 +99,7 @@ export const avalibeDrivers: AvalibleDriver[] = z_DeviceOptions.options.map(
   (obj) => {
     return {
       id: obj.shape.driverName.value,
-      displayName: obj.shape.displayName.value, // TD WIP avalibeDrivers Might not work
+      displayName: obj.shape.displayName.def.defaultValue,
     };
   },
 );
@@ -106,57 +111,50 @@ export function isValidDriver(id: string): id is DriverId {
   return avalibeDrivers.some((driver) => driver.id === id);
 }
 
-export function Z_getDefaults<Schema extends z.ZodObject>(schema: Schema) {
-  return Object.fromEntries(
-    Object.entries(schema.shape).map(([key, value]) => {
-      if (value instanceof z.ZodDefault) return [key, value.def.defaultValue];
-      return [key, undefined];
-    }),
-  );
-}
-
-function fromEntries<T extends readonly [PropertyKey, any]>(
-  entries: Iterable<T>,
-) {
-  return Object.fromEntries(entries) as {
-    [K in T[0]]: Extract<T, [K, any]>[1];
-  };
-}
-
-export function getDefaultOptions() {
-  return fromEntries(
-    z_DeviceOptions.options.map((obj) => [
-      obj.shape.driverName.value,
-      Z_getDefaults(obj.shape.options),
-    ]),
-  );
-}
-
 export type DeviceOptions = z.input<typeof z_DeviceOptions>;
 
-export type DeviceStatus = "Connected" | "Reconnecting" | "Disabled";
-export class Device {
-  name: string;
-  // TD WIP
-  driver: ModbusTCPDriver; // | ModbusRTUDriver | OpcuaClientDriver;
+export type DeviceStatus = "Error" | "Connected" | "Reconnecting" | "Disabled";
+
+export type FailedDevice = NeverThrowError & {
   options: DeviceOptions;
+};
+
+type DeviceStatusListener = (status: DeviceStatus) => void;
+
+export class Device {
+  id: string;
+  name: string;
+  options: DeviceOptions;
+  // TD WIP
+  private driver: ModbusTCPDriver; // | ModbusRTUDriver | OpcuaClientDriver;
+  /** fired whenever the driver connection state changes */
+  private driverUnsubscribe?: () => void;
+  /** fired whenever `status` changes, see onChange() */
+  private statusListeners = new Set<DeviceStatusListener>();
 
   private constructor(
     config: DeviceOptions,
     driver: ModbusTCPDriver | ModbusRTUDriver | OpcuaClientDriver,
   ) {
     this.name = config.name;
+    // create new instance id
+    this.id = config.id;
     this.options = config;
     this.driver = driver;
+    // the driver is the source of truth for connection state, mirror it up
+    this.driverUnsubscribe = driver.onConnectedChange(() =>
+      this.refreshStatus(),
+    );
   }
 
-  static create(opts: DeviceOptions) {
-    const parsed = z_DeviceOptions.safeParse(opts);
+  static create(options: DeviceOptions) {
+    const parsed = z_DeviceOptions.safeParse(options);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
         cause: `[Device] create() failed to parse device options: ${parsed.error.message}`,
-      } as const satisfies NeverThrowError);
+        options,
+      } as const satisfies FailedDevice);
     }
     const config = parsed.data;
 
@@ -170,16 +168,18 @@ export class Device {
         return err({
           reason: "DRIVER_CREATE_ERROR",
           cause: `[Device] create() failed to create ModbusTCPDriver: ${JSON.stringify(created.error)}`,
-        } as const satisfies NeverThrowError);
+          options,
+        } as const satisfies FailedDevice);
       }
       driver = created.value;
     } else if (config.driverName === "ModbusRTUDriver") {
-      const created = ModbusRTUDriver.create(opcuaServer, config.options);
+      const created = ModbusRTUDriver.create(config.options);
       if (created.isErr()) {
         return err({
           reason: "DRIVER_CREATE_ERROR",
           cause: `[Device] create() failed to create ModbusRTUDriver: ${JSON.stringify(created.error)}`,
-        } as const satisfies NeverThrowError);
+          options,
+        } as const satisfies FailedDevice);
       }
       driver = created.value;
     } else if (config.driverName === "opcuaClientDriver") {
@@ -188,18 +188,27 @@ export class Device {
         return err({
           reason: "OPTIONS_PARSE_ERROR",
           cause: `[Device] create() failed to parse opcuaClientDriver options: ${opcuaParsed.error.message}`,
-        } as const satisfies NeverThrowError);
+          options,
+        } as const satisfies FailedDevice);
       }
-      driver = new OpcuaClientDriver(opcuaServer, opcuaParsed.data);
+      driver = new OpcuaClientDriver(opcuaParsed.data);
     } else {
       return err({
         reason: "INVALID_DRIVER_NAME",
         cause: `[Device] create() invalid driver name`,
-      } as const satisfies NeverThrowError);
+        options,
+      } as const satisfies FailedDevice);
     }
 
     const device = new Device(config, driver);
-    if (device.options.enabled) device.driver.connect();
+    if (device.options.enabled) {
+      const connected = device.driver.connect();
+      if (connected.isErr()) {
+        logger.error(
+          `[Device] create() ${neverThrowErrorToString(connected.error)}`,
+        );
+      }
+    }
     return ok(device);
   }
 
@@ -209,26 +218,73 @@ export class Device {
 
   dispose() {
     this.disable();
+    this.driverUnsubscribe?.();
+    this.driverUnsubscribe = undefined;
+    this.statusListeners.clear();
     this.driver.dispose();
     logger.trace(`[Device] dispose() ${this.name}`);
   }
 
   enable() {
     this.options.enabled = true;
-    this.driver.connect();
+    const connected = this.driver.connect();
+    if (connected.isErr()) {
+      logger.error(
+        `[Device] enable() ${this.name} ${neverThrowErrorToString(connected.error)}`,
+      );
+    }
+    this.refreshStatus();
   }
 
   disable() {
     this.options.enabled = false;
-    this.driver.disconnect();
+    const disconnected = this.driver.disconnect();
+    if (disconnected.isErr()) {
+      logger.error(
+        `[Device] disable() ${this.name} ${neverThrowErrorToString(disconnected.error)}`,
+      );
+    }
+    this.refreshStatus();
   }
 
   get status(): DeviceStatus {
+    return this.computeStatus();
+  }
+
+  private computeStatus(): DeviceStatus {
     if (this.options.enabled) {
       return this.driver.connected ? "Connected" : "Reconnecting";
     } else {
       return "Disabled";
     }
+  }
+
+  /** recompute the status and notify listeners */
+  private refreshStatus() {
+    const stauts = this.computeStatus();
+    for (const cb of this.statusListeners) {
+      try {
+        cb(stauts);
+      } catch (e) {
+        logger.error(
+          e,
+          `[Device] status listener for ${this.id} ${this.name} threw`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Subscribe to status changes. Called once immediately with the current
+   * status, then on every change. Returns an unsubscribe function.
+   */
+  onStatusChange(cb: DeviceStatusListener) {
+    const entry: DeviceStatusListener = (status) => cb(status);
+    this.statusListeners.add(entry);
+    entry(this.computeStatus());
+    return () => {
+      this.statusListeners.delete(entry);
+    };
   }
 
   getOptionsAndStatus() {
@@ -242,25 +298,50 @@ export class Device {
 }
 
 export class DeviceManager {
-  private devices: Map<string, Device>;
+  private devices: Map<string, Result<Device, FailedDevice>>;
 
   constructor() {
     this.devices = new Map();
   }
 
+  /**
+   * Mirror device status changes to the front end. The driver owns the
+   * connection state, Device fans it out through onStatusChange() and we publish.
+   */
+  private trackStatus(device: Result<Device, FailedDevice>) {
+    if (device.isErr()) return;
+    const created = device.value;
+    created.onStatusChange((status) => publishDeviceStatus(created.id, status));
+  }
+
   async loadAllFromDb() {
-    const rows = await db.query.devices.findMany({
-      with: {
-        device_modbus_tcp_options: true,
-        device_modbus_rtu_options: true,
-        device_opcua_client_options: true,
-      },
-    });
+    const found = await attempt(() =>
+      db.query.devices.findMany({
+        with: {
+          device_modbus_tcp_options: true,
+          device_modbus_rtu_options: true,
+          device_opcua_client_options: true,
+        },
+      }),
+    );
+    if (found.error) {
+      return err({
+        reason: "DB_ERROR",
+        cause: `[DeviceManager] loadAllFromDb() failed to read devices: ${errorToString(
+          found.error,
+        )}`,
+      } as const satisfies NeverThrowError);
+    }
+    const rows = found.data;
 
     let deviceCount = 0;
 
     for (const row of rows) {
-      let driverOptions;
+      let driverOptions:
+        | ModbusTCPDriverOptions
+        | ModbusRTUDriverOptions
+        | OpcuaClientDriverOptions
+        | undefined;
       if (
         row.driverName === "ModbusTCPDriver" &&
         row.device_modbus_tcp_options
@@ -279,181 +360,200 @@ export class DeviceManager {
       }
 
       if (!driverOptions) {
-        throw Error(
-          `[DeviceManager] loadAllFromDb() failed, no driver options provided for ${row.name}  ${row.driverName}`,
+        logger.error(
+          `[DeviceManager] loadAllFromDb() failed, no driver options provided for ${row.id} ${row.name}  ${row.driverName}`,
         );
+        continue;
       }
 
       const deviceOptions = {
-        name: row.name,
-        driverName: row.driverName,
-        enabled: row.enabled,
+        ...row,
         options: driverOptions,
       } as DeviceOptions;
 
-      const created = Device.create(deviceOptions);
-      if (created.isErr()) {
-        logger.error(created.error);
-        continue;
-      }
+      const device = Device.create(deviceOptions);
 
-      const added = this.addDevice(created.value, false);
-      if (added.isErr()) {
-        logger.error(added.error);
-        continue;
-      }
+      this.devices.set(row.id, device);
+      this.trackStatus(device);
       deviceCount++;
     }
     logger.debug(`[DeviceManager] loaded ${deviceCount} devices from database`);
-    return ok(undefined);
+    return ok(true);
   }
 
-  addDevice(device: Device, writeToDb: boolean = true) {
-    if (this.devices.has(device.name)) {
+  addDevice(options: DeviceOptions) {
+    if (this.devices.has(options.id)) {
       return err({
         reason: "DEVICE_ALREADY_EXISTS",
-        cause: `[DeviceManager] addDevice() device ${device.name} already exists`,
+        cause: `[DeviceManager] addDevice() device ${options.id} ${options.name} already exists`,
+        options,
+      } as const satisfies FailedDevice);
+    }
+
+    const dbWrite = attempt(() => {
+      db.insert(devices)
+        .values(options)
+        .onConflictDoUpdate({
+          target: devices.id,
+          set: options,
+        })
+        .returning()
+        .all();
+
+      const driverOptions = { ...options.options, deviceId: options.id };
+
+      if (options.driverName === "ModbusTCPDriver") {
+        db.insert(device_modbus_tcp_options)
+          .values(driverOptions)
+          .onConflictDoUpdate({
+            target: device_modbus_tcp_options.deviceId,
+            set: driverOptions,
+          })
+          .run();
+      } else if (options.driverName === "ModbusRTUDriver") {
+        db.insert(device_modbus_rtu_options)
+          .values(driverOptions)
+          .onConflictDoUpdate({
+            target: device_modbus_rtu_options.deviceId,
+            set: driverOptions,
+          })
+          .run();
+      } else if (options.driverName === "opcuaClientDriver") {
+        db.insert(device_opcua_client_options)
+          .values(driverOptions)
+          .onConflictDoUpdate({
+            target: device_opcua_client_options.deviceId,
+            set: driverOptions,
+          })
+          .run();
+      }
+
+      return deviceId;
+    });
+
+    if (dbWrite.error) {
+      return err({
+        reason: "DB_ERROR",
+        cause: `[DeviceManager] addDevice() failed to write device ${options.name} to database: ${errorToString(
+          dbWrite.error,
+        )}`,
       } as const satisfies NeverThrowError);
     }
 
-    if (writeToDb) {
-      const dbWrite = attempt(() => {
-        const [inserted] = db
-          .insert(devices)
-          .values(device.options)
-          .onConflictDoUpdate({
-            target: devices.id,
-            set: device.options,
-          })
-          .returning()
-          .all();
+    const device = Device.create(options);
 
-        const deviceId = inserted.id;
-        const opts = device.options.options;
-
-        if (device.options.driverName === "ModbusTCPDriver") {
-          db.insert(device_modbus_tcp_options)
-            .values(opts)
-            .onConflictDoUpdate({
-              target: device_modbus_tcp_options.deviceId,
-              set: opts,
-            })
-            .run();
-        } else if (device.options.driverName === "ModbusRTUDriver") {
-          db.insert(device_modbus_rtu_options)
-            .values(opts)
-            .onConflictDoUpdate({
-              target: device_modbus_rtu_options.deviceId,
-              set: opts,
-            })
-            .run();
-        } else if (device.options.driverName === "opcuaClientDriver") {
-          db.insert(device_opcua_client_options)
-            .values(opts)
-            .onConflictDoUpdate({
-              target: device_opcua_client_options.deviceId,
-              set: opts,
-            })
-            .run();
-        }
-      });
-      if (dbWrite.error) {
-        return err({
-          reason: "DB_ERROR",
-          cause: `[DeviceManager] addDevice() failed to write device ${device.name} to database: ${
-            dbWrite.error instanceof Error
-              ? dbWrite.error.message
-              : String(dbWrite.error)
-          }`,
-        } as const satisfies NeverThrowError);
-      }
-    }
-
-    this.devices.set(device.name, device);
-    logger.info(`[DeviceManager] added device ${device.name}`);
-    return ok(device);
+    this.devices.set(options.id, device);
+    this.trackStatus(device);
+    logger.info(`[DeviceManager] added device ${options.id} ${options.name}`);
+    if (device.isErr()) return err(device.error);
+    return ok(device.value);
   }
 
-  removeDevice(deviceName: string) {
-    const oldDevice = this.devices.get(deviceName);
+  removeDevice(id: string) {
+    const oldDevice = this.devices.get(id);
     if (!oldDevice) {
       return err({
         reason: "DEVICE_NOT_FOUND",
-        cause: `[DeviceManager] removeDevice() device ${deviceName} not found`,
+        cause: `[DeviceManager] removeDevice() device at ${id} not found`,
       } as const satisfies NeverThrowError);
     }
 
     const dbDelete = attempt(() =>
-      db.delete(devices).where(eq(devices.name, deviceName)).run(),
+      db.delete(devices).where(eq(devices.id, id)).run(),
     );
     if (dbDelete.error) {
       return err({
         reason: "DB_ERROR",
-        cause: `[DeviceManager] removeDevice() failed to delete device ${deviceName} from database: ${
-          dbDelete.error instanceof Error
-            ? dbDelete.error.message
-            : String(dbDelete.error)
-        }`,
+        cause: `[DeviceManager] removeDevice() failed to delete device ${id} from database: ${errorToString(
+          dbDelete.error,
+        )}`,
       } as const satisfies NeverThrowError);
     }
 
-    oldDevice.dispose();
-    this.devices.delete(deviceName);
-    logger.info(`[DeviceManager] removed device ${deviceName}`);
-    return ok(undefined);
+    if (oldDevice.isOk()) oldDevice.value.dispose();
+    this.devices.delete(id);
+    logger.info(`[DeviceManager] removed device ${id}`);
+    return ok(true);
   }
 
-  updateDevice(deviceOptions: DeviceOptions, writeToDb: boolean = true) {
-    const oldDevice = this.devices.get(deviceOptions.name);
-    if (oldDevice) {
-      const removed = this.removeDevice(deviceOptions.name);
-      if (removed.isErr()) return err(removed.error);
-    }
+  updateDevice(id: string, options: DeviceOptions) {
+    const dbWrite = attempt(() => {
+      db.insert(devices)
+        .values(options)
+        .onConflictDoUpdate({
+          target: devices.id,
+          set: options,
+        })
+        .returning()
+        .all();
+    });
 
-    const created = Device.create(deviceOptions);
-    if (created.isErr()) {
+    if (dbWrite.error) {
       return err({
-        reason: "DEVICE_CREATE_FAILED",
-        cause: `[DeviceManager] updateDevice() failed to create device: ${created.error.reason}`,
+        reason: "DB_ERROR",
+        cause: `[DeviceManager] addDevice() failed to write device ${id} ${options.name} to database: ${errorToString(
+          dbWrite.error,
+        )}`,
       } as const satisfies NeverThrowError);
     }
 
-    const added = this.addDevice(created.value, writeToDb);
-    if (added.isErr()) return err(added.error);
+    const oldDevice = this.devices.get(id);
+    if (oldDevice) {
+      if (oldDevice.isOk()) oldDevice.value.dispose();
+      this.devices.delete(id);
+    }
+
+    const newDevice = Device.create(options);
+    if (newDevice.isErr()) return err(newDevice.error);
+    this.devices.set(id, newDevice);
+    this.trackStatus(newDevice);
 
     for (const tag of tagManager.getAllTags()) {
+      throw Error("TD WIP FIX THIS [DeviceManager] loadAllFromDb()");
       if (!(tag instanceof Tag)) continue; // skip tags that failed to load
       if (tag.options.nodeId) {
         const resolved = resolveOpcuaPath(tag.options.nodeId);
-        if (resolved.deviceName == added.value.name) {
+        if (resolved.deviceName == newDevice.value.name) {
           tag.subscribeToDriver();
         }
       }
     }
 
-    logger.info(`[DeviceManager] updated device ${deviceOptions.name}`);
-    return ok(added.value);
+    logger.info(`[DeviceManager] updated device ${id} ${options.name}`);
+    return ok(newDevice.value);
   }
 
-  getDevice(deviceName: string) {
-    return this.devices.get(deviceName);
+  getDevice(id: string) {
+    return this.devices.get(id);
   }
 
   getAllDevices() {
     return this.devices.values().toArray() ?? [];
   }
 
-  getDeviceFromPath(path: string) {
-    const device = this.devices.get(path);
-    if (!device)
+  getDeviceByName(name: string) {
+    const [k, device] =
+      this.devices.entries().find(([key, device]) => {
+        const testName = device.isOk()
+          ? device.value.name
+          : device.error.options.name;
+        return name === testName;
+      }) ?? [];
+    if (!device) {
       return err({
         reason: "DEVICE_NOT_FOUND",
-        cause: `[DeviceManager] Device at ${path} not found`,
+        cause: `[DeviceManager] Device at ${name} not found`,
       } as const satisfies NeverThrowError);
-    return ok(device);
+    }
+    if (device.isErr()) return err(device.error);
+    return ok(device.value);
   }
 
   getAvalibleDevices() {
-    return this.devices.keys();
+    return this.devices
+      .values()
+      .map((device) =>
+        device.isOk() ? device.value.name : device.error.options.name,
+      );
   }
 }

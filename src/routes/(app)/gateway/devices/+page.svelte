@@ -8,14 +8,20 @@
   } from "$lib/remote/devices.remote";
   import { PlusIcon } from "@lucide/svelte";
   import { onMount } from "svelte";
+  import { attempt } from "$lib/util/attempt";
+import { errorToString } from "$lib/util/neverThrow";
 
   let showPopup = $state(false);
 
   let pollTimeout: NodeJS.Timeout;
 
-  function poll() {
-    getDevices({}).refresh(); // get device status every 2 seconds
-    pollTimeout = setTimeout(poll, 2000);
+
+  async function poll() {
+    pollTimeout = setTimeout(poll, 2000); // get device status every 2 seconds
+    const refreshed = await attempt(() => getDevices({}).refresh());
+    if (refreshed.error) {
+      console.error(`poll() ${errorToString(refreshed.error)}`);
+    }
   }
   /*
   function updateDeviceEnabledSubmit(name: string) {

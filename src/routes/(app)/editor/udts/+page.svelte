@@ -3,6 +3,8 @@
   import { page } from "$app/state";
   import { deleteUDt, getUdt, updateUdt } from "$lib/remote/udts.remote";
   import type { UdtDefinitionOptions } from "$lib/server/tag/udt";
+  import { attempt } from "$lib/util/attempt";
+import { errorToString } from "$lib/util/neverThrow";
 
   let newUdtOptions = {
     name: "newUdt",
@@ -22,14 +24,17 @@
   } satisfies UdtDefinitionOptions;
 
   let tagEditorPath = $derived(page.url.searchParams.get("udtName") ?? "");
-  let udtDefinition = $derived(
-    (await getUdt(tagEditorPath).catch(() => {
-      return undefined; /*TD WIP Workaroud for this error :   UnhandledPromiseRejection: This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). The promise rejected with the reason "[object Object]".
-    at throwUnhandledRejectionsMode (node:internal/process/promises:392:7)
-    at processPromiseRejections (node:internal/process/promises:475:17)
-    at processTicksAndRejections (node:internal/process/task_queues:106:32)*/
-    })) ?? newUdtOptions,
-  );
+  let udtDefinition = $derived(await loadUdt(tagEditorPath));
+
+
+  async function loadUdt(name: string) {
+    const result = await attempt(() => getUdt(name));
+    if (result.error) {
+      console.error(`loadUdt() ${errorToString(result.error)}`);
+      return newUdtOptions;
+    }
+    return result.data ?? newUdtOptions;
+  }
 </script>
 
 <div id="tagEditor">
@@ -39,7 +44,12 @@
       <form
         {...updateUdt.enhance(async ({ submit }) => {
           submit();
-          goto(`?udtName=${udtDefinition.name}`);
+          const navigated = await attempt(() =>
+            goto(`?udtName=${udtDefinition.name}`),
+          );
+          if (navigated.error) {
+            console.error(`goto() ${errorToString(navigated.error)}`);
+          }
         })}
       >
         <div class="form-item">
@@ -150,8 +160,17 @@
                 type="button"
                 class="secondary"
                 onclick={async () => {
-                  await deleteUDt(udtDefinition.name);
-                  goto("/editor/udts");
+                  const deleted = await attempt(() =>
+                    deleteUDt(udtDefinition.name),
+                  );
+                  if (deleted.error) {
+                    console.error(`deleteUDt() ${errorToString(deleted.error)}`);
+                    return;
+                  }
+                  const navigated = await attempt(() => goto("/editor/udts"));
+                  if (navigated.error) {
+                    console.error(`goto() ${errorToString(navigated.error)}`);
+                  }
                 }}>delete</button
               >
             </div>

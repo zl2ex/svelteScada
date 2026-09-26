@@ -7,8 +7,8 @@ import {
   type TagFolderSelect,
 } from "../tables";
 import { err, ok } from "neverthrow";
-import { tryCatch } from "$lib/util/tryCatch";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import { attempt } from "$lib/util/attempt";
+import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export interface ClosureTableNode extends TagFolderSelect {
   parentId: string | null;
@@ -34,7 +34,7 @@ export class ClosureTable {
   }
 
   add(node: ClosureTableNode) {
-    const result = tryCatch(() =>
+    const result = attempt(() =>
       db.transaction((tx) => {
         const [folder] = tx
           .insert(this.items)
@@ -82,15 +82,15 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   getBreadcrumbs(id: string) {
-    const result = tryCatch(() => {
+    const result = attempt(() => {
       const rows = db
         .select()
         .from(this.paths)
@@ -120,15 +120,15 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   getSubtree(id: string) {
-    const result = tryCatch(() => {
+    const result = attempt(() => {
       const rows = db
         .select()
         .from(this.paths)
@@ -158,15 +158,15 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   move(id: string, newParentId: string | undefined) {
-    const result = tryCatch(() =>
+    const result = attempt(() =>
       db.transaction((tx) => {
         const subtree = tx
           .select({ child: this.paths.child, depth: this.paths.depth })
@@ -213,15 +213,15 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   rename(id: string, newName: string) {
-    const result = tryCatch(() =>
+    const result = attempt(() =>
       db.transaction((tx) => {
         tx.update(this.items)
           .set({ name: newName })
@@ -233,15 +233,15 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
-      } as const satisfies NeverThrowError satisfies NeverThrowError);
+        cause: errorToString(result.error),
+      } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   getAll(parentId: string | null = null) {
-    const result = tryCatch(() => {
+    const result = attempt(() => {
       let items: TagFolderSelect[];
       if (parentId === null) {
         items = db.select().from(this.items).all();
@@ -290,15 +290,15 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   get(id: string) {
-    const result = tryCatch(() => {
+    const result = attempt(() => {
       const [row] = db
         .select({
           id: this.items.id,
@@ -323,15 +323,15 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   deleteRecursive(id: string) {
-    const result = tryCatch(() =>
+    const result = attempt(() =>
       db.transaction((tx) => {
         const children = tx
           .select({ id: this.paths.child })
@@ -354,11 +354,11 @@ export class ClosureTable {
     if (result.error) {
       return err({
         reason: "DB_ERROR",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 }
 

@@ -25,9 +25,13 @@ import { logger } from "$lib/server/pino/logger";
 import { realtime } from "svelte-realtime/server";
 export const { message, init } = realtime();
 
-export function upgrade({ cookies }) {
+export async function upgrade({ cookies }) {
   logger.trace("hooks.ws.ts");
   if (!cookies.token) return false;
-  let user = authenticateUser(cookies.token);
-  return user;
+  const user = await authenticateUser(cookies.token);
+  if (user.isErr()) {
+    logger.error(user.error);
+    return false;
+  }
+  return user.value;
 }

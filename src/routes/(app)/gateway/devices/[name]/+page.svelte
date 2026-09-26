@@ -14,6 +14,8 @@
     browseOpcua,
   } from "$lib/remote/devices.remote";
   import { LoaderIcon } from "@lucide/svelte";
+  import { attempt } from "$lib/util/attempt";
+import { errorToString } from "$lib/util/neverThrow";
 
   //let selectedDriver = $state(undefined);
 
@@ -39,20 +41,29 @@
 
   let browseOpcuaPopup = $state(false);
 
-  const defaultDriverOptions = await getDefaultDriverOptions();
+
+  const defaultOptions = await attempt(() => getDefaultDriverOptions());
+  if (defaultOptions.error) {
+    console.error(
+      `getDefaultDriverOptions() ${errorToString(defaultOptions.error)}`,
+    );
+  }
+  const defaultDriverOptions = defaultOptions.data;
 
   let newDevice = $derived.by(async () => {
     // must track varible for $derrived before the await or else it is not tracked for updates
     let selectedDriver = updateDevice.fields.driverName.value();
 
-    let device = await getDevice(page.params.name ?? "").catch((e) =>
-      console.error(e),
-    );
+    const fetched = await attempt(() => getDevice(page.params.name ?? ""));
+    if (fetched.error) {
+      console.error(`getDevice() ${errorToString(fetched.error)}`);
+    }
+    let device = fetched.data;
 
     // no device so make a new one with defaults
     if (!device) {
       let options = selectedDriver
-        ? defaultDriverOptions[selectedDriver]
+        ? defaultDriverOptions?.[selectedDriver]
         : undefined;
 
       device = {
@@ -244,8 +255,19 @@
             type="button"
             class="btn preset-filled-error-400-600"
             onclick={async () => {
-              await deleteDevice(device.name);
-              goto("/editor/devices");
+              const deleted = await attempt(() => deleteDevice(device.name));
+              if (deleted.error) {
+                console.error(
+                  `deleteDevice() ${errorToString(deleted.error)}`,
+                );
+                return;
+              }
+              const navigated = await attempt(() =>
+                goto("/editor/devices"),
+              );
+              if (navigated.error) {
+                console.error(`goto() ${errorToString(navigated.error)}`);
+              }
             }}>delete</button
           >
         </div>

@@ -1,7 +1,9 @@
 import { DataType } from "node-opcua";
 import { type TagOptionsInput } from "./tag";
 import z from "zod";
+import { err, ok } from "neverthrow";
 import { logger } from "../pino/logger";
+import type { NeverThrowError } from "$lib/util/neverThrow";
 import type { Z_UdtDefinitionOptions, Z_UdtParams } from "$lib/validation/zod";
 
 export type BaseDataTypeMap = {
@@ -157,7 +159,7 @@ export function parseDataTypeString(input: string): { base: ValidBaseType; size?
   return { base, size };
 }
 
-function parseUdt(udt: UdtFile): Record<string, ParsedField[]> {
+function parseUdt(udt: UdtFile) {
   const result: Record<string, ParsedField[]> = {};
 
   for (const [udtName, def] of Object.entries(udt)) {
@@ -165,7 +167,12 @@ function parseUdt(udt: UdtFile): Record<string, ParsedField[]> {
 
     for (const [fieldName, field] of Object.entries(def.fields)) {
       const parsed = parseDataTypeString(field.dataType);
-      if (!parsed) throw new Error(`Invalid dataType "${field.dataType}" in ${udtName}.${fieldName}`);
+      if (!parsed) {
+        return err({
+          reason: "INVALID_UDT_DATATYPE",
+          cause: `[udt] parseUdt() Invalid dataType "${field.dataType}" in ${udtName}.${fieldName}`,
+        } as const satisfies NeverThrowError);
+      }
 
       parsedFields.push({
         name: fieldName,
@@ -178,7 +185,7 @@ function parseUdt(udt: UdtFile): Record<string, ParsedField[]> {
     result[udtName] = parsedFields;
   }
 
-  return result;
+  return ok(result);
 }
 
 

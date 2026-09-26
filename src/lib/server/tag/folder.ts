@@ -29,7 +29,10 @@ export class TagFolder extends TagNode {
   dispose() {
     logger.debug(`[TagFolder] dispose() ${this.name}`);
     this.children.forEach((child) => {
-      child.dispose();
+      const disposed = child.dispose();
+      if (disposed && disposed.isErr()) {
+        logger.error(disposed.error);
+      }
     });
   }
 }

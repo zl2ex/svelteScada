@@ -8,12 +8,61 @@
   } from "@skeletonlabs/skeleton-svelte";
   import { browser } from "$app/environment";
   import { themeManager } from "$lib/client/theme.svelte.js";
-  import { getToaster } from "$lib/client/toast.svelte";
+  import { getToaster, toast } from "$lib/client/toast.svelte";
   import { logout } from "$lib/remote/user.remote.js";
   import { goto } from "$app/navigation";
   import { configure } from "svelte-realtime/client";
+  import { attempt } from "$lib/util/attempt";
+  import { err, ok } from "neverthrow";
+  import {
+    errorToString,
+    neverThrowErrorToString,
+    type NeverThrowError,
+  } from "$lib/util/neverThrow";
 
   const { children, data } = $props();
+
+  async function logoutAndGotoLogin() {
+    const loggedOut = await attempt(() => logout());
+    if (loggedOut.error) {
+      const cause = errorToString(loggedOut.error);
+      toast({
+        kind: "error",
+        title: "Logout Error",
+        description: cause,
+        duration: 3000,
+      });
+      return err({
+        reason: "LOGOUT_FAILED",
+        cause,
+      } as const satisfies NeverThrowError);
+    }
+
+    const navigated = await attempt(() => goto("/login"));
+    if (navigated.error) {
+      const cause = errorToString(navigated.error);
+      toast({
+        kind: "error",
+        title: "Navigation Error",
+        description: cause,
+        duration: 3000,
+      });
+      return err({
+        reason: "LOGOUT_NAVIGATION_FAILED",
+        cause,
+      } as const satisfies NeverThrowError);
+    }
+
+    return ok(null);
+  }
+
+  function setTheme(theme: (typeof themeManager.themes)[number]) {
+    const result = attempt(() => themeManager.setTheme(theme));
+    if (result.error) {
+      const cause = errorToString(result.error);
+      console.error(cause);
+    }
+  }
 
   // Offline queue — realtime-svelte
   configure({
@@ -74,8 +123,12 @@
                     <div>
                       <button
                         onclick={async () => {
-                          await logout();
-                          goto("/login");
+                          const result = await logoutAndGotoLogin();
+                          if (result.isErr()) {
+                            console.error(
+                              `logout() ${neverThrowErrorToString(result.error)}`,
+                            );
+                          }
                         }}
                         class="btn preset-filled">logout</button
                       >
@@ -88,7 +141,7 @@
                             class="btn capitalize"
                             class:preset-filled={theme == themeManager.theme}
                             data-theme-picker
-                            onclick={() => themeManager.setTheme(theme)}
+                            onclick={() => setTheme(theme)}
                           >
                             {theme}
                           </button>
@@ -111,17 +164,20 @@
 </div>
 
 {#if browser}
-  <Toast.Group toaster={getToaster()}>
-    {#snippet children(toast)}
-      <Toast {toast}>
-        <Toast.Message>
-          <Toast.Title>{toast.title}</Toast.Title>
-          {#if toast.description}
-            <Toast.Description>{toast.description}</Toast.Description>
-          {/if}
-        </Toast.Message>
-        <Toast.CloseTrigger />
-      </Toast>
-    {/snippet}
-  </Toast.Group>
+  {@const toaster = getToaster()}
+  {#if toaster.isOk()}
+    <Toast.Group toaster={toaster.value}>
+      {#snippet children(toast)}
+        <Toast {toast}>
+          <Toast.Message>
+            <Toast.Title>{toast.title}</Toast.Title>
+            {#if toast.description}
+              <Toast.Description>{toast.description}</Toast.Description>
+            {/if}
+          </Toast.Message>
+          <Toast.CloseTrigger />
+        </Toast>
+      {/snippet}
+    </Toast.Group>
+  {/if}
 {/if}

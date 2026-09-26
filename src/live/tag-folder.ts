@@ -64,7 +64,7 @@ export const applyTagFolderPatches = live(
         return err({
           reason: "FOLDER_NOT_FOUND",
           cause: `cannot find folder with id ${id}`,
-        } as const);
+        } as const satisfies NeverThrowError);
       }
 
       //only move if it has actually moved

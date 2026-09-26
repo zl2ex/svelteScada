@@ -7,8 +7,10 @@ import { tables } from "../sqlite/tables";
 import { eq } from "drizzle-orm";
 import type { FolderManager } from "./folderManager";
 import { err, ok, Result } from "neverthrow";
-import { tryCatch } from "$lib/util/tryCatch";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import { attempt } from "$lib/util/attempt";
+import { newId } from "$lib/util/newId";
+import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
+import { publishTagValue } from "../../../live/tags";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
@@ -25,9 +27,10 @@ export class TagManager {
 
   private buildPath(tagOptions: TagOptionsInput) {
     if (!this.folderManager) {
-      throw Error(
-        `[TagManager] buildPath() folderManager not initalised, please call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "FOLDER_MANAGER_NOT_INITIALISED",
+        cause: `[TagManager] buildPath() folderManager not initalised, please call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
     let path = tagOptions.name;
     let folder = this.folderManager.get(tagOptions.folderId);
@@ -35,7 +38,22 @@ export class TagManager {
       path = folder.node.name + "/" + path;
       folder = this.folderManager.get(folder.node.parentId);
     }
-    return "/" + path;
+    return ok("/" + path);
+  }
+
+  /**
+   * Mirror tag value changes to the front end. Tag calls onChange on every
+   * value or status change, we fan it out to the $live stream.
+   */
+  private trackValue(tag: Result<Tag, FailedTag>) {
+    if (tag.isErr()) {
+      publishTagValue(err(tag.error));
+      return;
+    }
+    const created = tag.value;
+    created.onChange = (value, source, statusCode) => {
+      publishTagValue(ok(created.getClientValueTag()));
+    };
   }
 
   // -------------------------
@@ -117,15 +135,17 @@ export class TagManager {
 
   createTag(opts: TagOptionsInput, writeToDb: boolean = true) {
     if (!this.opcuaServer) {
-      throw new Error(
-        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "TAG_SERVER_NOT_INITIALISED",
+        cause: `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
 
     if (!this.folderManager) {
-      throw new Error(
-        `[TagManager] createTag() folderManager not initalised, please call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "FOLDER_MANAGER_NOT_INITIALISED",
+        cause: `[TagManager] createTag() folderManager not initalised, please call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
 
     if (this.tags.has(opts.id)) {
@@ -135,7 +155,7 @@ export class TagManager {
       } as const satisfies NeverThrowError);
     }
 
-    const newFolderId = opts.folderId ?? crypto.randomUUID();
+    const newFolderId = opts.folderId ?? newId();
     let opcuaFolder = this.folderManager.get(opts.folderId);
 
     if (!opcuaFolder) {
@@ -149,14 +169,14 @@ export class TagManager {
     if (duplicate.isErr()) return err(duplicate.error);
 
     if (writeToDb) {
-      const dbWrite = tryCatch(() => {
+      const dbWrite = attempt(() => {
         db.insert(tables.tags).values(opts).run();
       });
 
       if (dbWrite.error) {
         return err({
           reason: "DB_ERROR",
-          cause: dbWrite.error.message,
+          cause: errorToString(dbWrite.error),
         } as const satisfies NeverThrowError);
       }
     }
@@ -170,10 +190,13 @@ export class TagManager {
       Tag.create(this.opcuaServer, opcuaFolder, opts),
     );
 
+    this.trackValue(tag);
+
     this.tags.set(opts.id, tag);
 
     const path = this.buildPath(opts);
-    this.pathToId.set(path, opts.id);
+    if (path.isErr()) return err(path.error);
+    this.pathToId.set(path.value, opts.id);
 
     logger.info(
       `[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${path}`,
@@ -188,18 +211,20 @@ export class TagManager {
 
   updateTag(id: string, tagUpdates: TagOptionsInput) {
     if (!this.opcuaServer) {
-      throw new Error(
-        `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "TAG_SERVER_NOT_INITIALISED",
+        cause: `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
 
     if (!this.folderManager) {
-      throw new Error(
-        `[TagManager] updateTag() folderManager not initalised, please call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "FOLDER_MANAGER_NOT_INITIALISED",
+        cause: `[TagManager] updateTag() folderManager not initalised, please call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
 
-    const dbResult = tryCatch(() =>
+    const dbResult = attempt(() =>
       db
         .update(tables.tags)
         .set(tagUpdates)
@@ -210,7 +235,7 @@ export class TagManager {
     if (dbResult.error) {
       return err({
         reason: "DB_ERROR",
-        cause: dbResult.error.message,
+        cause: errorToString(dbResult.error),
       } as const satisfies NeverThrowError);
     }
 
@@ -232,7 +257,10 @@ export class TagManager {
       if (tagUpdates.dataType == oldTag.value.options.dataType) {
         tagUpdates.initalValue = String(oldTag.value.value);
       }
-      oldTag.value.dispose();
+      const disposed = oldTag.value.dispose();
+      if (disposed.isErr()) {
+        logger.error(disposed.error);
+      }
     }
     this.tags.delete(id);
 
@@ -241,6 +269,8 @@ export class TagManager {
     const updatedTag = this.tagConfigError(
       Tag.create(this.opcuaServer, opcuaFolder, tagUpdates),
     );
+
+    this.trackValue(updatedTag);
 
     this.tags.set(id, updatedTag);
     this.pathToId.set(tagUpdates.name, id);
@@ -267,18 +297,21 @@ export class TagManager {
         cause: `Tag not found at ${id}`,
       } as const satisfies NeverThrowError);
 
-    const dbResult = tryCatch(() =>
+    const dbResult = attempt(() =>
       db.delete(tables.tags).where(eq(tables.tags.id, id)).run(),
     );
     if (dbResult.error) {
       return err({
         reason: "DB_ERROR",
-        cause: dbResult.error.message,
+        cause: errorToString(dbResult.error),
       } as const satisfies NeverThrowError);
     }
 
     if (tag.isOk()) {
-      tag.value.dispose();
+      const disposed = tag.value.dispose();
+      if (disposed.isErr()) {
+        logger.error(disposed.error);
+      }
     }
 
     this.tags.delete(id);
@@ -325,18 +358,28 @@ export class TagManager {
 
   loadAllFromDb() {
     if (!this.opcuaServer) {
-      throw new Error(
-        `[TagManager] loadAllFromDb() opcuaServer not initalised, please call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "TAG_SERVER_NOT_INITIALISED",
+        cause: `[TagManager] loadAllFromDb() opcuaServer not initalised, please call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
 
     if (!this.folderManager) {
-      throw new Error(
-        `[TagManager] loadAllFromDb() folderManager not initalised, please call initOpcuaServer() first`,
-      );
+      return err({
+        reason: "FOLDER_MANAGER_NOT_INITIALISED",
+        cause: `[TagManager] loadAllFromDb() folderManager not initalised, please call initOpcuaServer() first`,
+      } as const satisfies NeverThrowError);
     }
-    const tagOptions = db.select().from(tables.tags).all();
-    for (const tagOpt of tagOptions) {
+
+    const tagOptions = attempt(() => db.select().from(tables.tags).all());
+    if (tagOptions.error) {
+      return err({
+        reason: "DB_ERROR",
+        cause: errorToString(tagOptions.error),
+      } as const satisfies NeverThrowError);
+    }
+
+    for (const tagOpt of tagOptions.data) {
       if (this.tags.has(tagOpt.id)) continue;
 
       const opcuaFolder = this.folderManager.get(tagOpt.folderId);
@@ -346,10 +389,15 @@ export class TagManager {
         Tag.create(this.opcuaServer, opcuaFolder, tagOpt),
       );
 
+      this.trackValue(tag);
+
       this.tags.set(tagOpt.id, tag);
       this.pathToId.set(tagOpt.name, tagOpt.id);
     }
 
-    logger.info(`[TagManager] loaded ${tagOptions.length} tags from database`);
+    logger.info(
+      `[TagManager] loaded ${tagOptions.data.length} tags from database`,
+    );
+    return ok(true);
   }
 }

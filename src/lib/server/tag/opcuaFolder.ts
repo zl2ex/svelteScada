@@ -2,8 +2,8 @@ import type { UAObject, AddressSpace } from "node-opcua";
 import { logger } from "../pino/logger";
 import type { ClosureTableNode } from "../sqlite/util/tagClosureTable";
 import { err, ok } from "neverthrow";
-import { tryCatch } from "$lib/util/tryCatch";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import { attempt } from "$lib/util/attempt";
+import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export class OpcuaFolder {
   node: ClosureTableNode;
@@ -23,7 +23,7 @@ export class OpcuaFolder {
     parent: UAObject,
     node: ClosureTableNode,
   ) {
-    const result = tryCatch(() => {
+    const result = attempt(() => {
       const namespace = addressSpace.getOwnNamespace();
       const nodeId = `s=folder_${node.id}`;
 
@@ -44,15 +44,15 @@ export class OpcuaFolder {
     if (result.error) {
       return err({
         reason: "OPCUA_FOLDER_CREATE_FAILED",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(result.data);
   }
 
   rename(newName: string) {
-    const result = tryCatch(() => {
+    const result = attempt(() => {
       this.node.name = newName;
       this.uaObject.setDisplayName(newName);
       // TD WIP Maybe delete and create a new node with browseName updated as well ??
@@ -61,45 +61,70 @@ export class OpcuaFolder {
     if (result.error) {
       return err({
         reason: "OPCUA_RENAME_FAILED",
-        cause: result.error.message,
+        cause: errorToString(result.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    return ok(true);
   }
 
   dispose() {
-    const result = tryCatch(() => {
-      logger.trace(
-        `[OpcuaFolder] dispose() ${this.uaObject.browseName.toString()}`,
-      );
-      this.uaObject.removeAllListeners();
+    logger.trace(
+      `[OpcuaFolder] dispose() ${this.uaObject.browseName.toString()}`,
+    );
 
-      const parents = this.uaObject.findReferences("HasComponent", false);
-      for (const p of parents) {
-        const parentNode = this.addressSpace.findNode(p.nodeId);
-        if (parentNode) {
-          const removed = tryCatch(() =>
-            parentNode.removeReference({
-              referenceType: "HasComponent",
-              isForward: true,
-              nodeId: this.uaObject,
-            }),
-          );
-          //if(removed.error) // do nothing with the error at this stage WIP
-        }
-      }
-      this.addressSpace.deleteNode(this.uaObject);
-      return true;
-    });
-
-    if (result.error) {
+    const listeners = attempt(() => this.uaObject.removeAllListeners());
+    if (listeners.error) {
       return err({
         reason: "OPCUA_DISPOSE_FAILED",
-        cause: result.error.message,
+        cause: errorToString(listeners.error),
       } as const satisfies NeverThrowError);
     }
 
-    return ok(result.value);
+    const parents = attempt(() =>
+      this.uaObject.findReferences("HasComponent", false),
+    );
+    if (parents.error) {
+      return err({
+        reason: "OPCUA_DISPOSE_FAILED",
+        cause: errorToString(parents.error),
+      } as const satisfies NeverThrowError);
+    }
+
+    for (const p of parents.data) {
+      const parentNode = attempt(() => this.addressSpace.findNode(p.nodeId));
+      if (parentNode.error) {
+        return err({
+          reason: "OPCUA_DISPOSE_FAILED",
+          cause: errorToString(parentNode.error),
+        } as const satisfies NeverThrowError);
+      }
+
+      if (parentNode.data) {
+        const removed = attempt(() =>
+          parentNode.data!.removeReference({
+            referenceType: "HasComponent",
+            isForward: true,
+            nodeId: this.uaObject,
+          }),
+        );
+        if (removed.error) {
+          return err({
+            reason: "OPCUA_DISPOSE_FAILED",
+            cause: errorToString(removed.error),
+          } as const satisfies NeverThrowError);
+        }
+      }
+    }
+
+    const deleted = attempt(() => this.addressSpace.deleteNode(this.uaObject));
+    if (deleted.error) {
+      return err({
+        reason: "OPCUA_DISPOSE_FAILED",
+        cause: errorToString(deleted.error),
+      } as const satisfies NeverThrowError);
+    }
+
+    return ok(true);
   }
 }

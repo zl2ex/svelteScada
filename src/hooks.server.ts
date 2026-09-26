@@ -6,6 +6,7 @@ import { UdtManager } from "$lib/server/tag/udtManager";
 import { TagManager } from "$lib/server/tag/tagManager";
 import { FolderManager } from "$lib/server/tag/folderManager";
 import { OpcuaServerDriver } from "$lib/server/drivers/opcua/opcuaServer";
+import { neverThrowErrorToString } from "$lib/util/neverThrow";
 
 // for serialisiing errors
 Object.defineProperty(Error.prototype, "toJSON", {
@@ -31,7 +32,12 @@ export const gatewayOpcua: OpcuaServerDriver =
 export const init: ServerInit = async () => {
   logger.debug("[hooks.server.ts] init() hook");
 
-  await gatewayOpcua.start();
+  const started = await gatewayOpcua.start();
+  if (started.isErr()) {
+    throw Error(
+      `[hooks.server.ts] init() failed to start gatewayOpcua: ${started.error.cause}`,
+    );
+  }
 
   if (!gatewayOpcua.server || !gatewayOpcua.server.engine.addressSpace) {
     throw Error(`[hooks.server.ts] init() gatewayOpcua.server not initalised`);
@@ -43,16 +49,47 @@ export const init: ServerInit = async () => {
     gatewayOpcua.server.engine.addressSpace?.rootFolder,
   );
 
-  await deviceManager.loadAllFromDb();
-  udtManager.loadAllFromDb();
-  folderManager.loadAllFromDb();
-  tagManager.loadAllFromDb();
+  const devices = await deviceManager.loadAllFromDb();
+  if (devices.isErr()) {
+    throw Error(
+      `[hooks.server.ts] init() failed to load devices: ${devices.error.cause}`,
+    );
+  }
+
+  const udts = await udtManager.loadAllFromDb();
+  if (udts.isErr()) {
+    throw Error(
+      `[hooks.server.ts] init() failed to load udts: ${udts.error.cause}`,
+    );
+  }
+
+  const folders = folderManager.loadAllFromDb();
+  if (folders.isErr()) {
+    throw Error(
+      `[hooks.server.ts] init() failed to load folders: ${folders.error.cause}`,
+    );
+  }
+
+  const tags = tagManager.loadAllFromDb();
+  if (tags.isErr()) {
+    throw Error(
+      `[hooks.server.ts] init() failed to load tags: ${tags.error.cause}`,
+    );
+  }
 };
 
 export const handle: Handle = async ({ event, resolve }) => {
   logger.trace("[hooks.server.ts] handle hook");
   let token = event.cookies.get("token") ?? "";
-  event.locals.user = await authenticateUser(token);
+  const authenticated = await authenticateUser(token);
+  if (authenticated.isErr()) {
+    logger.error(
+      `[hooks.server.ts] handle hook unauthenticated: ${neverThrowErrorToString(authenticated.error)}`,
+    );
+    event.locals.user = undefined;
+  } else {
+    event.locals.user = authenticated.value;
+  }
 
   // only the login page is unprotected unless logged in
   if (

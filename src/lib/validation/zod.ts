@@ -1,4 +1,5 @@
 import z from "zod";
+import { newId } from "$lib/util/newId";
 
 // Base schemas for primitives
 export const Z_BaseTypes = {
@@ -30,7 +31,7 @@ export const baseTypeKeys = Object.keys(Z_BaseTypes) as [
 
 // shared schemas should match the ones in /lib/server/sqlite/tables
 export const z_shared_insertTagFolder = z.object({
-  id: z.string().optional().default(crypto.randomUUID()),
+  id: z.string().optional().default(newId()),
   name: z.string(),
 });
 
@@ -39,7 +40,7 @@ export const z_shared_insertClosureTableNode = z_shared_insertTagFolder.extend({
 });
 
 export const z_shared_insertTag = z.object({
-  id: z.string().optional().default(crypto.randomUUID()),
+  id: z.string().optional().default(newId()),
   folderId: z.string().nullable().optional(),
   name: z.string(),
   dataType: z.enum(baseTypeKeys),

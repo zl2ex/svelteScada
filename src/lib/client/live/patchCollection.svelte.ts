@@ -10,9 +10,11 @@ import { toast } from "../toast.svelte";
 import { type Result } from "neverthrow";
 import { RpcError } from "svelte-realtime/client";
 import {
+  errorToString,
   neverThrowErrorToString,
   type NeverThrowError,
 } from "$lib/util/neverThrow";
+import { attempt } from "$lib/util/attempt";
 
 export interface Identifiable {
   id: string;
@@ -55,8 +57,8 @@ export class PatchCollection<
   state = $state<Record<string, T>>({});
   syncError = $state<string | NeverThrowError | null>(null);
 
-  private travels: Travels<Record<string, T>>;
-  private prevPosition: number;
+  private travels!: Travels<Record<string, T>>;
+  private prevPosition = 0;
   private applyPatch: PatchCollectionOptions<T, E>["applyPatch"];
   private onMutation?: () => void;
   private onError?: (error: E) => void;
@@ -66,33 +68,44 @@ export class PatchCollection<
   constructor(options: PatchCollectionOptions<T, E>) {
     Object.assign(this.state, options.initial);
 
-    this.travels = createTravels(this.state, {
-      mutable: true,
-      maxHistory: options.maxHistory ?? 50,
-    });
-    this.prevPosition = this.travels.getPosition();
     this.applyPatch = options.applyPatch;
     this.onMutation = options.onMutation;
     this.onError = options.onError;
+
+    const created = attempt(() =>
+      createTravels(this.state, {
+        mutable: true,
+        maxHistory: options.maxHistory ?? 50,
+      }),
+    );
+    if (created.error) {
+      this.syncError = {
+        reason: "TRAVELS_CREATE_FAILED",
+        cause: errorToString(created.error),
+      } as const satisfies NeverThrowError;
+      return;
+    }
+    this.travels = created.data;
+    this.prevPosition = this.travels.getPosition();
 
     this.unsubscribeTravels = this.travels.subscribe((event) => {
       const patches = this.travels.getPatches();
 
       if (event.position > this.prevPosition) {
         // foward
-        this.sendOps(
+        this.dispatchOps(
           patches.patches[this.prevPosition],
           patches.inversePatches[this.prevPosition],
         );
       } else if (event.position == this.prevPosition) {
         // full histroy buffer
-        this.sendOps(
+        this.dispatchOps(
           patches.patches[this.prevPosition - 1],
           patches.inversePatches[this.prevPosition - 1],
         );
       } else {
         // reverse
-        this.sendOps(
+        this.dispatchOps(
           patches.inversePatches[event.position],
           patches.patches[event.position],
         );
@@ -104,7 +117,16 @@ export class PatchCollection<
     this.unsubscribePatches = options.subscribePatches((payload) => {
       if (!payload) return;
       this.mutateState((state) => {
-        apply(state, payload.patches, { mutable: true });
+        const merged = attempt(() =>
+          apply(state, payload.patches, { mutable: true }),
+        );
+        if (merged.error) {
+          this.syncError = {
+            reason: "PATCH_MERGE_FAILED",
+            cause: errorToString(merged.error),
+          } as const satisfies NeverThrowError;
+          return;
+        }
         for (const [id, updatedAt] of Object.entries(payload.versions ?? {})) {
           const item = state[id] as (T & { updatedAt?: number }) | undefined;
           if (item) item.updatedAt = updatedAt;
@@ -113,16 +135,60 @@ export class PatchCollection<
     });
   }
 
+  // Travels notifies synchronously from inside a mutation, so the sends
+  // cannot be awaited there - capture their outcome instead of letting a
+  // rejection escape unhandled.
+  private dispatchOps(ops: Ops, inverseOps: Ops) {
+    attempt(() => this.sendOps(ops, inverseOps)).then((sent) => {
+      if (sent.error) {
+        this.syncError = {
+          reason: "PATCH_SEND_FAILED",
+          cause: errorToString(sent.error),
+        } as const satisfies NeverThrowError;
+      }
+    });
+  }
+
+  private revertOps(inverseOps: Ops, index: number) {
+    const reverted = attempt(() =>
+      apply(this.state, inverseOps.slice(index, index + 1), { mutable: true }),
+    );
+    if (reverted.error) {
+      this.syncError = {
+        reason: "PATCH_REVERT_FAILED",
+        cause: errorToString(reverted.error),
+      } as const satisfies NeverThrowError;
+    }
+  }
+
   private async sendOps(ops: Ops, inverseOps: Ops) {
     let hadError = false;
     for (let i = 0; i < ops.length; i++) {
-      const res = await this.applyPatch(ops[i]);
-      if ("error" in res) {
+      const sent = await attempt(() => this.applyPatch(ops[i]));
+
+      if (sent.error) {
+        hadError = true;
+        this.revertOps(inverseOps, i);
+        this.syncError = {
+          reason: "PATCH_SEND_FAILED",
+          cause: errorToString(sent.error),
+        } as const satisfies NeverThrowError;
+        toast({
+          kind: "error",
+          title: "Sync Error",
+          description: neverThrowErrorToString(this.syncError),
+          duration: 3000,
+        });
+        continue;
+      }
+
+      const res = sent.data;
+      if (res.isErr()) {
         // The server rejected this op but will still receive the rest of the
         // batch, so revert only the failing op locally and keep going —
         // later ops are still sent and applied.
         hadError = true;
-        apply(this.state, inverseOps.slice(i, i + 1), { mutable: true });
+        this.revertOps(inverseOps, i);
 
         if (res.error instanceof RpcError) {
           this.syncError = res.error.code;
@@ -150,7 +216,16 @@ export class PatchCollection<
     fn: (draft: Record<string, T>) => void,
     label?: string,
   ) {
-    this.travels.setState(fn as any, label ? { label } : undefined);
+    const tracked = attempt(() =>
+      this.travels.setState(fn as any, label ? { label } : undefined),
+    );
+    if (tracked.error) {
+      this.syncError = {
+        reason: "TRAVELS_SET_STATE_FAILED",
+        cause: errorToString(tracked.error),
+      } as const satisfies NeverThrowError;
+      return;
+    }
     this.onMutation?.();
   }
 
@@ -214,11 +289,23 @@ export class PatchCollection<
   }
 
   undo() {
-    this.travels.back();
+    const undone = attempt(() => this.travels.back());
+    if (undone.error) {
+      this.syncError = {
+        reason: "TRAVELS_BACK_FAILED",
+        cause: errorToString(undone.error),
+      } as const satisfies NeverThrowError;
+    }
   }
 
   redo() {
-    this.travels.forward();
+    const redone = attempt(() => this.travels.forward());
+    if (redone.error) {
+      this.syncError = {
+        reason: "TRAVELS_FORWARD_FAILED",
+        cause: errorToString(redone.error),
+      } as const satisfies NeverThrowError;
+    }
   }
 
   canUndo() {

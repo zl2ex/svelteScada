@@ -1,9 +1,7 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 export const devices = sqliteTable("devices", {
-  id: text("id")
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
+  id: text("id").primaryKey(),
   name: text("name").notNull().unique(),
   driverName: text("driverName").notNull(),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),

@@ -20,7 +20,9 @@
   } from "@skeletonlabs/skeleton-svelte";
 
   import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable.js";
-  import { tryCatch } from "$lib/util/tryCatch";
+  import { attempt } from "$lib/util/attempt";
+  import { newId } from "$lib/util/newId";
+  import { err, ok } from "neverthrow";
   import {
     z_shared_insertClosureTableNode,
     z_shared_insertTag,
@@ -37,7 +39,6 @@
   import { tagPatches, applyTagPatches } from "$live/tags";
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
-  import { UnifiedUndoManager } from "$lib/client/live/undoManager.svelte";
   import type {
     BaseTypeStrings,
     TagOptionsInput,
@@ -46,12 +47,15 @@
   import type { TagInsertOptionalId } from "$lib/server/sqlite/tables/tags.js";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import { getDataTypeStrings } from "$lib/remote/tag.remote.js";
-  import type { NeverThrowError } from "$lib/util/neverThrow.js";
+  import {
+    errorToString,
+    neverThrowErrorToString,
+    type NeverThrowError,
+  } from "$lib/util/neverThrow.js";
   import { PanelLayout } from "$lib/client/util/panelLayout.svelte.js";
+  import { undoManager } from "$lib/client/history/undoManager.js";
 
   const panelLayout = new PanelLayout();
-
-  const undoManager = new UnifiedUndoManager();
 
   let tagFolderPatchesCollection = $state(
     new PatchCollection<ClosureTableNode, NeverThrowError>({
@@ -100,7 +104,10 @@
   undoManager.register("tags", tagPatchesCollection);
 
   onMount(() => {
-    panelLayout.loadFromLocalStorage();
+    const loaded = panelLayout.loadFromLocalStorage();
+    if (loaded.isErr()) {
+      console.error(neverThrowErrorToString(loaded.error));
+    }
     // unmount
     return () => {
       undoManager.unregister("folders");
@@ -146,12 +153,19 @@
 
   function loadExpandedFromStorage(): string[] {
     if (!browser) return [];
-    try {
-      const stored = localStorage.getItem(TREE_EXPANDED_KEY);
-      return stored ? JSON.parse(stored) : [];
-    } catch {
+    const stored = attempt(() => localStorage.getItem(TREE_EXPANDED_KEY));
+    if (stored.error) {
+      console.error(`loadExpandedFromStorage() ${errorToString(stored.error)}`);
       return [];
     }
+    if (!stored.data) return [];
+    const raw = stored.data;
+    const parsed = attempt(() => JSON.parse(raw));
+    if (parsed.error) {
+      console.error(`loadExpandedFromStorage() ${errorToString(parsed.error)}`);
+      return [];
+    }
+    return parsed.data;
   }
 
   let treeView = useTreeView({
@@ -160,14 +174,20 @@
     selectionMode: "multiple",
     defaultExpandedValue: loadExpandedFromStorage(),
     onExpandedChange: (details) => {
-      localStorage.setItem(
-        TREE_EXPANDED_KEY,
-        JSON.stringify(details.expandedValue),
+      const result = attempt(() =>
+        localStorage.setItem(
+          TREE_EXPANDED_KEY,
+          JSON.stringify(details.expandedValue),
+        ),
       );
+      if (result.error) {
+        console.error(`onExpandedChange() ${errorToString(result.error)}`);
+      }
     },
   });
 
   // --- Helpers ------------------------------------------
+
 
   function isClosureTableNode(node: object): node is ClosureTableNode {
     return (
@@ -214,7 +234,14 @@
   }
 
   async function copyToClipboard(text: string) {
-    await navigator.clipboard.writeText(text);
+    const result = await attempt(() => navigator.clipboard.writeText(text));
+    if (result.error) {
+      return err({
+        reason: "CLIPBOARD_WRITE_FAILED",
+        cause: errorToString(result.error),
+      } as const satisfies NeverThrowError);
+    }
+    return ok(null);
   }
 
   // ── Folder operations ─────────────────────────────────
@@ -254,17 +281,23 @@
     undoManager.endTransaction();
   }
 
-  function foldersCut(nodes: ClosureTableNode[]) {
-    copyToClipboard(
+  async function foldersCut(nodes: ClosureTableNode[]) {
+    const copied = await copyToClipboard(
       JSON.stringify(nodes.map((n) => ({ id: n.id, name: n.name }))),
     );
+    if (copied.isErr()) {
+      console.error(`foldersCut() ${neverThrowErrorToString(copied.error)}`);
+    }
     foldersDelete(nodes);
   }
 
   // ── Tag operations ────────────────────────────────────
 
-  function tagsCut(tags: TagOptionsInput[]) {
-    copyToClipboard(JSON.stringify(tags));
+  async function tagsCut(tags: TagOptionsInput[]) {
+    const copied = await copyToClipboard(JSON.stringify(tags));
+    if (copied.isErr()) {
+      console.error(`tagsCut() ${neverThrowErrorToString(copied.error)}`);
+    }
     tagPatchesCollection.removeMany(tags.map((t) => t.id));
   }
 
@@ -274,7 +307,7 @@
 
   // ── Global tree keyboard handler ──────────────────────
 
-  function handleTreeKeyup(e: KeyboardEvent) {
+  async function handleTreeKeyup(e: KeyboardEvent) {
     const { folders, tags } = getSelectedItems();
     const hasSelection = folders.length > 0 || tags.length > 0;
 
@@ -315,7 +348,12 @@
         ...getChildFolders(folders),
         ...getChildTags(folders),
       ]);
-      copyToClipboard(json);
+      const copied = await copyToClipboard(json);
+      if (copied.isErr()) {
+        console.error(
+          `handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`,
+        );
+      }
     }
 
     if (e.key === "x" && e.ctrlKey) {
@@ -325,7 +363,12 @@
         ...getChildFolders(folders),
         ...getChildTags(folders),
       ]);
-      copyToClipboard(json);
+      const copied = await copyToClipboard(json);
+      if (copied.isErr()) {
+        console.error(
+          `handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`,
+        );
+      }
       undoManager.beginTransaction();
       tagsDelete(tags);
       foldersDelete(folders);
@@ -348,25 +391,25 @@
   let stagingTags = $state<Record<string, TagOptionsInput>>({});
 
   function addFolder(parentNode: ClosureTableNode) {
-    const newId = crypto.randomUUID();
-    stagingFolders[newId] = {
-      id: newId,
+    const id = newId();
+    stagingFolders[id] = {
+      id,
       name: "New Folder",
       parentId: parentNode.id,
     };
-    renamingFolderId = newId;
+    renamingFolderId = id;
     treeView().expand([parentNode.id]);
   }
 
   function addTag(parentNode: ClosureTableNode) {
-    const newId = crypto.randomUUID();
-    stagingTags[newId] = {
-      id: newId,
+    const id = newId();
+    stagingTags[id] = {
+      id,
       folderId: parentNode.id ?? null,
       name: "New Tag",
       dataType: "Double" as BaseTypeStrings,
     };
-    renamingTagId = newId;
+    renamingTagId = id;
     treeView().expand([parentNode.id]);
   }
 
@@ -458,36 +501,48 @@
 
   // ── Paste ─────────────────────────────────────────────
 
-  async function readClipboard(): Promise<string | null> {
-    return navigator.clipboard.readText();
+  async function readClipboard() {
+    const result = await attempt(() => navigator.clipboard.readText());
+    if (result.error) {
+      return err({
+        reason: "CLIPBOARD_READ_FAILED",
+        cause: errorToString(result.error),
+      } as const satisfies NeverThrowError);
+    }
+    return ok(result.data);
   }
 
   function handlePasteText(
     text: string,
     parentNode: ClosureTableNode | undefined,
   ) {
-    let json = tryCatch(JSON.parse, text);
+    const json = attempt(() => JSON.parse(text));
     if (json.error) {
-      throw Error(`handlePaste() `, { cause: json.error });
+      return err({
+        reason: "PASTE_INVALID_JSON",
+        cause: errorToString(json.error),
+      } as const satisfies NeverThrowError);
     }
 
     // not an array
-    if (json.value.length <= 0) {
-      throw Error(
-        `handlePaste() pasted data is not an array with at least one element ${text}`,
-      );
+    if (!Array.isArray(json.data) || json.data.length <= 0) {
+      return err({
+        reason: "PASTE_NOT_AN_ARRAY",
+        cause: `pasted data is not an array with at least one element ${text}`,
+      } as const satisfies NeverThrowError);
     }
 
     let tags: TagInsertOptionalId[] = [];
     let folders: ClosureTableNode[] = [];
 
-    for (const data of json.value) {
+    for (const data of json.data) {
       let tagResult = z_shared_insertTag.safeParse(data);
       let folderResult = z_shared_insertClosureTableNode.safeParse(data);
       if (!tagResult.success && !folderResult.success) {
-        throw Error(
-          `handlePaste() parse into tag or folder failed, wrong format ${data}  ${tagResult.error} ${folderResult.error}`,
-        );
+        return err({
+          reason: "PASTE_INVALID_TAG_OR_FOLDER",
+          cause: `parse into tag or folder failed, wrong format ${data}  ${tagResult.error} ${folderResult.error}`,
+        } as const satisfies NeverThrowError);
       }
 
       // check tagResult first as folderResult also has id and name feilds
@@ -498,19 +553,19 @@
     // check for relationships betwen pasted folder and create new id's while keeping the relationships
     for (const folder of folders) {
       const oldId = folder.id;
-      const newId = crypto.randomUUID();
-      folder.id = newId;
+      const id = newId();
+      folder.id = id;
 
       //if the pasted folders are nested and the child is referencing the old id give the references the new id
       for (const f of folders) {
         if (oldId == f.parentId) {
-          f.parentId = newId;
+          f.parentId = id;
         }
       }
 
       for (const t of tags) {
         if (oldId == t.folderId) {
-          t.folderId = newId;
+          t.folderId = id;
         }
       }
     }
@@ -537,7 +592,7 @@
     }
 
     for (const tag of tags) {
-      const newId = crypto.randomUUID();
+      const id = newId();
       let name = checkDuplicateTagName(tag.name, parentNode);
       let folderId: string | null | undefined = parentNode?.id ?? null;
 
@@ -548,7 +603,7 @@
       }
 
       tagPatchesCollection.add({
-        id: newId,
+        id,
         folderId: folderId ?? parentNode?.id ?? null,
         name: name,
         dataType: tag.dataType,
@@ -561,6 +616,8 @@
     }
 
     undoManager.endTransaction();
+
+    return ok(null);
   }
 
   async function handlePaste(
@@ -570,7 +627,10 @@
     const text = e.clipboardData?.getData("text/plain");
     e.stopPropagation();
     if (!text) return;
-    handlePasteText(text, parentNode);
+    const result = handlePasteText(text, parentNode);
+    if (result.isErr()) {
+      console.error(`handlePaste() ${neverThrowErrorToString(result.error)}`);
+    }
   }
 </script>
 
@@ -807,7 +867,7 @@
                         });
                         return;
                       }
-                      const parsed = tryCatch(JSON.parse, raw);
+                      const parsed = attempt(() => JSON.parse(raw));
                       if (parsed.error) {
                         e.currentTarget.value = JSON.stringify(
                           node.parameters ?? null,
@@ -817,7 +877,7 @@
                         return;
                       }
                       tagPatchesCollection.update(node.id, {
-                        parameters: parsed.value,
+                        parameters: parsed.data,
                       });
                     }}
                     onkeydown={(e) => {
@@ -947,11 +1007,11 @@
                   class="flex items-center gap-2 w-full"
                   disabled={contextMenuFolders.length === 0 &&
                     contextMenuTags.length === 0}
-                  onclick={() => {
+                  onclick={async () => {
                     if (contextMenuFolders.length > 0)
-                      foldersCut(contextMenuFolders);
+                      await foldersCut(contextMenuFolders);
                     else if (contextMenuTags.length > 0)
-                      tagsCut(contextMenuTags);
+                      await tagsCut(contextMenuTags);
                   }}
                 >
                   <Scissors class="size-4" />
@@ -970,12 +1030,17 @@
                   class="flex items-center gap-2 w-full"
                   disabled={contextMenuFolders.length === 0 &&
                     contextMenuTags.length === 0}
-                  onclick={() => {
+                  onclick={async () => {
                     let json = JSON.stringify([
                       ...contextMenuTags,
                       ...contextMenuFolders,
                     ]);
-                    copyToClipboard(json);
+                    const copied = await copyToClipboard(json);
+                    if (copied.isErr()) {
+                      console.error(
+                        `copy() ${neverThrowErrorToString(copied.error)}`,
+                      );
+                    }
                   }}
                 >
                   <Copy class="size-4" />
@@ -996,7 +1061,21 @@
                     contextMenuTags.length === 0}
                   onclick={async () => {
                     const text = await readClipboard();
-                    if (text) handlePasteText(text, contextMenuFolders[0]);
+                    if (text.isErr()) {
+                      console.error(
+                        `paste() ${neverThrowErrorToString(text.error)}`,
+                      );
+                      return;
+                    }
+                    const result = handlePasteText(
+                      text.value,
+                      contextMenuFolders[0],
+                    );
+                    if (result.isErr()) {
+                      console.error(
+                        `paste() ${neverThrowErrorToString(result.error)}`,
+                      );
+                    }
                   }}
                 >
                   <Copy class="size-4" />
