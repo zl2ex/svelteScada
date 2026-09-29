@@ -5,11 +5,11 @@ declare module '$live/devices' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
-  import type { Result, ok } from 'neverthrow';
-  import type { NeverThrowError } from '$lib/util/neverThrow';
+  import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
+  import type { ok } from 'neverthrow';
   import type { DeviceStatus } from '$lib/server/drivers/driver';
 
-  export const applyDevicePatches: (patch: PatchOp) => Promise<Result<{ ok: true }, NeverThrowError>>;
+  export const applyDevicePatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, NeverThrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'SERVER_ERROR' | 'UNAUTHENTICATED';
   export const devicePatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
   export const deviceStatus: ((id: string) => StreamStore<DeviceStatus | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<DeviceStatus> };
@@ -20,10 +20,9 @@ declare module '$live/tag-folder' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
-  import type { Result, ok } from 'neverthrow';
-  import type { NeverThrowError } from '$lib/util/neverThrow';
+  import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
 
-  export const applyTagFolderPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, NeverThrowError>>;
+  export const applyTagFolderPatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, NeverThrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'UNAUTHENTICATED';
   export const tagFolderPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
   export const empty: Readable<undefined>;
@@ -33,18 +32,18 @@ declare module '$live/tags' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
-  import type { Result, ok } from 'neverthrow';
+  import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
+  import type { ok } from 'neverthrow';
   import type { ClientTagValue, FailedTag, TagValue } from '$lib/server/tag/tag';
-  import type { NeverThrowError } from '$lib/util/neverThrow';
 
-  export const applyTagPatches: (patch: PatchOp) => Promise<Result<{ ok: true }, FailedTag | NeverThrowError>>;
-  export const writeTagValue: ({ id, value }: { id: string; value: TagValue }) => Promise<Result<{ success: true }, NeverThrowError>>;
+  export const applyTagPatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>>;
+  export const writeTagValue: ({ id, value }: { id: string; value: TagValue }) => Promise<WireResult<{ success: true }, NeverThrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'SERVER_ERROR' | 'UNAUTHENTICATED';
   export const tagPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
-  export const getTagValue: ((lookup: string) => StreamStore<Result<
+  export const getTagValue: ((lookup: string) => StreamStore<WireResult<
       ClientTagValue,
       FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }
-    > | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<Result<
+    > | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<WireResult<
       ClientTagValue,
       FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }
     >> };

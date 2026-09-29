@@ -13,7 +13,12 @@ import type {
   PatchOp,
   PatchPayload,
 } from "$lib/client/live/patchCollection.svelte";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import {
+  wireErr,
+  wireOk,
+  type NeverThrowError,
+  type WireResult,
+} from "$lib/util/neverThrow";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -36,7 +41,7 @@ export const applyTagPatches = live(
   async (
     ctx,
     patch: PatchOp,
-  ): Promise<Result<{ ok: true }, FailedTag | NeverThrowError>> => {
+  ): Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(
@@ -60,7 +65,7 @@ export const applyTagPatches = live(
           case "TAG_ALREADY_EXISTS":
           case "TAG_SERVER_NOT_INITIALISED":
           case "FOLDER_MANAGER_NOT_INITIALISED":
-            return err(result.error);
+            return wireErr(result.error);
           case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client
             publishTagValue(err(result.error));
@@ -78,7 +83,7 @@ export const applyTagPatches = live(
         switch (reason) {
           case "DB_ERROR":
           case "TAG_NOT_FOUND":
-            return err(result.error);
+            return wireErr(result.error);
 
           default:
             logger.error(reason satisfies never);
@@ -95,7 +100,7 @@ export const applyTagPatches = live(
           case "OPCUA_FOLDER_NOT_FOUND":
           case "TAG_SERVER_NOT_INITIALISED":
           case "FOLDER_MANAGER_NOT_INITIALISED":
-            return err(result.error);
+            return wireErr(result.error);
           case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client
             publishTagValue(err(result.error));
@@ -110,7 +115,7 @@ export const applyTagPatches = live(
 
     ctx.publish("tag-patches", "created", { patches: [patch] });
 
-    return ok({ ok: true });
+    return wireOk({ ok: true });
   },
 );
 
@@ -127,25 +132,25 @@ export const getTagValue = live.stream(
     ctx,
     lookup: string,
   ): Promise<
-    Result<
+    WireResult<
       ClientTagValue,
       FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }
     >
   > => {
     const id = tagManager.getTagById(lookup);
     const path = tagManager.getTagByPath(lookup);
-    if (id.isErr() && path.isErr()) return err(id.error);
+    if (id.isErr() && path.isErr()) return wireErr(id.error);
     let tag;
     if (id.isOk()) tag = id.value;
     if (path.isOk()) tag = path.value;
     if (!tag) {
-      return err({
+      return wireErr({
         reason: "TAG_NOT_FOUND",
         cause: `no tag found at path or id ${lookup}`,
       } as const satisfies { reason: "TAG_NOT_FOUND"; cause: string });
     }
-    if (tag.isErr()) return err(tag.error);
-    return ok(tag.value.getClientValueTag());
+    if (tag.isErr()) return wireErr(tag.error);
+    return wireOk(tag.value.getClientValueTag());
   },
   { merge: "set" },
 );
@@ -155,10 +160,13 @@ export function publishTagValue(
   ctx?: any,
 ) {
   let id: string | undefined = undefined;
+  let wireTag: WireResult<ClientTagValue, FailedTag>;
   if (tag.isOk()) {
     id = tag.value.id;
+    wireTag = wireOk(tag.value);
   } else {
     id = tag.error.options?.id;
+    wireTag = wireErr(tag.error);
   }
 
   if (!id) {
@@ -169,27 +177,27 @@ export function publishTagValue(
   const path = tagManager.idToPath(id);
 
   if (ctx) {
-    ctx.publish(`tag-values:${id}`, "set", tag);
-    ctx.publish(`tag-values:${path}`, "set", tag);
+    ctx.publish(`tag-values:${id}`, "set", wireTag);
+    ctx.publish(`tag-values:${path}`, "set", wireTag);
     return;
   }
 
-  publish(`tag-values:${id}`, "set", tag);
-  publish(`tag-values:${path}`, "set", tag);
+  publish(`tag-values:${id}`, "set", wireTag);
+  publish(`tag-values:${path}`, "set", wireTag);
 }
 
 export const writeTagValue = live(
   async (
     ctx,
     { id, value }: { id: string; value: TagValue },
-  ): Promise<Result<{ success: true }, NeverThrowError>> => {
+  ): Promise<WireResult<{ success: true }, NeverThrowError>> => {
     const tag = tagManager.getTagById(id);
     if (tag.isErr()) {
-      return err(tag.error);
+      return wireErr(tag.error);
     }
 
     if (tag.value.isErr()) {
-      return err({
+      return wireErr({
         reason: "TAG_ERROR",
         cause: tag.value.error,
       } as const satisfies NeverThrowError);
@@ -198,12 +206,12 @@ export const writeTagValue = live(
     const tagOk = tag.value;
     const update = await tagOk.value.write(value);
     if (update.isErr()) {
-      return err(update.error);
+      return wireErr(update.error);
     }
 
     // TD WIP tag.write() should do this
     //publishTagValue(ok(tagOk.value.getClientValueTag()), ctx);
 
-    return ok({ success: true });
+    return wireOk({ success: true });
   },
 );

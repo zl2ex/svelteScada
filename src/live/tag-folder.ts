@@ -6,8 +6,12 @@ import type {
   PatchOp,
   PatchPayload,
 } from "$lib/client/live/patchCollection.svelte";
-import { err, ok, type Result } from "neverthrow";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import {
+  wireErr,
+  wireOk,
+  type NeverThrowError,
+  type WireResult,
+} from "$lib/util/neverThrow";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -33,7 +37,7 @@ export const applyTagFolderPatches = live(
   async (
     ctx,
     patch: PatchOp,
-  ): Promise<Result<{ ok: true }, NeverThrowError>> => {
+  ): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(
@@ -47,21 +51,21 @@ export const applyTagFolderPatches = live(
       const result = folderManager.createFolder(value);
       if (result.isErr()) {
         console.error(result.error);
-        return err(result.error);
+        return wireErr(result.error);
       }
     }
     if (patch.op == "remove") {
       const result = folderManager.deleteFolder(id);
       if (result.isErr()) {
         console.error(result.error);
-        return err(result.error);
+        return wireErr(result.error);
       }
     }
     if (patch.op == "replace") {
       const opcuaFolder = folderManager.get(id);
       if (!opcuaFolder) {
         console.error("FOLDER_NOT_FOUND", `cannot find folder with id ${id}`);
-        return err({
+        return wireErr({
           reason: "FOLDER_NOT_FOUND",
           cause: `cannot find folder with id ${id}`,
         } as const satisfies NeverThrowError);
@@ -75,7 +79,7 @@ export const applyTagFolderPatches = live(
         );
         if (result.isErr()) {
           console.error(result.error);
-          return err(result.error);
+          return wireErr(result.error);
         }
       }
 
@@ -83,12 +87,12 @@ export const applyTagFolderPatches = live(
         const result = folderManager.renameFolder(id, value.name);
         if (result.isErr()) {
           console.error(result.error);
-          return err(result.error);
+          return wireErr(result.error);
         }
       }
     }
 
     ctx.publish("tag-folder-patches", "created", { patches: [patch] });
-    return ok({ ok: true });
+    return wireOk({ ok: true });
   },
 );

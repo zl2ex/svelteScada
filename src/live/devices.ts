@@ -5,7 +5,12 @@ import type {
   PatchOp,
   PatchPayload,
 } from "$lib/client/live/patchCollection.svelte";
-import type { NeverThrowError } from "$lib/util/neverThrow";
+import {
+  wireErr,
+  wireOk,
+  type NeverThrowError,
+  type WireResult,
+} from "$lib/util/neverThrow";
 import { deviceManager } from "../hooks.server";
 import {
   type DeviceOptions,
@@ -25,18 +30,16 @@ export const devicePatches = live.stream(
   },
 );
 
-function getStatus(id: string): DeviceStatus {
-  const device = deviceManager.getDevice(id);
-  if (device && device.isOk()) return device.value.status;
-  return "Error";
-}
-
 // NOTE: keep the init callback as the second argument with nothing but
 // whitespace before it - the svelte-realtime codegen parses the stream
 // value type textually from its return annotation.
 export const deviceStatus = live.stream(
   (ctx, id: string) => `device-status:${id}`,
-  async (ctx, id: string): Promise<DeviceStatus> => getStatus(id),
+  async (ctx, id: string): Promise<DeviceStatus> => {
+    const device = deviceManager.getDevice(id);
+    if (device && device.isOk()) return device.value.status;
+    return "Error";
+  },
   { merge: "set" },
 );
 
@@ -62,7 +65,7 @@ export const applyDevicePatches = live(
   async (
     ctx,
     patch: PatchOp,
-  ): Promise<Result<{ ok: true }, NeverThrowError>> => {
+  ): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(
@@ -85,7 +88,7 @@ export const applyDevicePatches = live(
           case "DEVICE_ALREADY_EXISTS":
           case "DRIVER_CREATE_ERROR":
           case "OPTIONS_PARSE_ERROR":
-            return err(result.error);
+            return wireErr(result.error);
           default:
             logger.error(reason satisfies never);
             throw new LiveError("SERVER_ERROR");
@@ -99,7 +102,7 @@ export const applyDevicePatches = live(
         switch (reason) {
           case "DB_ERROR":
           case "DEVICE_NOT_FOUND":
-            return err(result.error);
+            return wireErr(result.error);
 
           default:
             logger.error(reason satisfies never);
@@ -116,7 +119,7 @@ export const applyDevicePatches = live(
           case "DRIVER_CREATE_ERROR":
           case "INVALID_DRIVER_NAME":
           case "OPTIONS_PARSE_ERROR":
-            return err(result.error);
+            return wireErr(result.error);
 
           default:
             logger.error(reason satisfies never);
@@ -127,6 +130,6 @@ export const applyDevicePatches = live(
 
     ctx.publish("device-patches", "created", { patches: [patch] });
 
-    return ok({ ok: true });
+    return wireOk({ ok: true });
   },
 );

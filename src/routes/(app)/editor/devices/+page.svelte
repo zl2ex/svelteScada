@@ -40,12 +40,14 @@
         <td class="px-2 py-1">Status</td>
       </tr>
     </thead>
-    {#each Object.values(devicesPatchesCollection.state) as device (device.id)}
-      <tr>
-        <td class="px-2 py-1">{device.name}</td>
-        <td class="px-2 py-1">{device.displayName}</td>
-        <td class="px-2 py-1"><DeviceStatus id={device.id} /></td>
-      </tr>
-    {/each}
+    <tbody>
+      {#each Object.values(devicesPatchesCollection.state) as device (device.id)}
+        <tr>
+          <td class="px-2 py-1">{device.name}</td>
+          <td class="px-2 py-1">{device.displayName}</td>
+          <td class="px-2 py-1"><DeviceStatus id={device.id} /></td>
+        </tr>
+      {/each}
+    </tbody>
   </table>
 </div>

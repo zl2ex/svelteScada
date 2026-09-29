@@ -7,12 +7,12 @@
 import { createTravels, type Travels, type TravelPatches } from "travels";
 import { apply } from "mutative";
 import { toast } from "../toast.svelte";
-import { type Result } from "neverthrow";
 import { RpcError } from "svelte-realtime/client";
 import {
   errorToString,
   neverThrowErrorToString,
   type NeverThrowError,
+  type WireResult,
 } from "$lib/util/neverThrow";
 import { attempt } from "$lib/util/attempt";
 
@@ -35,7 +35,7 @@ export interface PatchCollectionOptions<
   initial: Record<string, T>;
   // however your generated RPC/room action is shaped, as long as it
   // takes a single patch op and returns/rejects a promise
-  applyPatch: (patch: PatchOp) => Promise<Result<{ ok: true }, E>>;
+  applyPatch: (patch: PatchOp) => Promise<WireResult<{ ok: true }, E>>;
   // adapt whatever store you're using (a live.stream, on(topic), etc.)
   // to this shape: call `notify` with each incoming payload, return an
   // unsubscribe function so destroy() can clean up.
@@ -183,7 +183,7 @@ export class PatchCollection<
       }
 
       const res = sent.data;
-      if (res.isErr()) {
+      if (res.isErr) {
         // The server rejected this op but will still receive the rest of the
         // batch, so revert only the failing op locally and keep going —
         // later ops are still sent and applied.

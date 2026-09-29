@@ -11,3 +11,4 @@ use $lib/uitl/attempt.ts `const result = attempt(() => func)` where func is a fu
 when calling functions that return neverthrow's ok() or err() first check if there is an error with `if(result.isErr()) { return err(result.error);}` then use the result.value below
 function return types not needed when using neverthrow ok() and err() because they are inferred by typescript
 exception: keep the explicit return type on svelte-realtime $live functions (live streams, live queries and any function they call) because svelte-realtime parses the return type textually to generate the $types.d.ts declarations for $live/* imports
+use `onerror={(error) => {console.error(error);}}` with <svelte:boundary> so that when the boundary catches i can actually see what threw

@@ -188,7 +188,6 @@
 
   // --- Helpers ------------------------------------------
 
-
   function isClosureTableNode(node: object): node is ClosureTableNode {
     return (
       Object.hasOwn(node, "id") &&
@@ -1153,6 +1152,7 @@
     [data-scope="tree-view"] [data-part="item"][data-selected],
     [data-scope="tree-view"] [data-part="branch-control"][data-selected]
   ) {
+    outline: var(--color-primary-300-700);
     background-color: light-dark(
       var(--color-neutral-300),
       var(--color-neutral-800)
