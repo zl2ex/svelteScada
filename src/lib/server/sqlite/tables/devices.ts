@@ -10,4 +10,6 @@ export const devices = sqliteTable("devices", {
 export type DeviceSelect = typeof devices.$inferSelect;
 export type DeviceInsert = typeof devices.$inferInsert;
 
-export const z_insertDevice = createInsertSchema(devices);
+export const z_insertDevice = createInsertSchema(devices, {
+  enabled: (s) => s.default(true),
+});

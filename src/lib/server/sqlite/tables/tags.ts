@@ -28,4 +28,8 @@ export type TagInsertOptionalId = Omit<typeof tags.$inferInsert, "id"> & {
   id?: string;
 };
 
-export const z_insertTag = createInsertSchema(tags);
+export const z_insertTag = createInsertSchema(tags, {
+  type: (s) => s.default("tag"),
+  writeable: (s) => s.default(true),
+  exposeOverOpcua: (s) => s.default(true),
+});

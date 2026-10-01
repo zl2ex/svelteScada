@@ -55,6 +55,7 @@ export function publishDeviceStatus(
     return;
   }
   publish(`device-status:${id}`, "set", status);
+  logger.trace(`status ${id} ${status}`);
 }
 
 // One op per call: the client batches ops by calling this once per op, so a

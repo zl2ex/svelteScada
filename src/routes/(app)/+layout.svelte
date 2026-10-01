@@ -85,16 +85,14 @@
 
 <div id="app">
   <header>
-    <AppBar class="bg-surface-50-950">
+    <AppBar class="bg-surface-50-950 border-b-surface-200-800 border-b-1">
       <AppBar.Toolbar class="grid-cols-[auto_1fr_auto]">
         <AppBar.Lead>
           <button type="button" class="btn-icon btn-icon-lg hover:preset-tonal"
             ><MenuIcon /></button
           >
         </AppBar.Lead>
-        <AppBar.Headline>
-          <h3 class="h3">Shit Scada</h3>
-        </AppBar.Headline>
+        <AppBar.Headline></AppBar.Headline>
         <AppBar.Trail>
           <button type="button" class="btn-icon hover:preset-tonal"
             ><SearchIcon class="size-8" /></button

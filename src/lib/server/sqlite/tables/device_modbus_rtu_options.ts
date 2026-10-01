@@ -19,4 +19,16 @@ export const device_modbus_rtu_options = sqliteTable("device_modbus_rtu_options"
 export type DeviceModbusRtuOptionsSelect = typeof device_modbus_rtu_options.$inferSelect;
 export type DeviceModbusRtuOptionsInsert = typeof device_modbus_rtu_options.$inferInsert;
 
-export const z_insertDeviceModbusRtuOptions = createInsertSchema(device_modbus_rtu_options);
+export const z_insertDeviceModbusRtuOptions = createInsertSchema(
+  device_modbus_rtu_options,
+  {
+    serialPort: (s) => s.default(""),
+    baudRate: (s) => s.default(9600),
+    parity: (s) => s.default("none"),
+    unitId: (s) => s.default(1),
+    spanGaps: (s) => s.default(false),
+    pollingIntervalMs: (s) => s.default(1000),
+    startAddress: (s) => s.default(0),
+    endian: (s) => s.default("LittleEndian"),
+  },
+);

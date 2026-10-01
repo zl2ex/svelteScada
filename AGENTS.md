@@ -5,6 +5,8 @@ check the docs for the svelte-realtime libary at `https://svelte-realtime.dev/do
 
 ## Code style
 
+use svelte 5 rune syntax $state $effect ect..
+use pino logger from "$lib/server/pino/logger" on backend
 use neverthrow ok() and err() whenever a function could possibly fail.
 when using neverthrow err() keep this structure `err({reason: "ERROR_NAME", cause: `description of error`} as const satisfies NeverThrowError)` or A custom error type that extends NeverThrowError
 use $lib/uitl/attempt.ts `const result = attempt(() => func)` where func is a function that is some external libary code that could throw an Error

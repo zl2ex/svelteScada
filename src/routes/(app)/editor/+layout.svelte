@@ -304,6 +304,34 @@
     tagPatchesCollection.removeMany(tags.map((t) => t.id));
   }
 
+  // ── Global keyboard handlers ──────────────────────
+
+  // Keep track of all currently pressed physical keys
+  let activeKeys = new Set<string>();
+
+  if (browser) {
+    window.addEventListener("keydown", (event) => {
+      // Add the unique physical key code to our tracking Set
+      activeKeys.add(event.code);
+      console.log(`Keys currently held:`, Array.from(activeKeys));
+      // Example check: Is *any* key being held right now?
+      if (activeKeys.size > 0) {
+        // Your logic here
+      }
+    });
+
+    window.addEventListener("keyup", (event) => {
+      // Remove the key when it is released
+      activeKeys.delete(event.code);
+    });
+
+    // CRITICAL FAILSAFE: If the user Alt-Tabs or clicks away,
+    // the 'keyup' event won't fire, leaving keys "stuck" as active.
+    window.addEventListener("blur", () => {
+      activeKeys.clear();
+    });
+  }
+
   // ── Global tree keyboard handler ──────────────────────
 
   async function handleTreeKeyup(e: KeyboardEvent) {
@@ -367,6 +395,7 @@
         console.error(
           `handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`,
         );
+        return;
       }
       undoManager.beginTransaction();
       tagsDelete(tags);
@@ -697,6 +726,17 @@
       <Popover>
         <TreeView.Item>
           <Popover.Trigger
+            onclick={(ev) => {
+              // dont open the tag edit popover if the user is currently selecting tags
+              if (
+                activeKeys.has("ShiftLeft") ||
+                activeKeys.has("ShiftRight") ||
+                activeKeys.has("ControlLeft") ||
+                activeKeys.has("ControlRight")
+              ) {
+                ev.preventDefault();
+              }
+            }}
             tabindex={-1}
             class="w-full flex items-center justify-between gap-2 min-w-0 focus-visible:outline-none"
           >
@@ -1122,7 +1162,7 @@
   </svelte:boundary>
 </div>
 <button
-  class="w-0.5 bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
+  class="w-px bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
   onmousedown={() => {
     panelLayout.dragging.left = true;
   }}
@@ -1133,7 +1173,7 @@
   {@render children?.()}
 </div>
 <button
-  class="w-0.5 bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
+  class="w-px bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
   onmousedown={() => {
     panelLayout.dragging.right = true;
   }}
