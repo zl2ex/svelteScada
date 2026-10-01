@@ -32,3 +32,12 @@ export const z_insertDeviceModbusRtuOptions = createInsertSchema(
     endian: (s) => s.default("LittleEndian"),
   },
 );
+
+/**
+ * The same options without the `deviceId` foreign key. `deviceId` is owned by
+ * the devices row, not by the user, so drivers and the client work with this
+ * shape and the id is attached when the row is written.
+ */
+export const z_deviceModbusRtuOptions = z_insertDeviceModbusRtuOptions.omit({
+  deviceId: true,
+});

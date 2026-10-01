@@ -2,7 +2,7 @@
   import { undoManager } from "$lib/client/history/undoManager.js";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
-  import type { DeviceOptions, DriverName } from "$lib/server/drivers/driver";
+  import type { DeviceConfigInput, DriverName } from "$lib/server/drivers/driver";
   import type { NeverThrowError } from "$lib/util/neverThrow";
   import {
     applyDevicePatches,
@@ -29,7 +29,7 @@
   });
 
   const devicesPatchesCollection = new PatchCollection<
-    DeviceOptions,
+    DeviceConfigInput,
     NeverThrowError
   >({
     initial: data.deviceOptions,
@@ -57,8 +57,14 @@
     return () => undoManager.unregister("devices");
   });
 
-  // get driver names and default from backend
-  const avalibleDrivers = await getAvalibleDrivers();
+  // driver metadata, straight off the server registry
+  const availableDrivers = await getAvalibleDrivers();
+
+  // A <select> only ever gives back a string, so the discriminant has to be
+  // narrowed back before it can go anywhere near a DeviceConfigInput.
+  function isDriverName(value: string): value is DriverName {
+    return value in availableDrivers;
+  }
 </script>
 
 <div id="devices" class="m-8 grow">
@@ -71,7 +77,7 @@
         id: popoverDeviceId,
         name: "",
         driverName,
-        options: avalibleDrivers[driverName].defaultOptions,
+        options: availableDrivers[driverName].defaultOptions,
       });
       popover().setOpen(true);
     }}
@@ -101,7 +107,14 @@
         >
           <td><KeyboardMusicIcon></KeyboardMusicIcon></td>
           <td class="font-bold text-lg">{device.name}</td>
-          <td>{avalibleDrivers[device.driverName].displayName}</td>
+          <td class="flex items-center gap-2">
+            <img
+              src={availableDrivers[device.driverName].logo}
+              alt=""
+              class="size-4"
+            />
+            {availableDrivers[device.driverName].displayName}
+          </td>
           <td><DeviceStatus id={device.id} class="flex-row-reverse gap-6" /></td
           >
         </tr>
@@ -183,12 +196,20 @@
                   value={devicesPatchesCollection.state[popoverDeviceId]
                     .driverName}
                   onchange={(ev) => {
+                    const next = ev.currentTarget.value;
+                    if (!isDriverName(next)) return;
+                    // The two drivers' options are unrelated shapes, so a
+                    // driver change cannot carry the old options across - send
+                    // the new driver's defaults with it. The server resets to
+                    // the same defaults and drops the stale rows in a
+                    // transaction, so both sides agree on what the device is.
                     devicesPatchesCollection.update(popoverDeviceId, {
-                      driverName: String(ev.currentTarget.value),
+                      driverName: next,
+                      options: availableDrivers[next].defaultOptions,
                     });
                   }}
                 >
-                  {#each Object.entries(avalibleDrivers) as [key, driver]}
+                  {#each Object.values(availableDrivers) as driver (driver.id)}
                     <option value={driver.id}>{driver.displayName}</option>
                   {/each}
                 </select>

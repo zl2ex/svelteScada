@@ -67,5 +67,8 @@ export { z_insertTagFolderPaths } from "./tag_folder_paths";
 export { z_insertDeviceModbusTcpOptions } from "./device_modbus_tcp_options";
 export { z_insertDeviceModbusRtuOptions } from "./device_modbus_rtu_options";
 export { z_insertDeviceOpcuaClientOptions } from "./device_opcua_client_options";
+export { z_deviceModbusTcpOptions } from "./device_modbus_tcp_options";
+export { z_deviceModbusRtuOptions } from "./device_modbus_rtu_options";
+export { z_deviceOpcuaClientOptions } from "./device_opcua_client_options";
 
 export { z_loginUser } from "./users";

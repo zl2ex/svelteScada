@@ -11,7 +11,7 @@ import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 export class FolderManager {
   opcuaServer: OPCUAServer | undefined;
   rootFolder: UAObject | undefined;
-  private opcuaFolders: Map<string, OpcuaFolder> = new Map();
+  #opcuaFolders: Map<string, OpcuaFolder> = new Map();
 
   constructor() {}
 
@@ -20,7 +20,7 @@ export class FolderManager {
     this.rootFolder = rootFolder;
   }
 
-  private createOpcuaFolder(folder: ClosureTableNode) {
+  #createOpcuaFolder(folder: ClosureTableNode) {
     if (!this.opcuaServer?.engine.addressSpace || !this.rootFolder) {
       return err({
         reason: "OPCUA_NOT_INITIALISED",
@@ -29,7 +29,7 @@ export class FolderManager {
     }
 
     const parent =
-      this.opcuaFolders.get(folder.parentId ?? "")?.uaObject ?? this.rootFolder;
+      this.#opcuaFolders.get(folder.parentId ?? "")?.uaObject ?? this.rootFolder;
 
     const result = OpcuaFolder.create(
       this.opcuaServer.engine.addressSpace,
@@ -39,12 +39,12 @@ export class FolderManager {
 
     if (result.isErr()) return err(result.error);
 
-    this.opcuaFolders.set(folder.id, result.value);
+    this.#opcuaFolders.set(folder.id, result.value);
     return ok(result.value);
   }
 
-  private disposeOpcuaFolder(id: string) {
-    const folder = this.opcuaFolders.get(id);
+  #disposeOpcuaFolder(id: string) {
+    const folder = this.#opcuaFolders.get(id);
     if (!folder)
       return err({
         reason: "OPCUA_FOLDER_NOT_FOUND",
@@ -54,7 +54,7 @@ export class FolderManager {
     const disposed = folder.dispose();
     if (disposed.isErr()) return err(disposed.error);
 
-    this.opcuaFolders.delete(id);
+    this.#opcuaFolders.delete(id);
     return ok(true);
   }
 
@@ -64,7 +64,7 @@ export class FolderManager {
     const node = tagFoldersClosureTable.add(newNode);
     if (node.isErr()) return err(node.error);
 
-    const folder = this.createOpcuaFolder(node.value);
+    const folder = this.#createOpcuaFolder(node.value);
     if (folder.isErr()) return err(folder.error);
 
     logger.info(`[FolderManager] created folder ${folder.value.node.id}`);
@@ -74,14 +74,14 @@ export class FolderManager {
   deleteFolder(id: string) {
     const result = tagFoldersClosureTable.deleteRecursive(id);
     if (result.isErr()) return err(result.error);
-    const dispose = this.disposeOpcuaFolder(id);
+    const dispose = this.#disposeOpcuaFolder(id);
     if (dispose.isErr()) return err(dispose.error);
     logger.info(`[FolderManager] deleted folder ${id}`);
     return ok(true);
   }
 
   renameFolder(id: string, newName: string) {
-    const folder = this.opcuaFolders.get(id);
+    const folder = this.#opcuaFolders.get(id);
     if (!folder)
       return err({
         reason: "FOLDER_NOT_FOUND",
@@ -99,7 +99,7 @@ export class FolderManager {
     const oldDbFolder = tagFoldersClosureTable.get(id);
     if (oldDbFolder.isErr()) return err(oldDbFolder.error);
 
-    const dispose = this.disposeOpcuaFolder(id);
+    const dispose = this.#disposeOpcuaFolder(id);
     if (dispose.isErr()) return err(dispose.error);
 
     const newFolder = {
@@ -108,13 +108,13 @@ export class FolderManager {
       parentId: newParentId ?? null,
     };
 
-    const recreated = this.createOpcuaFolder(newFolder);
+    const recreated = this.#createOpcuaFolder(newFolder);
     if (recreated.isErr()) return err(recreated.error);
 
     const moveResult = tagFoldersClosureTable.move(id, newParentId);
     if (moveResult.isErr()) {
       // revert the changes to memory if the db operation fails
-      const rollback = this.disposeOpcuaFolder(id);
+      const rollback = this.#disposeOpcuaFolder(id);
       if (rollback.isErr()) {
         return err({
           reason: "FOLDER_MOVE_ROLLBACK_FAILED",
@@ -123,7 +123,7 @@ export class FolderManager {
           )}`,
         } as const satisfies NeverThrowError);
       }
-      const restore = this.createOpcuaFolder(oldDbFolder.value);
+      const restore = this.#createOpcuaFolder(oldDbFolder.value);
       if (restore.isErr()) return err(restore.error);
       return err(moveResult.error);
     }
@@ -135,14 +135,14 @@ export class FolderManager {
   // ── Read helpers ────────────────────────────────────
 
   getAll(parentId: string | null = null) {
-    return this.opcuaFolders
+    return this.#opcuaFolders
       .values()
       .filter((folder) => folder.node.parentId == parentId);
   }
 
   get(id: string | null | undefined) {
     if (!id) return undefined;
-    return this.opcuaFolders.get(id);
+    return this.#opcuaFolders.get(id);
   }
 
   // ── Bulk Loader ─────────────────────────────────────
@@ -151,7 +151,7 @@ export class FolderManager {
     const folders = tagFoldersClosureTable.getAll();
     if (folders.isErr()) return err(folders.error);
     for (const folder of folders.value) {
-      const newFolder = this.createOpcuaFolder(folder);
+      const newFolder = this.#createOpcuaFolder(folder);
       if (newFolder.isErr()) {
         logger.error(newFolder.error);
       }

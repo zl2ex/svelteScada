@@ -1,5 +1,5 @@
 import z from "zod";
-import { newId } from "$lib/util/newId";
+import { newId } from "../../lib/util/newId";
 
 // Base schemas for primitives
 export const Z_BaseTypes = {

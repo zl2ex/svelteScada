@@ -231,7 +231,7 @@ export class Tag {
   driverVarible?: DriverVariable<TagValue>; // driver subscription varible
   driverUnsubscribe?: () => void; // driver cleanup function
   onChange?: ChangeListener; // on change event for listeners
-  private disposed = false; // disposed flag
+  #disposed = false; // disposed flag
 
   private constructor(
     opcuaServer: OPCUAServer,
@@ -338,8 +338,8 @@ export class Tag {
     }
 
     if (options.initalValue) {
-      let parsed = tag.stringToTagValue(options.initalValue);
-      const validated = tag.validate(parsed);
+      let parsed = tag.#stringToTagValue(options.initalValue);
+      const validated = tag.#validate(parsed);
 
       if (validated.isOk()) {
         tag.value = validated.value;
@@ -400,7 +400,7 @@ export class Tag {
               }),
             set: async (variant: Variant) => {
               console.trace(variant);
-              const update = await tag.update(
+              const update = await tag.#update(
                 variant.value,
                 "GatewayOpcua",
                 StatusCodes.Good,
@@ -457,7 +457,7 @@ export class Tag {
     }
 
     // update tag value when created if it is there, if not set to inital value
-    tag.update(tag.value, "TagInternal", StatusCodes.Good).then((updated) => {
+    tag.#update(tag.value, "TagInternal", StatusCodes.Good).then((updated) => {
       if (updated.isErr()) {
         logger.error(updated.error);
       }
@@ -469,7 +469,7 @@ export class Tag {
   }
 
   // parse intialValue string stored in database into one of the required datatypes
-  private stringToTagValue(value: string): TagValue {
+  #stringToTagValue(value: string): TagValue {
     // Handle arrays stored in json format
     const parsed = attempt(() => JSON.parse(value));
     if (!parsed.error && parsed.data) {
@@ -488,7 +488,7 @@ export class Tag {
     return value;
   }
 
-  private validate(value: unknown) {
+  #validate(value: unknown) {
     if (!this.schema)
       return err({
         reason: "SCHEMA_UNDEFINED",
@@ -550,7 +550,7 @@ export class Tag {
     // driver values subscription
     this.driverUnsubscribe = driverVariable.onChange(
       async ({ value, status }) => {
-        const updated = await this.update(value, "TagDriver", status);
+        const updated = await this.#update(value, "TagDriver", status);
         if (updated.isErr()) {
           logger.error(updated.error);
         }
@@ -571,7 +571,7 @@ export class Tag {
       } as const satisfies FailedTag);
     }
 
-    return await this.update(value, "WebClient");
+    return await this.#update(value, "WebClient");
   }
 
   /**
@@ -585,12 +585,12 @@ export class Tag {
    * @example
    * const statusCode = await update(50.1, "TagInternal", StatusCodes.Good);
    */
-  private async update(
+  async #update(
     value: TagValue,
     source: UpdateSource,
     statusCode: StatusCode = StatusCodes.Good,
   ) {
-    const validated = this.validate(value);
+    const validated = this.#validate(value);
     if (validated.isErr()) {
       this.statusCode = StatusCodes.BadTypeMismatch;
       return err(validated.error);
@@ -678,8 +678,8 @@ export class Tag {
 
   dispose() {
     logger.trace(`[Tag] dispose() ${this.id}`);
-    if (this.disposed) return ok(true);
-    this.disposed = true;
+    if (this.#disposed) return ok(true);
+    this.#disposed = true;
 
     // driver cleanup
     const unsub = attempt(() => this.driverUnsubscribe?.());

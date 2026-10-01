@@ -1,6 +1,6 @@
 import { prerender } from "$app/server";
-import { avalibeDrivers } from "$lib/server/drivers/driver";
+import { availableDrivers } from "$lib/server/drivers/driver";
 
 export const getAvalibleDrivers = prerender(async () => {
-  return avalibeDrivers;
+  return availableDrivers;
 });

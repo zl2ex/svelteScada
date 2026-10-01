@@ -39,14 +39,14 @@ type UndoRedoRecord = {
 // ── class ────────────────────────────────────────────────
 
 export class UnifiedUndoManager {
-  private contexts = new Map<string, ContextEntry>();
-  private undoTimeline: UndoRedoRecord[] = [];
-  private redoTimeline: UndoRedoRecord[] = [];
-  private activeDocument: string | null = null;
+  #contexts = new Map<string, ContextEntry>();
+  #undoTimeline: UndoRedoRecord[] = [];
+  #redoTimeline: UndoRedoRecord[] = [];
+  #activeDocument: string | null = null;
 
   // Transaction support
-  private transactionStack = 0; // >0 when inside a begin/end pair
-  private transactionBuffer = new Map<string, number>(); // contexts -> # of mutations
+  #transactionStack = 0; // >0 when inside a begin/end pair
+  #transactionBuffer = new Map<string, number>(); // contexts -> # of mutations
 
   // ── registration ─────────────────────────────────────
 
@@ -55,21 +55,21 @@ export class UnifiedUndoManager {
     collection: PatchCollection<any, any>,
     contextType: ContextType = "project",
   ) {
-    this.contexts.set(name, { collection, contextType });
+    this.#contexts.set(name, { collection, contextType });
   }
 
   unregister(name: string) {
-    this.contexts.delete(name);
+    this.#contexts.delete(name);
   }
 
   // ── active document ──────────────────────────────────
 
   setActiveDocument(name: string | null) {
-    this.activeDocument = name;
+    this.#activeDocument = name;
   }
 
   getActiveDocument(): string | null {
-    return this.activeDocument;
+    return this.#activeDocument;
   }
 
   // ── timeline bookkeeping ─────────────────────────────
@@ -89,21 +89,21 @@ export class UnifiedUndoManager {
     // adding to the timeline. A batch op (e.g. pasting N folders) advances
     // the collection's Travels by N positions, so the entry must remember
     // N so undo/redo can step that far back/forward.
-    if (this.transactionStack > 0) {
-      this.transactionBuffer.set(
+    if (this.#transactionStack > 0) {
+      this.#transactionBuffer.set(
         context,
-        (this.transactionBuffer.get(context) ?? 0) + 1,
+        (this.#transactionBuffer.get(context) ?? 0) + 1,
       );
       return;
     }
 
-    this.undoTimeline.push({
+    this.#undoTimeline.push({
       contexts: [context],
       steps: { [context]: 1 },
       timestamp: Date.now(),
     });
     // A new mutation clears the redo stack
-    this.redoTimeline.length = 0;
+    this.#redoTimeline.length = 0;
   }
 
   // ── transaction support ─────────────────────────────────
@@ -116,7 +116,7 @@ export class UnifiedUndoManager {
    * Calls can be nested — only the outermost `endTransaction` flushes.
    */
   beginTransaction() {
-    this.transactionStack++;
+    this.#transactionStack++;
   }
 
   /**
@@ -126,45 +126,45 @@ export class UnifiedUndoManager {
    * undoes/redoes as one action).
    */
   endTransaction() {
-    if (this.transactionStack === 0) {
+    if (this.#transactionStack === 0) {
       console.warn(
         "UnifiedUndoManager.endTransaction() called without a matching beginTransaction()",
       );
       return;
     }
 
-    this.transactionStack--;
+    this.#transactionStack--;
 
-    if (this.transactionStack > 0) return; // still inside a nested transaction
+    if (this.#transactionStack > 0) return; // still inside a nested transaction
 
     // Flush the buffer — one timeline entry for the whole transaction,
     // regardless of how many distinct contexts were mutated.
-    if (this.transactionBuffer.size > 0) {
-      this.undoTimeline.push({
-        contexts: [...this.transactionBuffer.keys()],
-        steps: Object.fromEntries(this.transactionBuffer),
+    if (this.#transactionBuffer.size > 0) {
+      this.#undoTimeline.push({
+        contexts: [...this.#transactionBuffer.keys()],
+        steps: Object.fromEntries(this.#transactionBuffer),
         timestamp: Date.now(),
       });
     }
-    this.redoTimeline.length = 0;
-    this.transactionBuffer.clear();
+    this.#redoTimeline.length = 0;
+    this.#transactionBuffer.clear();
   }
 
   /**
    * Record that a collection just undid or redid a step.
    * Called internally by `undo()` / `redo()` — not meant for external use.
    */
-  private recordMove(direction: "undo" | "redo", entry: UndoRedoRecord) {
+  #recordMove(direction: "undo" | "redo", entry: UndoRedoRecord) {
     const timestamp = Date.now();
 
     if (direction === "undo") {
-      const index = this.undoTimeline.indexOf(entry);
-      if (index >= 0) this.undoTimeline.splice(index, 1);
-      this.redoTimeline.push({ ...entry, timestamp });
+      const index = this.#undoTimeline.indexOf(entry);
+      if (index >= 0) this.#undoTimeline.splice(index, 1);
+      this.#redoTimeline.push({ ...entry, timestamp });
     } else {
-      const index = this.redoTimeline.indexOf(entry);
-      if (index >= 0) this.redoTimeline.splice(index, 1);
-      this.undoTimeline.push({ ...entry, timestamp });
+      const index = this.#redoTimeline.indexOf(entry);
+      if (index >= 0) this.#redoTimeline.splice(index, 1);
+      this.#undoTimeline.push({ ...entry, timestamp });
     }
   }
 
@@ -183,15 +183,15 @@ export class UnifiedUndoManager {
    * back each collection in reverse order.
    */
   undo() {
-    const entry = this.peekUndoTimeline();
+    const entry = this.#peekUndoTimeline();
     if (!entry) return;
 
-    this.recordMove("undo", entry);
+    this.#recordMove("undo", entry);
 
     // Undo in reverse of the order the contexts were mutated, stepping each
     // collection back by the number of positions it advanced for this entry.
     for (const context of [...entry.contexts].reverse()) {
-      const ctx = this.contexts.get(context);
+      const ctx = this.#contexts.get(context);
       if (!ctx) continue;
       const steps = entry.steps[context] ?? 1;
       for (let i = 0; i < steps; i++) ctx.collection.undo();
@@ -202,15 +202,15 @@ export class UnifiedUndoManager {
    * Redo the most recently undone mutation.
    */
   redo() {
-    const entry = this.peekRedoTimeline();
+    const entry = this.#peekRedoTimeline();
     if (!entry) return;
 
-    this.recordMove("redo", entry);
+    this.#recordMove("redo", entry);
 
     // Redo in the original mutation order, stepping each collection forward
     // by the number of positions it moved for this entry.
     for (const context of entry.contexts) {
-      const ctx = this.contexts.get(context);
+      const ctx = this.#contexts.get(context);
       if (!ctx) continue;
       const steps = entry.steps[context] ?? 1;
       for (let i = 0; i < steps; i++) ctx.collection.redo();
@@ -220,58 +220,58 @@ export class UnifiedUndoManager {
   /**
    * Walk the timeline from the end looking for the best entry to undo.
    */
-  private peekUndoTimeline(): UndoRedoRecord | undefined {
-    if (this.undoTimeline.length === 0) return undefined;
+  #peekUndoTimeline(): UndoRedoRecord | undefined {
+    if (this.#undoTimeline.length === 0) return undefined;
 
     // If there is an active document, prefer undoing from it first
-    if (this.activeDocument) {
-      for (let i = this.undoTimeline.length - 1; i >= 0; i--) {
-        const entry = this.undoTimeline[i];
-        if (entry.contexts.includes(this.activeDocument)) {
-          const ctx = this.contexts.get(this.activeDocument);
+    if (this.#activeDocument) {
+      for (let i = this.#undoTimeline.length - 1; i >= 0; i--) {
+        const entry = this.#undoTimeline[i];
+        if (entry.contexts.includes(this.#activeDocument)) {
+          const ctx = this.#contexts.get(this.#activeDocument);
           if (ctx && ctx.contextType === "document") return entry;
         }
       }
     }
 
     // Fall through to the most recent entry regardless of context type
-    return this.undoTimeline[this.undoTimeline.length - 1];
+    return this.#undoTimeline[this.#undoTimeline.length - 1];
   }
 
-  private peekRedoTimeline(): UndoRedoRecord | undefined {
-    if (this.redoTimeline.length === 0) return undefined;
+  #peekRedoTimeline(): UndoRedoRecord | undefined {
+    if (this.#redoTimeline.length === 0) return undefined;
 
     // Mirror of peekTimeline: prefer redoing the active document first
-    if (this.activeDocument) {
-      for (let i = this.redoTimeline.length - 1; i >= 0; i--) {
-        const entry = this.redoTimeline[i];
-        if (entry.contexts.includes(this.activeDocument)) {
-          const ctx = this.contexts.get(this.activeDocument);
+    if (this.#activeDocument) {
+      for (let i = this.#redoTimeline.length - 1; i >= 0; i--) {
+        const entry = this.#redoTimeline[i];
+        if (entry.contexts.includes(this.#activeDocument)) {
+          const ctx = this.#contexts.get(this.#activeDocument);
           if (ctx && ctx.contextType === "document") return entry;
         }
       }
     }
 
-    return this.redoTimeline[this.redoTimeline.length - 1];
+    return this.#redoTimeline[this.#redoTimeline.length - 1];
   }
 
   // ── query helpers ────────────────────────────────────
 
   canUndo(): boolean {
-    return this.peekUndoTimeline() !== undefined;
+    return this.#peekUndoTimeline() !== undefined;
   }
 
   canRedo(): boolean {
-    return this.peekRedoTimeline() !== undefined;
+    return this.#peekRedoTimeline() !== undefined;
   }
 
   /** Snapshot of the unified timeline (newest last). */
   getTimeline(): readonly UndoRedoRecord[] {
-    return this.undoTimeline;
+    return this.#undoTimeline;
   }
 
   /** Snapshot of the redo stack (newest last). */
   getRedoTimeline(): readonly UndoRedoRecord[] {
-    return this.redoTimeline;
+    return this.#redoTimeline;
   }
 }

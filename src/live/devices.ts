@@ -13,7 +13,7 @@ import {
 } from "$lib/util/neverThrow";
 import { deviceManager } from "../hooks.server";
 import {
-  type DeviceOptions,
+  type DeviceConfigInput,
   type DeviceStatus,
 } from "$lib/server/drivers/driver";
 
@@ -76,16 +76,15 @@ export const applyDevicePatches = live(
     }
 
     const id = patch.path[0].toString();
-    const value = patch.value as DeviceOptions;
+    const value = patch.value as DeviceConfigInput;
 
     if (patch.op === "add") {
-      const result = deviceManager.addDevice(value);
+      const result = await deviceManager.addDevice(value);
       if (result.isErr()) {
         logger.error(result.error);
         const reason = result.error.reason;
         switch (reason) {
           case "DB_ERROR":
-          case "INVALID_DRIVER_NAME":
           case "DEVICE_ALREADY_EXISTS":
           case "DRIVER_CREATE_ERROR":
           case "OPTIONS_PARSE_ERROR":
@@ -96,7 +95,7 @@ export const applyDevicePatches = live(
         }
       }
     } else if (patch.op === "remove") {
-      const result = deviceManager.removeDevice(id);
+      const result = await deviceManager.removeDevice(id);
       if (result.isErr()) {
         logger.error(result.error);
         const reason = result.error.reason;
@@ -111,14 +110,14 @@ export const applyDevicePatches = live(
         }
       }
     } else if (patch.op === "replace") {
-      const result = deviceManager.updateDevice(id, value);
+      const result = await deviceManager.updateDevice(id, value);
       if (result.isErr()) {
         logger.error(result.error);
         const reason = result.error.reason;
         switch (reason) {
           case "DB_ERROR":
+          case "DEVICE_NOT_FOUND":
           case "DRIVER_CREATE_ERROR":
-          case "INVALID_DRIVER_NAME":
           case "OPTIONS_PARSE_ERROR":
             return wireErr(result.error);
 

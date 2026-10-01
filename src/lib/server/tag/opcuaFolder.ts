@@ -9,11 +9,14 @@ export class OpcuaFolder {
   node: ClosureTableNode;
   uaObject: UAObject;
 
+  #addressSpace: AddressSpace;
+
   private constructor(
-    private addressSpace: AddressSpace,
+    addressSpace: AddressSpace,
     node: ClosureTableNode,
     uaObject: UAObject,
   ) {
+    this.#addressSpace = addressSpace;
     this.node = node;
     this.uaObject = uaObject;
   }
@@ -92,7 +95,7 @@ export class OpcuaFolder {
     }
 
     for (const p of parents.data) {
-      const parentNode = attempt(() => this.addressSpace.findNode(p.nodeId));
+      const parentNode = attempt(() => this.#addressSpace.findNode(p.nodeId));
       if (parentNode.error) {
         return err({
           reason: "OPCUA_DISPOSE_FAILED",
@@ -117,7 +120,7 @@ export class OpcuaFolder {
       }
     }
 
-    const deleted = attempt(() => this.addressSpace.deleteNode(this.uaObject));
+    const deleted = attempt(() => this.#addressSpace.deleteNode(this.uaObject));
     if (deleted.error) {
       return err({
         reason: "OPCUA_DISPOSE_FAILED",

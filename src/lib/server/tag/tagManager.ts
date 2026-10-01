@@ -14,29 +14,29 @@ import { publishTagValue } from "../../../live/tags";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
-  private tags: Map<string, Result<Tag, FailedTag>> = new Map();
-  private pathToId: Map<string, string> = new Map();
-  private folderManager: FolderManager | undefined;
+  #tags: Map<string, Result<Tag, FailedTag>> = new Map();
+  #pathToId: Map<string, string> = new Map();
+  #folderManager: FolderManager | undefined;
 
   constructor() {}
 
   initOpcuaServer(opcuaServer: OPCUAServer, folderManager: FolderManager) {
     this.opcuaServer = opcuaServer;
-    this.folderManager = folderManager;
+    this.#folderManager = folderManager;
   }
 
-  private buildPath(tagOptions: TagOptionsInput) {
-    if (!this.folderManager) {
+  #buildPath(tagOptions: TagOptionsInput) {
+    if (!this.#folderManager) {
       return err({
         reason: "FOLDER_MANAGER_NOT_INITIALISED",
         cause: `[TagManager] buildPath() folderManager not initalised, please call initOpcuaServer() first`,
       } as const satisfies NeverThrowError);
     }
     let path = tagOptions.name;
-    let folder = this.folderManager.get(tagOptions.folderId);
+    let folder = this.#folderManager.get(tagOptions.folderId);
     while (folder?.node.parentId) {
       path = folder.node.name + "/" + path;
-      folder = this.folderManager.get(folder.node.parentId);
+      folder = this.#folderManager.get(folder.node.parentId);
     }
     return ok("/" + path);
   }
@@ -45,7 +45,7 @@ export class TagManager {
    * Mirror tag value changes to the front end. Tag calls onChange on every
    * value or status change, we fan it out to the $live stream.
    */
-  private trackValue(tag: Result<Tag, FailedTag>) {
+  #trackValue(tag: Result<Tag, FailedTag>) {
     if (tag.isErr()) {
       publishTagValue(err(tag.error));
       return;
@@ -61,18 +61,18 @@ export class TagManager {
   // -------------------------
 
   getTagByPath(path: string) {
-    const id = this.pathToId.get(path);
+    const id = this.#pathToId.get(path);
     if (!id) {
       return err({
         reason: "TAG_NOT_FOUND",
         cause: `no tag at path ${path}`,
       } as const satisfies NeverThrowError);
     }
-    return ok(this.tags.get(id));
+    return ok(this.#tags.get(id));
   }
 
   getTagById(id: string) {
-    const tag = this.tags.get(id);
+    const tag = this.#tags.get(id);
     if (!tag) {
       return err({
         reason: "TAG_NOT_FOUND",
@@ -83,11 +83,11 @@ export class TagManager {
   }
 
   getAllTags() {
-    return Array.from(this.tags.values());
+    return Array.from(this.#tags.values());
   }
 
   idToPath(findId: string) {
-    return this.pathToId.entries().find(([id, path]) => id == findId)?.[0];
+    return this.#pathToId.entries().find(([id, path]) => id == findId)?.[0];
   }
   /*
   getClientTagByIdOrPath(lookup: string): ClientTag {
@@ -141,14 +141,14 @@ export class TagManager {
       } as const satisfies NeverThrowError);
     }
 
-    if (!this.folderManager) {
+    if (!this.#folderManager) {
       return err({
         reason: "FOLDER_MANAGER_NOT_INITIALISED",
         cause: `[TagManager] createTag() folderManager not initalised, please call initOpcuaServer() first`,
       } as const satisfies NeverThrowError);
     }
 
-    if (this.tags.has(opts.id)) {
+    if (this.#tags.has(opts.id)) {
       return err({
         reason: "TAG_ALREADY_EXISTS",
         cause: `Tag Already exists at ${opts.id} ${opts.name}`,
@@ -156,7 +156,7 @@ export class TagManager {
     }
 
     const newFolderId = opts.folderId ?? newId();
-    let opcuaFolder = this.folderManager.get(opts.folderId);
+    let opcuaFolder = this.#folderManager.get(opts.folderId);
 
     if (!opcuaFolder) {
       return err({
@@ -190,13 +190,13 @@ export class TagManager {
       Tag.create(this.opcuaServer, opcuaFolder, opts),
     );
 
-    this.trackValue(tag);
+    this.#trackValue(tag);
 
-    this.tags.set(opts.id, tag);
+    this.#tags.set(opts.id, tag);
 
-    const path = this.buildPath(opts);
+    const path = this.#buildPath(opts);
     if (path.isErr()) return err(path.error);
-    this.pathToId.set(path.value, opts.id);
+    this.#pathToId.set(path.value, opts.id);
 
     logger.info(
       `[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${path}`,
@@ -217,7 +217,7 @@ export class TagManager {
       } as const satisfies NeverThrowError);
     }
 
-    if (!this.folderManager) {
+    if (!this.#folderManager) {
       return err({
         reason: "FOLDER_MANAGER_NOT_INITIALISED",
         cause: `[TagManager] updateTag() folderManager not initalised, please call initOpcuaServer() first`,
@@ -239,7 +239,7 @@ export class TagManager {
       } as const satisfies NeverThrowError);
     }
 
-    const opcuaFolder = this.folderManager.get(tagUpdates.folderId);
+    const opcuaFolder = this.#folderManager.get(tagUpdates.folderId);
     if (!opcuaFolder)
       return err({
         reason: "OPCUA_FOLDER_NOT_FOUND",
@@ -249,7 +249,7 @@ export class TagManager {
     // const duplicate = this.checkDuplicate(tagUpdates, opcuaFolder);
     // if (duplicate.isErr()) return err(duplicate.error);
 
-    const oldTag = this.tags.get(id);
+    const oldTag = this.#tags.get(id);
     const oldPath = this.idToPath(id);
 
     if (oldTag?.isOk()) {
@@ -262,18 +262,18 @@ export class TagManager {
         logger.error(disposed.error);
       }
     }
-    this.tags.delete(id);
+    this.#tags.delete(id);
 
-    if (oldPath) this.pathToId.delete(oldPath);
+    if (oldPath) this.#pathToId.delete(oldPath);
 
     const updatedTag = this.tagConfigError(
       Tag.create(this.opcuaServer, opcuaFolder, tagUpdates),
     );
 
-    this.trackValue(updatedTag);
+    this.#trackValue(updatedTag);
 
-    this.tags.set(id, updatedTag);
-    this.pathToId.set(tagUpdates.name, id);
+    this.#tags.set(id, updatedTag);
+    this.#pathToId.set(tagUpdates.name, id);
 
     if (updatedTag.isErr()) {
       return err(updatedTag.error);
@@ -289,7 +289,7 @@ export class TagManager {
   deleteTag(id: string) {
     logger.trace(`[TagManager] deleteTag() ${id}`);
 
-    const tag = this.tags.get(id);
+    const tag = this.#tags.get(id);
 
     if (!tag)
       return err({
@@ -314,16 +314,16 @@ export class TagManager {
       }
     }
 
-    this.tags.delete(id);
+    this.#tags.delete(id);
     const oldPath = this.idToPath(id);
-    if (oldPath) this.pathToId.delete(oldPath);
+    if (oldPath) this.#pathToId.delete(oldPath);
 
     return ok(true);
   }
 
   // check if a tag has a duplicate name in
   checkDuplicate(tag: TagOptionsInput, folder: OpcuaFolder) {
-    for (const t of this.tags.values()) {
+    for (const t of this.#tags.values()) {
       if (t.isErr()) continue;
       if (
         t.value.name == tag.name &&
@@ -364,7 +364,7 @@ export class TagManager {
       } as const satisfies NeverThrowError);
     }
 
-    if (!this.folderManager) {
+    if (!this.#folderManager) {
       return err({
         reason: "FOLDER_MANAGER_NOT_INITIALISED",
         cause: `[TagManager] loadAllFromDb() folderManager not initalised, please call initOpcuaServer() first`,
@@ -380,19 +380,19 @@ export class TagManager {
     }
 
     for (const tagOpt of tagOptions.data) {
-      if (this.tags.has(tagOpt.id)) continue;
+      if (this.#tags.has(tagOpt.id)) continue;
 
-      const opcuaFolder = this.folderManager.get(tagOpt.folderId);
+      const opcuaFolder = this.#folderManager.get(tagOpt.folderId);
       if (!opcuaFolder) continue;
 
       const tag = this.tagConfigError(
         Tag.create(this.opcuaServer, opcuaFolder, tagOpt),
       );
 
-      this.trackValue(tag);
+      this.#trackValue(tag);
 
-      this.tags.set(tagOpt.id, tag);
-      this.pathToId.set(tagOpt.name, tagOpt.id);
+      this.#tags.set(tagOpt.id, tag);
+      this.#pathToId.set(tagOpt.name, tagOpt.id);
     }
 
     logger.info(

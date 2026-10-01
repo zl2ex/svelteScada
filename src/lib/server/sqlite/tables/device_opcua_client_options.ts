@@ -18,3 +18,12 @@ export const z_insertDeviceOpcuaClientOptions = createInsertSchema(
     endpointUrl: (s) => s.default("opc.tcp://localhost:4840"),
   },
 );
+
+/**
+ * The same options without the `deviceId` foreign key. `deviceId` is owned by
+ * the devices row, not by the user, so drivers and the client work with this
+ * shape and the id is attached when the row is written.
+ */
+export const z_deviceOpcuaClientOptions = z_insertDeviceOpcuaClientOptions.omit({
+  deviceId: true,
+});

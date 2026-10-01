@@ -41,3 +41,12 @@ export const z_insertDeviceModbusTcpOptions = createInsertSchema(
     swapWords: (s) => s.default(false),
   },
 );
+
+/**
+ * The same options without the `deviceId` foreign key. `deviceId` is owned by
+ * the devices row, not by the user, so drivers and the client work with this
+ * shape and the id is attached when the row is written.
+ */
+export const z_deviceModbusTcpOptions = z_insertDeviceModbusTcpOptions.omit({
+  deviceId: true,
+});

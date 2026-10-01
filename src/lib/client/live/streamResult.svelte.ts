@@ -64,7 +64,6 @@ class StreamResult<S> {
   #value: Payload<S> | null = null;
   #error: RpcError | null = null;
   #connection: ConnectionStatus = "loading";
-  #fatal: RpcError | null = null;
 
   /**
    * The factory reads the key it subscribes with, so changing that key re-runs

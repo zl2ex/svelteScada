@@ -10,12 +10,18 @@ import {
 } from "node-opcua-client";
 
 import { logger } from "../../pino/logger";
-import type { OPCUAServer, NodeIdLike } from "node-opcua";
+import type { NodeIdLike } from "node-opcua";
 import z from "zod";
 import { err, ok, type Result } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import type { Tag } from "../../tag/tag";
+import type { BaseTypeStrings } from "$lib/server/tag/tag";
+import {
+  BaseDriver,
+  type DriverVariable,
+  type SubscribeOptions,
+} from "../baseDriver";
 
 const nodeIdToMonitor = "ns=2;g=1D545837-3EDB-43F5-A4B8-073C0775FCBE";
 
@@ -27,31 +33,30 @@ export type OpcuaClientDriverOptions = z.infer<
   typeof Z_OpcuaClientDriverOptions
 >;
 
-export type OpcuaClientDriverError =
-  | { reason: "NOT_IMPLEMENTED"; cause: string }
-  | { reason: "CLIENT_NOT_INITIALISED"; cause: string }
-  | { reason: "SESSION_NOT_INITIALISED"; cause: string }
-  | { reason: "CONNECT_FAILED"; cause: string }
-  | { reason: "SESSION_CREATE_FAILED"; cause: string }
-  | { reason: "SUBSCRIPTION_CREATE_FAILED"; cause: string }
-  | { reason: "MONITOR_FAILED"; cause: string }
-  | { reason: "BROWSE_FAILED"; cause: string }
-  | { reason: "BROWSE_RECURSE_FAILED"; cause: string }
-  | { reason: "DISCONNECT_FAILED"; cause: string };
+export type OpcuaClientDriverError = NeverThrowError & {
+  reason:
+    | "NOT_IMPLEMENTED"
+    | "CLIENT_NOT_INITIALISED"
+    | "SESSION_NOT_INITIALISED"
+    | "CONNECT_FAILED"
+    | "SESSION_CREATE_FAILED"
+    | "SUBSCRIPTION_CREATE_FAILED"
+    | "MONITOR_FAILED"
+    | "BROWSE_FAILED"
+    | "BROWSE_RECURSE_FAILED"
+    | "DISCONNECT_FAILED";
+};
 
-type ConnectionListener = (connected: boolean) => void;
-
-export class OpcuaClientDriver {
+export class OpcuaClientDriver extends BaseDriver<
+  OpcuaClientDriverOptions,
+  "opcuaClientDriver"
+> {
   client: OPCUAClient | undefined;
   session: ClientSession | undefined;
-  connected = false;
   subscription: ClientSubscription | undefined;
-  options: OpcuaClientDriverOptions;
-  /** fired whenever `connected` flips, see onConnectedChange() */
-  private connectionListeners = new Set<ConnectionListener>();
 
-  constructor(opcuaServer: OPCUAServer, options: OpcuaClientDriverOptions) {
-    this.options = options;
+  constructor(options: OpcuaClientDriverOptions) {
+    super("opcuaClientDriver", options);
     const client = attempt(() =>
       OPCUAClient.create({ endpointMustExist: false }),
     );
@@ -62,34 +67,6 @@ export class OpcuaClientDriver {
       return;
     }
     this.client = client.data;
-  }
-
-  /**
-   * Subscribe to connection state changes. Called once immediately with the
-   * current state, then on every change. Returns an unsubscribe function.
-   */
-  onConnectedChange(cb: ConnectionListener) {
-    const entry: ConnectionListener = (connected) => cb(connected);
-    this.connectionListeners.add(entry);
-    entry(this.connected);
-    return () => {
-      this.connectionListeners.delete(entry);
-    };
-  }
-
-  private setConnected(next: boolean) {
-    if (this.connected === next) return;
-    this.connected = next;
-    for (const cb of this.connectionListeners) {
-      try {
-        cb(next);
-      } catch (e) {
-        logger.error(
-          e,
-          `[opcuaClientDriver] connection listener for ${this.options.endpointUrl} threw`,
-        );
-      }
-    }
   }
 
   async connect() {
@@ -318,6 +295,18 @@ export class OpcuaClientDriver {
     return ok(undefined);
   }
 
+  subscribe(
+    _path: string,
+    _dataType: BaseTypeStrings,
+    _opts?: SubscribeOptions,
+  ) {
+    logger.warn(`[OpcuaClientDriver] subscribe() not implemented yet`);
+    return err({
+      reason: "NOT_IMPLEMENTED",
+      cause: `[OpcuaClientDriver] subscribe() not implemented yet`,
+    } as const satisfies OpcuaClientDriverError);
+  }
+
   subscribeByTag(tag: Tag, parent?: NodeIdLike) {
     logger.warn(`[OpcuaClientDriver] subscribeByTag() not implemented yet`);
     return err({
@@ -332,8 +321,7 @@ export class OpcuaClientDriver {
   }
 
   dispose() {
-    this.setConnected(false);
-    this.connectionListeners.clear();
+    super.dispose();
     logger.debug(`[opcuaClientDriver] dispose()`);
     void this.disconnect().then((disconnected) => {
       if (disconnected.isErr()) {

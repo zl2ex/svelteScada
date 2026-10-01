@@ -1,4 +1,4 @@
-import type { DeviceOptions } from "$lib/server/drivers/driver";
+import type { DeviceConfigInput } from "$lib/server/drivers/driver";
 import { deviceManager } from "../../../../hooks.server";
 
 export async function load() {
@@ -15,7 +15,7 @@ export async function load() {
         map[device.id] = device;
         return map;
       },
-      {} as Record<string, DeviceOptions>,
+      {} as Record<string, DeviceConfigInput>,
     ),
   };
 }

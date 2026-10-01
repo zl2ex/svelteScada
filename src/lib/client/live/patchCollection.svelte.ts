@@ -57,20 +57,20 @@ export class PatchCollection<
   state = $state<Record<string, T>>({});
   syncError = $state<string | NeverThrowError | null>(null);
 
-  private travels!: Travels<Record<string, T>>;
-  private prevPosition = 0;
-  private applyPatch: PatchCollectionOptions<T, E>["applyPatch"];
-  private onMutation?: () => void;
-  private onError?: (error: E) => void;
-  private unsubscribeTravels?: () => void;
-  private unsubscribePatches?: () => void;
+  #travels!: Travels<Record<string, T>>;
+  #prevPosition = 0;
+  #applyPatch: PatchCollectionOptions<T, E>["applyPatch"];
+  #onMutation?: () => void;
+  #onError?: (error: E) => void;
+  #unsubscribeTravels?: () => void;
+  #unsubscribePatches?: () => void;
 
   constructor(options: PatchCollectionOptions<T, E>) {
     Object.assign(this.state, options.initial);
 
-    this.applyPatch = options.applyPatch;
-    this.onMutation = options.onMutation;
-    this.onError = options.onError;
+    this.#applyPatch = options.applyPatch;
+    this.#onMutation = options.onMutation;
+    this.#onError = options.onError;
 
     const created = attempt(() =>
       createTravels(this.state, {
@@ -85,36 +85,36 @@ export class PatchCollection<
       } as const satisfies NeverThrowError;
       return;
     }
-    this.travels = created.data;
-    this.prevPosition = this.travels.getPosition();
+    this.#travels = created.data;
+    this.#prevPosition = this.#travels.getPosition();
 
-    this.unsubscribeTravels = this.travels.subscribe((event) => {
-      const patches = this.travels.getPatches();
+    this.#unsubscribeTravels = this.#travels.subscribe((event) => {
+      const patches = this.#travels.getPatches();
 
-      if (event.position > this.prevPosition) {
+      if (event.position > this.#prevPosition) {
         // foward
-        this.dispatchOps(
-          patches.patches[this.prevPosition],
-          patches.inversePatches[this.prevPosition],
+        this.#dispatchOps(
+          patches.patches[this.#prevPosition],
+          patches.inversePatches[this.#prevPosition],
         );
-      } else if (event.position == this.prevPosition) {
+      } else if (event.position == this.#prevPosition) {
         // full histroy buffer
-        this.dispatchOps(
-          patches.patches[this.prevPosition - 1],
-          patches.inversePatches[this.prevPosition - 1],
+        this.#dispatchOps(
+          patches.patches[this.#prevPosition - 1],
+          patches.inversePatches[this.#prevPosition - 1],
         );
       } else {
         // reverse
-        this.dispatchOps(
+        this.#dispatchOps(
           patches.inversePatches[event.position],
           patches.patches[event.position],
         );
       }
 
-      this.prevPosition = event.position;
+      this.#prevPosition = event.position;
     });
 
-    this.unsubscribePatches = options.subscribePatches((payload) => {
+    this.#unsubscribePatches = options.subscribePatches((payload) => {
       if (!payload) return;
       this.mutateState((state) => {
         const merged = attempt(() =>
@@ -138,8 +138,8 @@ export class PatchCollection<
   // Travels notifies synchronously from inside a mutation, so the sends
   // cannot be awaited there - capture their outcome instead of letting a
   // rejection escape unhandled.
-  private dispatchOps(ops: Ops, inverseOps: Ops) {
-    attempt(() => this.sendOps(ops, inverseOps)).then((sent) => {
+  #dispatchOps(ops: Ops, inverseOps: Ops) {
+    attempt(() => this.#sendOps(ops, inverseOps)).then((sent) => {
       if (sent.error) {
         this.syncError = {
           reason: "PATCH_SEND_FAILED",
@@ -149,7 +149,7 @@ export class PatchCollection<
     });
   }
 
-  private revertOps(inverseOps: Ops, index: number) {
+  #revertOps(inverseOps: Ops, index: number) {
     const reverted = attempt(() =>
       apply(this.state, inverseOps.slice(index, index + 1), { mutable: true }),
     );
@@ -161,14 +161,14 @@ export class PatchCollection<
     }
   }
 
-  private async sendOps(ops: Ops, inverseOps: Ops) {
+  async #sendOps(ops: Ops, inverseOps: Ops) {
     let hadError = false;
     for (let i = 0; i < ops.length; i++) {
-      const sent = await attempt(() => this.applyPatch(ops[i]));
+      const sent = await attempt(() => this.#applyPatch(ops[i]));
 
       if (sent.error) {
         hadError = true;
-        this.revertOps(inverseOps, i);
+        this.#revertOps(inverseOps, i);
         this.syncError = {
           reason: "PATCH_SEND_FAILED",
           cause: errorToString(sent.error),
@@ -188,7 +188,7 @@ export class PatchCollection<
         // batch, so revert only the failing op locally and keep going —
         // later ops are still sent and applied.
         hadError = true;
-        this.revertOps(inverseOps, i);
+        this.#revertOps(inverseOps, i);
 
         if (res.error instanceof RpcError) {
           this.syncError = res.error.code;
@@ -201,7 +201,7 @@ export class PatchCollection<
           description: neverThrowErrorToString(this.syncError),
           duration: 3000,
         });
-        this.onError?.(res.error);
+        this.#onError?.(res.error);
       }
     }
     if (!hadError) this.syncError = null;
@@ -217,7 +217,7 @@ export class PatchCollection<
     label?: string,
   ) {
     const tracked = attempt(() =>
-      this.travels.setState(fn as any, label ? { label } : undefined),
+      this.#travels.setState(fn as any, label ? { label } : undefined),
     );
     if (tracked.error) {
       this.syncError = {
@@ -226,7 +226,7 @@ export class PatchCollection<
       } as const satisfies NeverThrowError;
       return;
     }
-    this.onMutation?.();
+    this.#onMutation?.();
   }
 
   // Generic escape hatch: UNTRACKED mutation. Bypasses Travels entirely —
@@ -289,7 +289,7 @@ export class PatchCollection<
   }
 
   undo() {
-    const undone = attempt(() => this.travels.back());
+    const undone = attempt(() => this.#travels.back());
     if (undone.error) {
       this.syncError = {
         reason: "TRAVELS_BACK_FAILED",
@@ -299,7 +299,7 @@ export class PatchCollection<
   }
 
   redo() {
-    const redone = attempt(() => this.travels.forward());
+    const redone = attempt(() => this.#travels.forward());
     if (redone.error) {
       this.syncError = {
         reason: "TRAVELS_FORWARD_FAILED",
@@ -309,11 +309,11 @@ export class PatchCollection<
   }
 
   canUndo() {
-    return this.travels.canBack();
+    return this.#travels.canBack();
   }
 
   canRedo() {
-    return this.travels.canForward();
+    return this.#travels.canForward();
   }
 
   [Symbol.dispose]() {
@@ -325,7 +325,7 @@ export class PatchCollection<
   // when a tab closes. Module-level singletons (like a global tags
   // collection) generally never need to call this.
   dispose() {
-    this.unsubscribeTravels?.();
-    this.unsubscribePatches?.();
+    this.#unsubscribeTravels?.();
+    this.#unsubscribePatches?.();
   }
 }

@@ -1,44 +1,42 @@
-import type { OPCUAServer, NodeIdLike } from "node-opcua";
 import { err, ok } from "neverthrow";
 import { z } from "zod";
+import type { NodeIdLike } from "node-opcua";
 import {
-  z_insertDeviceModbusRtuOptions,
-  type DeviceModbusRtuOptionsSelect,
+  z_deviceModbusRtuOptions,
 } from "$lib/server/sqlite/tables";
 import { logger } from "../../pino/logger";
 import type { Tag } from "../../tag/tag";
 import type { NeverThrowError } from "$lib/util/neverThrow";
+import type { BaseTypeStrings } from "$lib/server/tag/tag";
+import {
+  BaseDriver,
+  type DriverValue,
+  type DriverVariable,
+  type SubscribeOptions,
+} from "../baseDriver";
 
-type RegisterType = "hr" | "ir" | "co" | "di";
-
-export type ModbusRTUDriverOptions = z.input<
-  typeof z_insertDeviceModbusRtuOptions
->;
+/**
+ * What a caller may hand to `create()`: every field is optional and gets
+ * defaulted.
+ */
+export type ModbusRTUDriverOptions = z.input<typeof z_deviceModbusRtuOptions>;
+/** What the driver actually runs on: defaulted, so nothing is optional. */
+export type ModbusRTUDriverConfig = z.output<typeof z_deviceModbusRtuOptions>;
 
 export type ModbusRTUDriverError = NeverThrowError & {
-  reason: "OPTIONS_PARSE_ERROR" | "NOT_IMPLEMENTED";
   options: ModbusRTUDriverOptions;
 };
-type ConnectionListener = (connected: boolean) => void;
 
-export class ModbusRTUDriver {
-  connected: boolean = false;
-  options: DeviceModbusRtuOptionsSelect;
-  /** fired whenever `connected` flips, see onConnectedChange() */
-  private connectionListeners = new Set<ConnectionListener>();
-
-  private constructor(
-    private opcuaServer: OPCUAServer,
-    options: DeviceModbusRtuOptionsSelect,
-  ) {
-    this.options = options;
+export class ModbusRTUDriver extends BaseDriver<
+  ModbusRTUDriverConfig,
+  "ModbusRTUDriver"
+> {
+  private constructor(options: ModbusRTUDriverConfig) {
+    super("ModbusRTUDriver", options);
   }
 
-  static create(
-    opcuaServer: OPCUAServer,
-    opts: z.input<typeof z_insertDeviceModbusRtuOptions>,
-  ) {
-    const parsed = z_insertDeviceModbusRtuOptions.safeParse(opts);
+  static create(opts: ModbusRTUDriverOptions) {
+    const parsed = z_deviceModbusRtuOptions.safeParse(opts);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
@@ -46,43 +44,10 @@ export class ModbusRTUDriver {
         options: opts,
       } as const satisfies ModbusRTUDriverError);
     }
-    return ok(
-      new ModbusRTUDriver(
-        opcuaServer,
-        parsed.data as DeviceModbusRtuOptionsSelect,
-      ),
-    );
+    return ok(new ModbusRTUDriver(parsed.data));
   }
 
-  /**
-   * Subscribe to connection state changes. Called once immediately with the
-   * current state, then on every change. Returns an unsubscribe function.
-   */
-  onConnectedChange(cb: ConnectionListener) {
-    const entry: ConnectionListener = (connected) => cb(connected);
-    this.connectionListeners.add(entry);
-    entry(this.connected);
-    return () => {
-      this.connectionListeners.delete(entry);
-    };
-  }
-
-  private setConnected(next: boolean) {
-    if (this.connected === next) return;
-    this.connected = next;
-    for (const cb of this.connectionListeners) {
-      try {
-        cb(next);
-      } catch (e) {
-        logger.error(
-          e,
-          `[ModbusRTUDriver] connection listener for ${this.options.serialPort} threw`,
-        );
-      }
-    }
-  }
-
-  connect() {
+  async connect() {
     // TD WIP Not implemented yet
     logger.warn(`[ModbusRTUDriver] connect() not implemented yet`);
     return err({
@@ -92,10 +57,23 @@ export class ModbusRTUDriver {
     } as const satisfies ModbusRTUDriverError);
   }
 
-  disconnect() {
+  async disconnect() {
     this.setConnected(false);
     logger.warn(`[ModbusRTUDriver] disconnect() not implemented yet`);
     return ok(undefined);
+  }
+
+  subscribe(
+    _path: string,
+    _dataType: BaseTypeStrings,
+    _opts?: SubscribeOptions,
+  ) {
+    logger.warn(`[ModbusRTUDriver] subscribe() not implemented yet`);
+    return err({
+      reason: "NOT_IMPLEMENTED",
+      cause: `[ModbusRTUDriver] subscribe() not implemented yet`,
+      options: this.options,
+    } as const satisfies ModbusRTUDriverError);
   }
 
   subscribeByTag(tag: Tag, parent?: NodeIdLike) {
@@ -112,15 +90,5 @@ export class ModbusRTUDriver {
     // TD WIP Not implemented yet
     logger.warn(`[ModbusRTUDriver] unsubscribeByTag() not implemented yet`);
     return ok(undefined);
-  }
-
-  dispose() {
-    this.setConnected(false);
-    this.connectionListeners.clear();
-    logger.trace(`[ModbusRTUDriver] dispose()`);
-  }
-
-  [Symbol.dispose]() {
-    this.dispose();
   }
 }

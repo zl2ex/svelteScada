@@ -5,8 +5,7 @@ import { err, ok } from "neverthrow";
 import { z } from "zod";
 import { logger } from "../../pino/logger";
 import {
-  z_insertDeviceModbusTcpOptions,
-  type DeviceModbusTcpOptionsSelect,
+  z_deviceModbusTcpOptions,
 } from "$lib/server/sqlite/tables";
 import { attempt } from "$lib/util/attempt";
 import {
@@ -15,12 +14,15 @@ import {
   type NeverThrowError,
 } from "$lib/util/neverThrow";
 import type { BaseTypeMap } from "$lib/server/tag/tag";
-import type {
-  DriverVariable,
-  DriverWriteError,
-  Reading,
-  SubscribeOptions,
-} from "../driver";
+import {
+  BaseDriver,
+  type DriverDisconnectError,
+  type DriverValue,
+  type DriverVariable,
+  type DriverWriteError,
+  type Reading,
+  type SubscribeOptions,
+} from "../baseDriver";
 
 /* -------------------------------------------------------------------------- */
 /*  Public types                                                              */
@@ -34,9 +36,13 @@ type ModbusValue = BaseTypeMap[ModbusDataType];
 export const Z_Endian = z.literal(["BigEndian", "LittleEndian"]);
 export type Endian = z.infer<typeof Z_Endian>;
 
-export type ModbusTCPDriverOptions = z.input<
-  typeof z_insertDeviceModbusTcpOptions
->;
+/**
+ * What a caller may hand to `create()`: every field is optional and gets
+ * defaulted.
+ */
+export type ModbusTCPDriverOptions = z.input<typeof z_deviceModbusTcpOptions>;
+/** What the driver actually runs on: defaulted, so nothing is optional. */
+export type ModbusTCPDriverConfig = z.output<typeof z_deviceModbusTcpOptions>;
 export type ModbusTCPDriverError = NeverThrowError & {
   options: ModbusTCPDriverOptions;
 };
@@ -254,47 +260,44 @@ const MAX_BITS_PER_READ = 2000;
 /*  Driver                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export class ModbusTCPDriver {
-  private client: ModbusTCPClient;
-  private socket: net.Socket;
-  private subs = new Map<string, Sub>();
+export class ModbusTCPDriver extends BaseDriver<
+  ModbusTCPDriverConfig,
+  "ModbusTCPDriver"
+> {
+  #client: ModbusTCPClient;
+  #socket: net.Socket;
+  #subs = new Map<string, Sub>();
 
-  private pollTimer?: NodeJS.Timeout;
-  private polling = false;
-  private reconnectTimer?: NodeJS.Timeout;
-  private shouldReconnect = false;
-  private disposed = false;
+  #pollTimer?: NodeJS.Timeout;
+  #polling = false;
+  #reconnectTimer?: NodeJS.Timeout;
+  #shouldReconnect = false;
 
   /** serialises every request on the socket (polls and writes) */
-  private queue: Promise<unknown> = Promise.resolve();
+  #queue: Promise<unknown> = Promise.resolve();
 
-  options: DeviceModbusTcpOptionsSelect;
-  connected = false;
-  /** fired whenever `connected` flips, see onConnectedChange() */
-  private connectionListeners = new Set<ConnectionListener>();
+  private constructor(config: ModbusTCPDriverConfig) {
+    super("ModbusTCPDriver", config);
 
-  private constructor(config: DeviceModbusTcpOptionsSelect) {
-    this.options = config;
+    this.#socket = new net.Socket();
+    this.#client = new Modbus.client.TCP(this.#socket, this.options.unitId);
 
-    this.socket = new net.Socket();
-    this.client = new Modbus.client.TCP(this.socket, this.options.unitId);
-
-    this.socket.on("connect", () => {
+    this.#socket.on("connect", () => {
       this.setConnected(true);
       logger.info(
         `[ModbusTCPDriver] Connected to Modbus device at ${this.options.ip}:${this.options.port}`,
       );
-      this.startPolling();
+      this.#startPolling();
     });
-    this.socket.on("error", (e) => {
+    this.#socket.on("error", (e) => {
       logger.debug(`[ModbusTCPDriver] socket error: ${e.message}`);
-      this.onSocketDown();
+      this.#onSocketDown();
     });
-    this.socket.on("close", () => this.onSocketDown());
+    this.#socket.on("close", () => this.#onSocketDown());
   }
 
   static create(opts: ModbusTCPDriverOptions) {
-    const parsed = z_insertDeviceModbusTcpOptions.safeParse(opts);
+    const parsed = z_deviceModbusTcpOptions.safeParse(opts);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
@@ -303,7 +306,7 @@ export class ModbusTCPDriver {
       } as const satisfies ModbusTCPDriverError);
     }
     const created = attempt(
-      () => new ModbusTCPDriver(parsed.data as DeviceModbusTcpOptionsSelect),
+      () => new ModbusTCPDriver(parsed.data as ModbusTCPDriverConfig),
     );
     if (created.error) {
       return err({
@@ -315,57 +318,22 @@ export class ModbusTCPDriver {
     return ok(created.data);
   }
 
-  [Symbol.dispose]() {
-    this.dispose();
-  }
-
   dispose() {
-    this.disposed = true;
-    this.shouldReconnect = false;
-    this.setConnected(false);
-    this.connectionListeners.clear();
-    this.stopPolling();
-    clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = undefined;
-    this.publishAll(StatusCodes.BadConditionDisabled);
-    this.subs.clear();
-    this.socket.removeAllListeners();
-    this.socket.on("error", () => {}); // swallow late errors after teardown
-    this.socket.destroy();
-    logger.trace(`[ModbusTCPDriver] dispose()`);
+    super.dispose();
+    this.#shouldReconnect = false;
+    this.#stopPolling();
+    clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = undefined;
+    this.#publishAll(StatusCodes.BadConditionDisabled);
+    this.#subs.clear();
+    this.#socket.removeAllListeners();
+    this.#socket.on("error", () => {}); // swallow late errors after teardown
+    this.#socket.destroy();
   }
 
   /* ------------------------------ connection ------------------------------ */
 
-  /**
-   * Subscribe to connection state changes. Called once immediately with the
-   * current state, then on every change. Returns an unsubscribe function.
-   */
-  onConnectedChange(cb: ConnectionListener) {
-    const entry: ConnectionListener = (connected) => cb(connected);
-    this.connectionListeners.add(entry);
-    entry(this.connected);
-    return () => {
-      this.connectionListeners.delete(entry);
-    };
-  }
-
-  private setConnected(next: boolean) {
-    if (this.connected === next) return;
-    this.connected = next;
-    for (const cb of this.connectionListeners) {
-      try {
-        cb(next);
-      } catch (e) {
-        logger.error(
-          e,
-          `[ModbusTCPDriver] connection listener for ${this.options.ip}:${this.options.port} threw`,
-        );
-      }
-    }
-  }
-
-  connect() {
+  async connect() {
     if (this.disposed) {
       return err({
         reason: "CONNECT_DISPOSED",
@@ -373,28 +341,28 @@ export class ModbusTCPDriver {
         options: this.options,
       } as const satisfies ModbusTCPDriverError);
     }
-    this.shouldReconnect = true;
-    return this.openSocket();
+    this.#shouldReconnect = true;
+    return this.#openSocket();
   }
 
-  disconnect() {
-    this.shouldReconnect = false;
-    clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = undefined;
-    this.stopPolling();
+  async disconnect() {
+    this.#shouldReconnect = false;
+    clearTimeout(this.#reconnectTimer);
+    this.#reconnectTimer = undefined;
+    this.#stopPolling();
     this.setConnected(false);
-    this.publishAll(StatusCodes.BadConditionDisabled);
-    this.socket.destroy();
+    this.#publishAll(StatusCodes.BadConditionDisabled);
+    this.#socket.destroy();
     logger.info(
       `[ModbusTCPDriver] Disconnected from Modbus device at ${this.options.ip}:${this.options.port}`,
     );
-    return ok(true);
+    return ok(undefined);
   }
 
-  private openSocket() {
-    if (this.connected || this.socket.connecting) return ok(true);
+  #openSocket() {
+    if (this.connected || this.#socket.connecting) return ok(undefined);
     const connecting = attempt(() =>
-      this.socket.connect(this.options.port, this.options.ip),
+      this.#socket.connect(this.options.port, this.options.ip),
     );
     if (connecting.error) {
       this.setConnected(false);
@@ -406,26 +374,26 @@ export class ModbusTCPDriver {
         options: this.options,
       } as const satisfies ModbusTCPDriverError);
     }
-    return ok(true);
+    return ok(undefined);
   }
 
-  private onSocketDown() {
-    this.stopPolling();
+  #onSocketDown() {
+    this.#stopPolling();
     this.setConnected(false);
-    if (this.disposed || !this.shouldReconnect) return;
-    this.publishAll(StatusCodes.BadNotConnected);
-    this.scheduleReconnect();
+    if (this.disposed || !this.#shouldReconnect) return;
+    this.#publishAll(StatusCodes.BadNotConnected);
+    this.#scheduleReconnect();
   }
 
-  private scheduleReconnect() {
-    if (this.reconnectTimer) return; // already waiting to retry
+  #scheduleReconnect() {
+    if (this.#reconnectTimer) return; // already waiting to retry
     logger.warn(
       `[ModbusTCPDriver] connection to ${this.options.ip}:${this.options.port} down, retry in ${this.options.reconnectInervalMs} ms`,
     );
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = undefined;
-      if (!this.shouldReconnect) return;
-      const opened = this.openSocket();
+    this.#reconnectTimer = setTimeout(() => {
+      this.#reconnectTimer = undefined;
+      if (!this.#shouldReconnect) return;
+      const opened = this.#openSocket();
       if (opened.isErr()) {
         logger.error(opened.error.cause);
       }
@@ -435,7 +403,7 @@ export class ModbusTCPDriver {
   /* ------------------------------ subscribing ----------------------------- */
 
   getSubscriptions(): ModbusSubscriptionInfo[] {
-    return [...this.subs.values()].map((s) => ({
+    return [...this.#subs.values()].map((s) => ({
       key: s.key,
       registerType: s.registerType,
       address: s.address,
@@ -456,7 +424,7 @@ export class ModbusTCPDriver {
     dataType: D,
     opts: SubscribeOptions = {},
   ) {
-    const parsed = this.parsePath(path);
+    const parsed = this.#parsePath(path);
     if (parsed.isErr()) return err(parsed.error);
     const p = parsed.value;
 
@@ -516,7 +484,7 @@ export class ModbusTCPDriver {
       stringLength ?? "",
     ].join("|");
 
-    let sub = this.subs.get(key);
+    let sub = this.#subs.get(key);
     if (!sub) {
       sub = {
         ...p,
@@ -531,15 +499,15 @@ export class ModbusTCPDriver {
         },
         listeners: new Set(),
       };
-      this.subs.set(key, sub);
+      this.#subs.set(key, sub);
       logger.debug(`[ModbusTCPDriver] subscribe() new subscription ${key}`);
     }
     sub.refs++;
 
-    return ok(this.createHandle(sub) as DriverVariable<BaseTypeMap[D]>);
+    return ok(this.#createHandle(sub) as DriverVariable<BaseTypeMap[D]>);
   }
 
-  private createHandle(sub: Sub): DriverVariable<ModbusValue> {
+  #createHandle(sub: Sub): DriverVariable<ModbusValue> {
     const mine = new Set<Listener>();
     let released = false;
 
@@ -566,7 +534,7 @@ export class ModbusTCPDriver {
             opcuaStatus: StatusCodes.BadInternalError,
           } as const satisfies DriverWriteError);
         }
-        return await this.write(sub, value);
+        return await this.#write(sub, value);
       },
       release: () => {
         if (released) return;
@@ -574,8 +542,8 @@ export class ModbusTCPDriver {
         for (const l of mine) sub.listeners.delete(l);
         mine.clear();
         sub.refs--;
-        if (sub.refs <= 0 && this.subs.get(sub.key) === sub) {
-          this.subs.delete(sub.key);
+        if (sub.refs <= 0 && this.#subs.get(sub.key) === sub) {
+          this.#subs.delete(sub.key);
           logger.debug(
             `[ModbusTCPDriver] release() removed subscription ${sub.key}`,
           );
@@ -584,7 +552,7 @@ export class ModbusTCPDriver {
     };
   }
 
-  private publish(sub: Sub, next: Reading<ModbusValue>) {
+  #publish(sub: Sub, next: Reading<ModbusValue>) {
     if (
       Object.is(sub.last.value, next.value) &&
       sub.last.status.value === next.status.value
@@ -602,19 +570,19 @@ export class ModbusTCPDriver {
   }
 
   /** keep the last value, change only the status */
-  private publishStatus(sub: Sub, status: StatusCode) {
-    this.publish(sub, { value: sub.last.value, status });
+  #publishStatus(sub: Sub, status: StatusCode) {
+    this.#publish(sub, { value: sub.last.value, status });
   }
 
-  private publishAll(status: StatusCode) {
-    for (const sub of this.subs.values()) this.publishStatus(sub, status);
+  #publishAll(status: StatusCode) {
+    for (const sub of this.#subs.values()) this.#publishStatus(sub, status);
   }
 
   /* -------------------------------- queueing ------------------------------- */
 
-  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
-    const p = this.queue.then(fn);
-    this.queue = p.then(
+  #enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const p = this.#queue.then(fn);
+    this.#queue = p.then(
       () => {},
       () => {},
     );
@@ -623,46 +591,46 @@ export class ModbusTCPDriver {
 
   /* --------------------------------- polling ------------------------------- */
 
-  private startPolling() {
-    if (this.polling) return;
-    this.polling = true;
-    this.schedulePoll(0);
+  #startPolling() {
+    if (this.#polling) return;
+    this.#polling = true;
+    this.#schedulePoll(0);
     logger.info(
       `[ModbusTCPDriver] Started Modbus polling at ${this.options.pollingIntervalMs} ms interval`,
     );
   }
 
-  private stopPolling() {
-    if (!this.polling) return;
-    this.polling = false;
-    clearTimeout(this.pollTimer);
-    this.pollTimer = undefined;
+  #stopPolling() {
+    if (!this.#polling) return;
+    this.#polling = false;
+    clearTimeout(this.#pollTimer);
+    this.#pollTimer = undefined;
     logger.info("[ModbusTCPDriver] Stopped Modbus polling");
   }
 
   /** chained rather than setInterval so a slow device can never stack polls */
-  private schedulePoll(delay: number) {
-    this.pollTimer = setTimeout(async () => {
-      if (!this.polling) return;
+  #schedulePoll(delay: number) {
+    this.#pollTimer = setTimeout(async () => {
+      if (!this.#polling) return;
       try {
-        await this.poll();
+        await this.#poll();
       } catch (e) {
         logger.error(e, "[ModbusTCPDriver] poll() failed unexpectedly");
       }
-      if (this.polling) this.schedulePoll(this.options.pollingIntervalMs);
+      if (this.#polling) this.#schedulePoll(this.options.pollingIntervalMs);
     }, delay);
   }
 
-  private async poll() {
-    for (const batch of this.buildBatches()) {
+  async #poll() {
+    for (const batch of this.#buildBatches()) {
       if (!this.connected) return;
-      await this.readBatch(batch);
+      await this.#readBatch(batch);
     }
   }
 
-  private buildBatches(): Batch[] {
+  #buildBatches(): Batch[] {
     const byType = new Map<ModbusRegisterType, Sub[]>();
-    for (const sub of this.subs.values()) {
+    for (const sub of this.#subs.values()) {
       const list = byType.get(sub.registerType) ?? [];
       list.push(sub);
       byType.set(sub.registerType, list);
@@ -697,15 +665,15 @@ export class ModbusTCPDriver {
     return batches;
   }
 
-  private async readBatch(batch: Batch) {
-    const result = await this.readRaw(
+  async #readBatch(batch: Batch) {
+    const result = await this.#readRaw(
       batch.type,
       batch.start,
       batch.end - batch.start,
     );
 
     if (result.isOk()) {
-      for (const sub of batch.subs) this.applyRead(batch, sub, result.value);
+      for (const sub of batch.subs) this.#applyRead(batch, sub, result.value);
       return;
     }
 
@@ -716,7 +684,7 @@ export class ModbusTCPDriver {
     if (failure.deviceException && batch.subs.length > 1) {
       for (const sub of batch.subs) {
         if (!this.connected) return;
-        await this.readBatch({
+        await this.#readBatch({
           type: batch.type,
           start: sub.address,
           end: sub.address + sub.registerLength,
@@ -729,33 +697,33 @@ export class ModbusTCPDriver {
     logger.warn(
       `[ModbusTCPDriver] read ${batch.type}${batch.start}..${batch.end - 1} failed: ${neverThrowErrorToString(failure.cause)}`,
     );
-    for (const sub of batch.subs) this.publishStatus(sub, failure.opcuaStatus);
+    for (const sub of batch.subs) this.#publishStatus(sub, failure.opcuaStatus);
   }
 
-  private async readRaw(
+  async #readRaw(
     type: ModbusRegisterType,
     start: number,
     length: number,
   ) {
     const read = await attempt(() =>
-      this.enqueue(async (): Promise<RawRead> => {
+      this.#enqueue(async (): Promise<RawRead> => {
         switch (type) {
           case "hr": {
-            const r = await this.client.readHoldingRegisters(start, length);
+            const r = await this.#client.readHoldingRegisters(start, length);
             return {
               kind: "words",
               bytes: toBytes(r.response.body.valuesAsBuffer),
             };
           }
           case "ir": {
-            const r = await this.client.readInputRegisters(start, length);
+            const r = await this.#client.readInputRegisters(start, length);
             return {
               kind: "words",
               bytes: toBytes(r.response.body.valuesAsBuffer),
             };
           }
           case "co": {
-            const r = await this.client.readCoils(start, length);
+            const r = await this.#client.readCoils(start, length);
             return {
               kind: "bits",
               bits: Array.from(r.response.body.valuesAsArray, (v) =>
@@ -764,7 +732,7 @@ export class ModbusTCPDriver {
             };
           }
           case "di": {
-            const r = await this.client.readDiscreteInputs(start, length);
+            const r = await this.#client.readDiscreteInputs(start, length);
             return {
               kind: "bits",
               bits: Array.from(r.response.body.valuesAsArray, (v) =>
@@ -781,7 +749,7 @@ export class ModbusTCPDriver {
     return ok(read.data);
   }
 
-  private applyRead(batch: Batch, sub: Sub, raw: RawRead) {
+  #applyRead(batch: Batch, sub: Sub, raw: RawRead) {
     const offset = sub.address - batch.start;
     const from = offset * 2;
     const to = from + sub.registerLength * 2;
@@ -799,16 +767,16 @@ export class ModbusTCPDriver {
         decoded?.error ?? "short response",
         `[ModbusTCPDriver] decode failed for ${sub.key}`,
       );
-      this.publishStatus(sub, StatusCodes.BadDecodingError);
+      this.#publishStatus(sub, StatusCodes.BadDecodingError);
       return;
     }
 
-    this.publish(sub, { value: decoded.data, status: StatusCodes.Good });
+    this.#publish(sub, { value: decoded.data, status: StatusCodes.Good });
   }
 
   /* --------------------------------- writing ------------------------------- */
 
-  private async write(sub: Sub, value: ModbusValue) {
+  async #write(sub: Sub, value: ModbusValue) {
     if (sub.registerType === "ir" || sub.registerType === "di") {
       return err({
         reason: "WRITE_NOT_SUPPORTED",
@@ -825,9 +793,9 @@ export class ModbusTCPDriver {
     }
 
     const written = await attempt(() =>
-      this.enqueue(async () => {
+      this.#enqueue(async () => {
         if (sub.registerType === "co") {
-          await this.client.writeSingleCoil(sub.address, Boolean(value));
+          await this.#client.writeSingleCoil(sub.address, Boolean(value));
           return;
         }
 
@@ -836,7 +804,7 @@ export class ModbusTCPDriver {
 
         // bit write: read-modify-write inside the queue so nothing can interleave
         if (sub.bit !== undefined) {
-          const r = await this.client.readHoldingRegisters(sub.address, 1);
+          const r = await this.#client.readHoldingRegisters(sub.address, 1);
           buf.set(toBytes(r.response.body.valuesAsBuffer).subarray(0, 2));
         }
 
@@ -852,9 +820,9 @@ export class ModbusTCPDriver {
         if (sub.swapWords && sub.dataType !== "String") reverseWords(buf);
 
         if (sub.registerLength === 1) {
-          await this.client.writeSingleRegister(sub.address, view.getUint16(0));
+          await this.#client.writeSingleRegister(sub.address, view.getUint16(0));
         } else {
-          await this.client.writeMultipleRegisters(
+          await this.#client.writeMultipleRegisters(
             sub.address,
             Buffer.from(buf),
           );
@@ -872,13 +840,13 @@ export class ModbusTCPDriver {
     }
 
     // reflect immediately; the next poll confirms what the device actually holds
-    this.publish(sub, { value, status: StatusCodes.Good });
+    this.#publish(sub, { value, status: StatusCodes.Good });
     return ok(undefined);
   }
 
   /* --------------------------------- helpers ------------------------------- */
 
-  private parsePath(path: string) {
+  #parsePath(path: string) {
     const m = path.match(PATH_REGEX);
     if (!m?.groups) {
       return err({
