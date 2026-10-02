@@ -1,0 +1,1 @@
+ALTER TABLE `device_modbus_rtu_options` ADD `swapWords` integer DEFAULT false NOT NULL;

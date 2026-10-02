@@ -1,5 +1,5 @@
 import { guard, live, LiveError, publish } from "svelte-realtime/server";
-import { err, ok, type Result } from "neverthrow";
+import { type Result } from "neverthrow";
 import { logger } from "$lib/server/pino/logger";
 import type {
   PatchOp,
@@ -15,6 +15,7 @@ import { deviceManager } from "../hooks.server";
 import {
   type DeviceConfigInput,
   type DeviceStatus,
+  type FailedDevice,
 } from "$lib/server/drivers/driver";
 
 export const _guard = guard((ctx) => {
@@ -35,10 +36,24 @@ export const devicePatches = live.stream(
 // value type textually from its return annotation.
 export const deviceStatus = live.stream(
   (ctx, id: string) => `device-status:${id}`,
-  async (ctx, id: string): Promise<DeviceStatus> => {
+  async (
+    ctx,
+    id: string,
+  ): Promise<
+    WireResult<
+      DeviceStatus,
+      FailedDevice | { reason: "DEVICE_NOT_FOUND"; cause: string }
+    >
+  > => {
     const device = deviceManager.getDevice(id);
-    if (device && device.isOk()) return device.value.status;
-    return "Error";
+    if (!device) {
+      return wireErr({
+        reason: "DEVICE_NOT_FOUND",
+        cause: `device at ${id} not found`,
+      } as const satisfies NeverThrowError);
+    }
+    if (device.isErr()) return wireErr(device.error);
+    return wireOk(device.value.status);
   },
   { merge: "set" },
 );
@@ -47,15 +62,19 @@ export const deviceStatus = live.stream(
 // status really changed, so the only work here is fanning the value out.
 export function publishDeviceStatus(
   id: string,
-  status: DeviceStatus,
+  status: Result<DeviceStatus, FailedDevice>,
   ctx?: { publish: (topic: string, event: string, data: unknown) => void },
 ) {
+  let wireStatus: WireResult<DeviceStatus, FailedDevice>;
+
+  if (status.isErr()) wireStatus = wireErr(status.error);
+  else wireStatus = wireOk(status.value);
+
   if (ctx) {
-    ctx.publish(`device-status:${id}`, "set", status);
+    ctx.publish(`device-status:${id}`, "set", wireStatus);
     return;
   }
-  publish(`device-status:${id}`, "set", status);
-  logger.trace(`status ${id} ${status}`);
+  publish(`device-status:${id}`, "set", wireStatus);
 }
 
 // One op per call: the client batches ops by calling this once per op, so a
@@ -89,6 +108,7 @@ export const applyDevicePatches = live(
           case "DRIVER_CREATE_ERROR":
           case "OPTIONS_PARSE_ERROR":
             return wireErr(result.error);
+
           default:
             logger.error(reason satisfies never);
             throw new LiveError("SERVER_ERROR");

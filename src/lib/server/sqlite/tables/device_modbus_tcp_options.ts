@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod";
 import { devices } from "./devices";
 
 export const device_modbus_tcp_options = sqliteTable(
@@ -37,7 +38,7 @@ export const z_insertDeviceModbusTcpOptions = createInsertSchema(
     spanGaps: (s) => s.default(false),
     reconnectInervalMs: (s) => s.default(5000),
     startAddress: (s) => s.default(0),
-    endian: (s) => s.default("LittleEndian"),
+    endian: () => z.enum(["BigEndian", "LittleEndian"]).default("LittleEndian"),
     swapWords: (s) => s.default(false),
   },
 );

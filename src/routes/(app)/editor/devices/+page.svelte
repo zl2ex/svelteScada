@@ -2,7 +2,10 @@
   import { undoManager } from "$lib/client/history/undoManager.js";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
-  import type { DeviceConfigInput, DriverName } from "$lib/server/drivers/driver";
+  import type {
+    DeviceConfigInput,
+    DriverName,
+  } from "$lib/server/drivers/driver";
   import type { NeverThrowError } from "$lib/util/neverThrow";
   import {
     applyDevicePatches,
@@ -25,7 +28,15 @@
   const popover = usePopover({
     id: "devices-popover",
     positioning: { placement: "bottom-start" },
-    onOpenChange: (details) => {},
+    onOpenChange: (details) => {
+      // closed
+      if (!details.open) {
+        // added new device push to history and server
+        if (popoverDeviceId == newDevice.id) {
+          devicesPatchesCollection.add(newDevice);
+        }
+      }
+    },
   });
 
   const devicesPatchesCollection = new PatchCollection<
@@ -65,6 +76,14 @@
   function isDriverName(value: string): value is DriverName {
     return value in availableDrivers;
   }
+
+  const newDevice = $state<DeviceConfigInput>({
+    id: newId(),
+    name: "newDevice",
+    driverName: "",
+    options: {},
+    enabled: true,
+  });
 </script>
 
 <div id="devices" class="m-8 grow">
@@ -72,13 +91,9 @@
     class="btn preset-outlined mx-2"
     onclick={async () => {
       popoverDeviceId = newId();
-      const driverName: DriverName = "ModbusTCPDriver";
-      devicesPatchesCollection.add({
-        id: popoverDeviceId,
-        name: "",
-        driverName,
-        options: availableDrivers[driverName].defaultOptions,
-      });
+      newDevice.id = popoverDeviceId;
+      // user must select driver type
+      newDevice.driverName = "";
       popover().setOpen(true);
     }}
   >
@@ -95,7 +110,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each Object.values(devicesPatchesCollection.state) as device (device.id)}
+      {#each Object.values(devicesPatchesCollection.state).sort( (a, b) => a.name.localeCompare(b.name) ) as device (device.id)}
         <tr
           class="*:py-4 *:px-8 border-b-1 border-b-surface-300-700 cursor-pointer hover:bg-surface-100-900 data-[state=open]:bg-surface-150-850"
           onclick={() => {
@@ -111,7 +126,7 @@
             <img
               src={availableDrivers[device.driverName].logo}
               alt=""
-              class="size-4"
+              class="w-24"
             />
             {availableDrivers[device.driverName].displayName}
           </td>
@@ -123,7 +138,9 @@
   </table>
   <Popover.Provider value={popover}>
     <Popover.Anchor></Popover.Anchor>
-    {#if devicesPatchesCollection.state[popoverDeviceId]}
+    {#if devicesPatchesCollection.state[popoverDeviceId] || newDevice.id == popoverDeviceId}
+      {@const device =
+        devicesPatchesCollection.state[popoverDeviceId] ?? newDevice}
       <Portal>
         <Popover.Positioner>
           <Popover.Content class="card p-4 preset-filled-surface-100-900">
@@ -132,28 +149,37 @@
                 <div class="p-4">
                   <label
                     class="w-36 shrink-0 whitespace-nowrap opacity-60"
-                    for={`device-${devicesPatchesCollection.state[popoverDeviceId].id}-name`}
-                    >Name</label
+                    for={`device-${device.id}-name`}>Name</label
                   >
                   <input
-                    id={`device-${devicesPatchesCollection.state[popoverDeviceId].id}-name`}
+                    id={`device-${device.id}-name`}
                     type="text"
                     class="input"
-                    value={devicesPatchesCollection.state[popoverDeviceId].name}
-                    onblur={(ev) =>
+                    value={device.name}
+                    onblur={(ev) => {
+                      const name = String(ev.currentTarget.value);
+                      if (popoverDeviceId == newDevice.id) {
+                        newDevice.name = name;
+                        return;
+                      }
                       devicesPatchesCollection.update(popoverDeviceId, {
-                        name: String(ev.currentTarget.value),
-                      })}
+                        name,
+                      });
+                    }}
                     onkeydown={(ev) => {
                       if (ev.key === "Enter") {
+                        const name = String(ev.currentTarget.value);
+                        if (popoverDeviceId == newDevice.id) {
+                          newDevice.name = name;
+                          return;
+                        }
                         devicesPatchesCollection.update(popoverDeviceId, {
-                          name: String(ev.currentTarget.value),
+                          name,
                         });
                         ev.currentTarget.blur();
                       }
                       if (ev.key === "Escape") {
-                        ev.currentTarget.value =
-                          devicesPatchesCollection.state[popoverDeviceId].name;
+                        ev.currentTarget.value = device.name;
                         ev.currentTarget.blur();
                       }
                     }}
@@ -163,18 +189,21 @@
                 <div class="p-4 flex gap-4 items-center">
                   <label
                     class=" whitespace-nowrap opacity-60"
-                    for={`device-${devicesPatchesCollection.state[popoverDeviceId].id}-enabled`}
-                    >Enabled</label
+                    for={`device-${device.id}-enabled`}>Enabled</label
                   >
                   <input
-                    id={`device-${devicesPatchesCollection.state[popoverDeviceId].id}-enabled`}
+                    id={`device-${device.id}-enabled`}
                     type="checkbox"
                     class="checkbox"
-                    checked={devicesPatchesCollection.state[popoverDeviceId]
-                      .enabled}
+                    checked={device.enabled}
                     onchange={(ev) => {
+                      const enabled = Boolean(ev.currentTarget.checked);
+                      if (popoverDeviceId == newDevice.id) {
+                        newDevice.enabled = enabled;
+                        return;
+                      }
                       devicesPatchesCollection.update(popoverDeviceId, {
-                        enabled: Boolean(ev.currentTarget.checked),
+                        enabled,
                       });
                     }}
                   />
@@ -187,25 +216,30 @@
                 <Settings2Icon class="size-4 shrink-0 opacity-60" />
                 <label
                   class="w-36 shrink-0 whitespace-nowrap opacity-60"
-                  for={`device-${devicesPatchesCollection.state[popoverDeviceId].id}-driverName`}
-                  >Driver</label
+                  for={`device-${device.id}-driverName`}>Driver</label
                 >
                 <select
-                  id={`device-${devicesPatchesCollection.state[popoverDeviceId].id}-driverName`}
+                  id={`device-${device.id}-driverName`}
                   class="select"
-                  value={devicesPatchesCollection.state[popoverDeviceId]
-                    .driverName}
+                  value={device.driverName}
                   onchange={(ev) => {
-                    const next = ev.currentTarget.value;
-                    if (!isDriverName(next)) return;
+                    const driverName = String(ev.currentTarget.value);
+                    if (!isDriverName(driverName)) return;
                     // The two drivers' options are unrelated shapes, so a
                     // driver change cannot carry the old options across - send
                     // the new driver's defaults with it. The server resets to
                     // the same defaults and drops the stale rows in a
                     // transaction, so both sides agree on what the device is.
+                    if (popoverDeviceId == newDevice.id) {
+                      newDevice.driverName = driverName;
+                      newDevice.options =
+                        availableDrivers[driverName].defaultOptions;
+                      return;
+                    }
+
                     devicesPatchesCollection.update(popoverDeviceId, {
-                      driverName: next,
-                      options: availableDrivers[next].defaultOptions,
+                      driverName,
+                      options: availableDrivers[driverName].defaultOptions,
                     });
                   }}
                 >
@@ -224,6 +258,7 @@
                     devicesPatchesCollection.remove(popoverDeviceId);
                     const pop = popover();
                     pop.setOpen(false);
+                    popoverDeviceId = "";
                   }}
                 >
                   <Trash2 class="size-4" />

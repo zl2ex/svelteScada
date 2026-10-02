@@ -7,12 +7,18 @@ declare module '$live/devices' {
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
   import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
   import type { ok } from 'neverthrow';
-  import type { DeviceStatus } from '$lib/server/drivers/driver';
+  import type { DeviceStatus, FailedDevice } from '$lib/server/drivers/driver';
 
   export const applyDevicePatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, NeverThrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'SERVER_ERROR' | 'UNAUTHENTICATED';
   export const devicePatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
-  export const deviceStatus: ((id: string) => StreamStore<DeviceStatus | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<DeviceStatus> };
+  export const deviceStatus: ((id: string) => StreamStore<WireResult<
+      DeviceStatus,
+      FailedDevice | { reason: "DEVICE_NOT_FOUND"; cause: string }
+    > | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<WireResult<
+      DeviceStatus,
+      FailedDevice | { reason: "DEVICE_NOT_FOUND"; cause: string }
+    >> };
   export const empty: Readable<undefined>;
 }
 

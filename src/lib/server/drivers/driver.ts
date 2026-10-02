@@ -100,7 +100,7 @@ export class Device {
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
-        cause: `[Device] create() failed to parse device options: ${parsed.error.issues} ${parsed.error.message}`,
+        cause: `[Device] create() failed to parse device options: ${parsed.error.message}`,
         options: input,
       } as const satisfies FailedDevice);
     }
@@ -255,12 +255,12 @@ export class DeviceManager {
    */
   #trackStatus(device: Result<Device, FailedDevice>) {
     if (device.isErr()) {
-      publishDeviceStatus(device.error.options.id, "Error");
+      publishDeviceStatus(device.error.options.id, err(device.error));
       return;
     }
     const created = device.value;
     created.onStatusChange((status) => {
-      publishDeviceStatus(created.id, status);
+      publishDeviceStatus(created.id, ok(status));
     });
   }
 

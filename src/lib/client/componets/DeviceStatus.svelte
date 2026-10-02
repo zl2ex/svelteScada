@@ -3,6 +3,7 @@
   import { UseStreamResult } from "$lib/client/live/streamResult.svelte";
   import { CircleIcon } from "@lucide/svelte";
   import type { HTMLAttributes } from "svelte/elements";
+  import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
 
   interface Props extends HTMLAttributes<HTMLDivElement> {
     id: string;
@@ -46,14 +47,36 @@
     {:else}
       <CircleIcon
         class="size-4 stroke-0
-        {stream.value == 'Disabled' ? 'fill-surface-600-400' : ''}
-        {stream.value == 'Connected' ? 'fill-green-600' : ''}
-          {stream.value == 'Reconnecting'
+        {stream.value.isOk && stream.value.value == 'Disabled'
+          ? 'fill-surface-600-400'
+          : ''}
+        {stream.value.isOk && stream.value.value == 'Connected'
+          ? 'fill-green-600'
+          : ''}
+          {stream.value.isOk && stream.value.value == 'Reconnecting'
           ? 'fill-warning-500 animate-pulse'
           : ''}
-          {stream.value == 'Error' ? 'fill-error-500' : ''}"
+          {stream.value.isErr ? 'fill-error-500' : ''}"
       ></CircleIcon>
-      <span>{stream.value}</span>
+      {#if stream.value.isErr}
+        <Tooltip positioning={{ placement: "top" }}>
+          <Tooltip.Trigger>
+            <span class="text-error-400-600">{stream.value.error.reason}</span>
+          </Tooltip.Trigger>
+          <Portal>
+            <Tooltip.Positioner>
+              <Tooltip.Content
+                class="card p-2 preset-filled-error-400-600 text-xs"
+              >
+                <p>{stream.value.error.reason}</p>
+                <p>{stream.value.error.cause}</p>
+              </Tooltip.Content>
+            </Tooltip.Positioner>
+          </Portal>
+        </Tooltip>
+      {:else}
+        <span>{stream.value.value}</span>
+      {/if}
     {/if}
   </div>
 
