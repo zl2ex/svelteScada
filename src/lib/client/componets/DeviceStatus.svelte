@@ -4,7 +4,7 @@
   import { CircleIcon } from "@lucide/svelte";
   import type { HTMLAttributes } from "svelte/elements";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
-
+  import NeverThrowErrorDisplay from "$lib/client/componets/NeverThrowErrorDisplay.svelte";
   interface Props extends HTMLAttributes<HTMLDivElement> {
     id: string;
     class?: string;
@@ -68,8 +68,7 @@
               <Tooltip.Content
                 class="card p-2 preset-filled-error-400-600 text-xs"
               >
-                <p>{stream.value.error.reason}</p>
-                <p>{stream.value.error.cause}</p>
+                <NeverThrowErrorDisplay error={stream.value.error} />
               </Tooltip.Content>
             </Tooltip.Positioner>
           </Portal>

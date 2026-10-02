@@ -105,9 +105,13 @@ export const applyDevicePatches = live(
         switch (reason) {
           case "DB_ERROR":
           case "DEVICE_ALREADY_EXISTS":
-          case "DRIVER_CREATE_ERROR":
           case "OPTIONS_PARSE_ERROR":
             return wireErr(result.error);
+          case "DRIVER_CONFIG_ERROR":
+            // the device was created and synced, it just cannot build its
+            // driver - #trackStatus() already published the error on the
+            // device-status stream, so dont fail the patch
+            break;
 
           default:
             logger.error(reason satisfies never);
@@ -137,9 +141,13 @@ export const applyDevicePatches = live(
         switch (reason) {
           case "DB_ERROR":
           case "DEVICE_NOT_FOUND":
-          case "DRIVER_CREATE_ERROR":
           case "OPTIONS_PARSE_ERROR":
             return wireErr(result.error);
+          case "DRIVER_CONFIG_ERROR":
+            // the device was updated and synced, it just cannot build its
+            // driver - #trackStatus() already published the error on the
+            // device-status stream, so dont fail the patch
+            break;
 
           default:
             logger.error(reason satisfies never);

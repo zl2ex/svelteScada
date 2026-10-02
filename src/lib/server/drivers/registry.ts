@@ -36,6 +36,28 @@ export type ModbusTCPOptions = OptionsOf<typeof z_deviceModbusTcpOptions>;
 export type ModbusRTUOptions = OptionsOf<typeof z_deviceModbusRtuOptions>;
 export type OpcuaClientOptions = OptionsOf<typeof z_deviceOpcuaClientOptions>;
 
+export type OptionFieldKind = "text" | "number" | "boolean" | "select";
+
+/**
+ * One editable option, described so the UI can render a driver it has never
+ * heard of without importing its schema. `choices` only has literals for a
+ * `select`, and they are typed to the values the option accepts so the select
+ * cannot offer one the schema would reject.
+ */
+export type OptionField<V> = {
+  readonly label: string;
+  readonly kind: OptionFieldKind;
+  readonly choices?: readonly (V & string)[];
+};
+
+/**
+ * Keyed by option name, so the mapped type demands a field for every option:
+ * a driver that grows an option without a field here stops compiling.
+ */
+export type OptionFieldsOf<O> = {
+  readonly [K in keyof O & string]: OptionField<O[K]>;
+};
+
 export interface DriverRegistration<N extends string, O> {
   /** Stored verbatim on `devices.driverName`. */
   readonly id: N;
@@ -45,6 +67,8 @@ export interface DriverRegistration<N extends string, O> {
   readonly optionsTable: SQLiteTable;
   /** Validates and defaults a partial payload into a full option set. */
   readonly optionsSchema: z.ZodType;
+  /** What the UI renders and the user edits, one field per option. */
+  readonly optionFields: OptionFieldsOf<O>;
   /** What a brand new device of this driver starts with. */
   readonly defaultOptions: O;
   create(options: O): Result<Driver, DriverCreateError>;
@@ -67,6 +91,32 @@ interface DriverRegistry {
   >;
 }
 
+/**
+ * The options the two modbus drivers have in common, described once so their
+ * labels and input kinds cannot drift apart.
+ */
+type ModbusCommonOption =
+  | "unitId"
+  | "spanGaps"
+  | "pollingIntervalMs"
+  | "startAddress"
+  | "endian"
+  | "swapWords";
+
+const modbusCommonFields = {
+  unitId: { label: "Unit Id", kind: "number" },
+  spanGaps: { label: "Span Gaps", kind: "boolean" },
+  pollingIntervalMs: { label: "Poll Interval (ms)", kind: "number" },
+  startAddress: { label: "Start Address", kind: "number" },
+  endian: {
+    label: "Endian",
+    kind: "select",
+    choices: ["BigEndian", "LittleEndian"] as const,
+  },
+  swapWords: { label: "Swap Words", kind: "boolean" },
+} satisfies Pick<OptionFieldsOf<ModbusTCPOptions>, ModbusCommonOption> &
+  Pick<OptionFieldsOf<ModbusRTUOptions>, ModbusCommonOption>;
+
 export const driverRegistry = {
   ModbusTCPDriver: {
     id: "ModbusTCPDriver",
@@ -74,6 +124,12 @@ export const driverRegistry = {
     logo: "/images/Modbus_Logo.svg",
     optionsTable: device_modbus_tcp_options,
     optionsSchema: z_deviceModbusTcpOptions,
+    optionFields: {
+      ip: { label: "IP Address", kind: "text" },
+      port: { label: "Port", kind: "number" },
+      reconnectInervalMs: { label: "Reconnect Interval (ms)", kind: "number" },
+      ...modbusCommonFields,
+    },
     defaultOptions: z_deviceModbusTcpOptions.parse({}),
     create: (options: ModbusTCPOptions) => ModbusTCPDriver.create(options),
     writeOptions(tx: Db, deviceId: string, options: ModbusTCPOptions) {
@@ -98,6 +154,16 @@ export const driverRegistry = {
     logo: "/images/Modbus_Logo.svg",
     optionsTable: device_modbus_rtu_options,
     optionsSchema: z_deviceModbusRtuOptions,
+    optionFields: {
+      serialPort: { label: "Serial Port", kind: "text" },
+      baudRate: { label: "Baud Rate", kind: "number" },
+      parity: {
+        label: "Parity",
+        kind: "select",
+        choices: ["none", "even", "odd", "mark", "space"] as const,
+      },
+      ...modbusCommonFields,
+    },
     defaultOptions: z_deviceModbusRtuOptions.parse({}),
     create: (options: ModbusRTUOptions) => ModbusRTUDriver.create(options),
     writeOptions(tx: Db, deviceId: string, options: ModbusRTUOptions) {
@@ -122,6 +188,9 @@ export const driverRegistry = {
     logo: "/images/OPCUA_Logo.svg",
     optionsTable: device_opcua_client_options,
     optionsSchema: z_deviceOpcuaClientOptions,
+    optionFields: {
+      endpointUrl: { label: "Endpoint URL", kind: "text" },
+    },
     defaultOptions: z_deviceOpcuaClientOptions.parse({}),
     create: (options: OpcuaClientOptions) =>
       // the constructor cannot fail: it logs and leaves `client` undefined so
@@ -268,22 +337,40 @@ export function readDeviceConfig(
   return parsed.success ? parsed.data : undefined;
 }
 
-/** Metadata for the UI select, straight from the registry. */
-export const availableDrivers = Object.fromEntries(
-  Object.entries(driverRegistry).map(([name, entry]) => [
-    name,
-    {
-      id: entry.id,
-      displayName: entry.displayName,
-      logo: entry.logo,
-      defaultOptions: entry.defaultOptions,
-    },
-  ]),
-) as {
+/** Metadata for the UI, straight from the registry. */
+export type AvailableDrivers = {
   [N in DriverName]: {
     id: N;
     displayName: string;
     logo: string;
+    optionFields: DriverRegistry[N]["optionFields"];
     defaultOptions: DriverRegistry[N]["defaultOptions"];
   };
+};
+
+// written out per driver rather than mapped over the registry: `Object.entries`
+// throws away which options belong to which driver, and the field metadata is
+// only useful while that pairing survives.
+export const availableDrivers: AvailableDrivers = {
+  ModbusTCPDriver: {
+    id: driverRegistry.ModbusTCPDriver.id,
+    displayName: driverRegistry.ModbusTCPDriver.displayName,
+    logo: driverRegistry.ModbusTCPDriver.logo,
+    optionFields: driverRegistry.ModbusTCPDriver.optionFields,
+    defaultOptions: driverRegistry.ModbusTCPDriver.defaultOptions,
+  },
+  ModbusRTUDriver: {
+    id: driverRegistry.ModbusRTUDriver.id,
+    displayName: driverRegistry.ModbusRTUDriver.displayName,
+    logo: driverRegistry.ModbusRTUDriver.logo,
+    optionFields: driverRegistry.ModbusRTUDriver.optionFields,
+    defaultOptions: driverRegistry.ModbusRTUDriver.defaultOptions,
+  },
+  opcuaClientDriver: {
+    id: driverRegistry.opcuaClientDriver.id,
+    displayName: driverRegistry.opcuaClientDriver.displayName,
+    logo: driverRegistry.opcuaClientDriver.logo,
+    optionFields: driverRegistry.opcuaClientDriver.optionFields,
+    defaultOptions: driverRegistry.opcuaClientDriver.defaultOptions,
+  },
 };

@@ -5,19 +5,11 @@
   import type {
     DeviceConfigInput,
     DriverName,
+    OptionFieldKind,
   } from "$lib/server/drivers/driver";
   import type { NeverThrowError } from "$lib/util/neverThrow";
-  import {
-    applyDevicePatches,
-    devicePatches,
-    deviceStatus,
-  } from "$live/devices";
-  import {
-    KeyboardMusicIcon,
-    PlusIcon,
-    Settings2Icon,
-    Trash2,
-  } from "@lucide/svelte";
+  import { applyDevicePatches, devicePatches, deviceStatus } from "$live/devices";
+  import { EllipsisVerticalIcon, KeyboardMusicIcon, PlusIcon, Settings2Icon, Trash2 } from "@lucide/svelte";
   import { Popover, Portal, usePopover } from "@skeletonlabs/skeleton-svelte";
   import { newId } from "$lib/util/newId";
   import { getAvalibleDrivers } from "$lib/remote/devices.remote";
@@ -31,18 +23,17 @@
     onOpenChange: (details) => {
       // closed
       if (!details.open) {
-        // added new device push to history and server
-        if (popoverDeviceId == newDevice.id) {
+        // added new device push to history and server, but a device without a
+        // driver has no options to write and nothing the server can build, so
+        // it only counts as added once the select has made it one
+        if (popoverDeviceId == newDevice.id && newDevice.driverName !== "") {
           devicesPatchesCollection.add(newDevice);
         }
       }
     },
   });
 
-  const devicesPatchesCollection = new PatchCollection<
-    DeviceConfigInput,
-    NeverThrowError
-  >({
+  const devicesPatchesCollection = new PatchCollection<DeviceConfigInput, NeverThrowError>({
     initial: data.deviceOptions,
     applyPatch: applyDevicePatches,
     subscribePatches: (notify) => {
@@ -77,14 +68,129 @@
     return value in availableDrivers;
   }
 
-  const newDevice = $state<DeviceConfigInput>({
+  /**
+   * A device the user is still building: the driver is unset until the select
+   * makes it one, which is the same shape a device gets from the server minus
+   * the options its driver has not chosen yet.
+   */
+  type DeviceDraft =
+    | { id: string; name: string; enabled: boolean; driverName: ""; options: Record<string, never> }
+    | DeviceConfigInput;
+
+  const newDevice = $state<DeviceDraft>({
     id: newId(),
     name: "newDevice",
     driverName: "",
     options: {},
     enabled: true,
   });
+
+  /** One option field as the UI sees it, whatever driver is behind it. */
+  type UiOptionField = {
+    label: string;
+    kind: OptionFieldKind;
+    choices?: readonly string[];
+  };
+
+  /**
+   * The option fields are metadata keyed by option name, so the read goes
+   * through a `string` key too.
+   */
+  function readOption(
+    device: DeviceConfigInput | DeviceDraft,
+    key: string,
+  ) {
+    return (device.options as Record<string, string | number | boolean | undefined>)[key];
+  }
+
+  /**
+   * What a field may hold is settled by the driver's zod schema, which the
+   * server re-parses the whole options object against on every write - a value
+   * it rejects comes back as an error and the patch is rolled back.
+   */
+  function setOption(
+    device: DeviceConfigInput | DeviceDraft,
+    key: string,
+    value: string | number | boolean,
+  ) {
+    const options = {
+      ...device.options,
+      [key]: value,
+    } as DeviceConfigInput["options"];
+
+    if (popoverDeviceId == newDevice.id) {
+      newDevice.options = options;
+      return;
+    }
+    devicesPatchesCollection.update(device.id, { options });
+  }
+
+  /** A blank or unparseable number is not an edit, so it changes nothing. */
+  function numberFromInput(raw: string) {
+    if (raw.trim() === "") return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
 </script>
+
+<!--
+  One control per field the registry describes for the selected driver, so a
+  driver that has never been rendered here needs no UI of its own.
+-->
+{#snippet optionField(
+  field: UiOptionField,
+  key: string,
+  device: DeviceConfigInput | DeviceDraft,
+)}
+  {@const option = readOption(device, key)}
+  {@const text = String(option ?? "")}
+  {#if field.kind === "boolean"}
+    <input
+      id={`device-${device.id}-${key}`}
+      type="checkbox"
+      class="checkbox"
+      checked={option === true}
+      onchange={(ev) => setOption(device, key, ev.currentTarget.checked)}
+    />
+  {:else if field.kind === "select"}
+    <select
+      id={`device-${device.id}-${key}`}
+      class="select"
+      value={text}
+      onchange={(ev) => setOption(device, key, ev.currentTarget.value)}
+    >
+      {#each field.choices ?? [] as choice (choice)}
+        <option value={choice}>{choice}</option>
+      {/each}
+    </select>
+  {:else}
+    <input
+      id={`device-${device.id}-${key}`}
+      type={field.kind === "number" ? "number" : "text"}
+      class="input"
+      value={text}
+      onblur={(ev) => {
+        const value =
+          field.kind === "number" ? numberFromInput(ev.currentTarget.value) : ev.currentTarget.value;
+        if (value === undefined) {
+          // not a number, so put the stored value back rather than store NaN
+          ev.currentTarget.value = text;
+          return;
+        }
+        setOption(device, key, value);
+      }}
+      onkeydown={(ev) => {
+        if (ev.key === "Enter") {
+          ev.currentTarget.blur();
+        }
+        if (ev.key === "Escape") {
+          ev.currentTarget.value = text;
+          ev.currentTarget.blur();
+        }
+      }}
+    />
+  {/if}
+{/snippet}
 
 <div id="devices" class="m-8 grow">
   <button
@@ -100,57 +206,53 @@
     <PlusIcon></PlusIcon>
     Add
   </button>
-  <table class="w-full">
-    <thead>
-      <tr class="*:py-4 *:px-8 opacity-70 border-b-1 border-b-surface-300-700">
-        <th></th>
-        <th class="text-left">Name</th>
-        <th class="text-left">Driver</th>
-        <th class="text-right">Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each Object.values(devicesPatchesCollection.state).sort( (a, b) => a.name.localeCompare(b.name) ) as device (device.id)}
-        <tr
-          class="*:py-4 *:px-8 border-b-1 border-b-surface-300-700 cursor-pointer hover:bg-surface-100-900 data-[state=open]:bg-surface-150-850"
-          onclick={() => {
-            const pop = popover();
-            if (pop.open) return;
-            popoverDeviceId = device.id;
-            pop.setOpen(true);
-          }}
-        >
-          <td><KeyboardMusicIcon></KeyboardMusicIcon></td>
-          <td class="font-bold text-lg">{device.name}</td>
-          <td class="flex items-center gap-2">
-            <img
-              src={availableDrivers[device.driverName].logo}
-              alt=""
-              class="w-24"
-            />
-            {availableDrivers[device.driverName].displayName}
-          </td>
-          <td><DeviceStatus id={device.id} class="flex-row-reverse gap-6" /></td
-          >
-        </tr>
-      {/each}
-    </tbody>
-  </table>
   <Popover.Provider value={popover}>
-    <Popover.Anchor></Popover.Anchor>
-    {#if devicesPatchesCollection.state[popoverDeviceId] || newDevice.id == popoverDeviceId}
-      {@const device =
-        devicesPatchesCollection.state[popoverDeviceId] ?? newDevice}
-      <Portal>
-        <Popover.Positioner>
-          <Popover.Content class="card p-4 preset-filled-surface-100-900">
+    <table class="w-full">
+      <thead>
+        <tr class="*:py-4 *:px-8 opacity-70 border-b-1 border-b-surface-300-700">
+          <th></th>
+          <th class="text-left">Name</th>
+          <th class="text-left">Driver</th>
+          <th class="text-right">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each Object.values(devicesPatchesCollection.state).sort( (a, b) => a.name.localeCompare(b.name) ) as device (device.id)}
+          <tr
+            class="*:py-4 *:px-8 border-b-1 border-b-surface-300-700 hover:bg-surface-100-900 data-[state=open]:bg-surface-150-850"
+          >
+            <td>
+              <Popover.Trigger
+                class="hover:bg-surface-200-800 rounded-lg"
+                onclick={() => (popoverDeviceId = device.id)}
+              >
+                <EllipsisVerticalIcon class="size-6 m-4" />
+              </Popover.Trigger>
+            </td>
+            <td class="font-bold text-lg">{device.name}</td>
+            <td class="flex items-center gap-2">
+              <img src={availableDrivers[device.driverName].logo} alt="" class="w-24" />
+              {availableDrivers[device.driverName].displayName}
+            </td>
+            <td>
+              <DeviceStatus id={device.id} class="flex-row-reverse gap-6" />
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+
+    <Portal>
+      <Popover.Positioner>
+        <Popover.Content class="card p-4 preset-filled-surface-100-900">
+          {#if devicesPatchesCollection.state[popoverDeviceId] || newDevice.id == popoverDeviceId}
+            {@const device = devicesPatchesCollection.state[popoverDeviceId] ?? newDevice}
             <div>
               <div class="flex justify-between">
                 <div class="p-4">
-                  <label
-                    class="w-36 shrink-0 whitespace-nowrap opacity-60"
-                    for={`device-${device.id}-name`}>Name</label
-                  >
+                  <label class="w-36 shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-name`}>
+                    Name
+                  </label>
                   <input
                     id={`device-${device.id}-name`}
                     type="text"
@@ -187,10 +289,7 @@
                 </div>
 
                 <div class="p-4 flex gap-4 items-center">
-                  <label
-                    class=" whitespace-nowrap opacity-60"
-                    for={`device-${device.id}-enabled`}>Enabled</label
-                  >
+                  <label class=" whitespace-nowrap opacity-60" for={`device-${device.id}-enabled`}>Enabled</label>
                   <input
                     id={`device-${device.id}-enabled`}
                     type="checkbox"
@@ -213,11 +312,9 @@
               <hr />
 
               <div class="flex items-center gap-2">
-                <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                <label
-                  class="w-36 shrink-0 whitespace-nowrap opacity-60"
-                  for={`device-${device.id}-driverName`}>Driver</label
-                >
+                <label class="w-36 shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-driverName`}>
+                  Driver
+                </label>
                 <select
                   id={`device-${device.id}-driverName`}
                   class="select"
@@ -225,18 +322,17 @@
                   onchange={(ev) => {
                     const driverName = String(ev.currentTarget.value);
                     if (!isDriverName(driverName)) return;
+                    if (popoverDeviceId == newDevice.id) {
+                      newDevice.driverName = driverName;
+                      newDevice.options = availableDrivers[driverName].defaultOptions;
+                      return;
+                    }
+
                     // The two drivers' options are unrelated shapes, so a
                     // driver change cannot carry the old options across - send
                     // the new driver's defaults with it. The server resets to
                     // the same defaults and drops the stale rows in a
                     // transaction, so both sides agree on what the device is.
-                    if (popoverDeviceId == newDevice.id) {
-                      newDevice.driverName = driverName;
-                      newDevice.options =
-                        availableDrivers[driverName].defaultOptions;
-                      return;
-                    }
-
                     devicesPatchesCollection.update(popoverDeviceId, {
                       driverName,
                       options: availableDrivers[driverName].defaultOptions,
@@ -248,6 +344,22 @@
                   {/each}
                 </select>
               </div>
+
+              <!-- the selected driver's own options, whatever they turn out to be -->
+              {#if isDriverName(device.driverName)}
+                {@const optionFields = availableDrivers[device.driverName].optionFields}
+                <hr />
+                <div class="flex flex-col gap-2 pt-2">
+                  {#each Object.entries(optionFields) as [key, field] (key)}
+                    <div class="flex items-center gap-2">
+                      <label class="w-36 shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-${key}`}>
+                        {field.label}
+                      </label>
+                      {@render optionField(field, key, device)}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
 
               <div class="flex justify-end pt-2">
                 <button
@@ -265,10 +377,10 @@
                   Delete Device
                 </button>
               </div>
-            </div></Popover.Content
-          >
-        </Popover.Positioner>
-      </Portal>
-    {/if}
+            </div>
+          {/if}
+        </Popover.Content>
+      </Popover.Positioner>
+    </Portal>
   </Popover.Provider>
 </div>

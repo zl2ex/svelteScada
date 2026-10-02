@@ -56,6 +56,7 @@ export type {
   DeviceConfigInput,
   DriverName,
   DriverOptionsOf,
+  OptionFieldKind,
 } from "./registry";
 
 export { availableDrivers, driverRegistry, z_DeviceConfig };
@@ -250,6 +251,23 @@ export class DeviceManager {
   }
 
   /**
+   * Wrap a Device.create() result on its way into #devices so every entry the
+   * map holds reports the same reason, whatever the driver underneath said.
+   * Anything that failed before the device was stored keeps its own reason -
+   * a bad config or a db write means the device never existed at all.
+   */
+  #deviceConfigError(device: Result<Device, FailedDevice>) {
+    if (device.isErr()) {
+      return err({
+        reason: "DRIVER_CONFIG_ERROR",
+        cause: device.error,
+        options: device.error.options,
+      } as const satisfies FailedDevice);
+    }
+    return ok(device.value);
+  }
+
+  /**
    * Mirror device status changes to the front end. The driver owns the
    * connection state, Device fans it out through onStatusChange() and we publish.
    */
@@ -300,7 +318,7 @@ export class DeviceManager {
         continue;
       }
 
-      const device = await Device.create(deviceConfig);
+      const device = this.#deviceConfigError(await Device.create(deviceConfig));
 
       this.#devices.set(row.id, device);
       this.#trackStatus(device);
@@ -344,7 +362,7 @@ export class DeviceManager {
       } as const satisfies NeverThrowError);
     }
 
-    const device = await Device.create(config);
+    const device = this.#deviceConfigError(await Device.create(config));
 
     this.#devices.set(config.id, device);
     this.#trackStatus(device);
@@ -442,7 +460,7 @@ export class DeviceManager {
     if (existing.isOk()) await existing.value.dispose();
     this.#devices.delete(id);
 
-    const device = await Device.create(config);
+    const device = this.#deviceConfigError(await Device.create(config));
     this.#devices.set(id, device);
     this.#trackStatus(device);
     if (device.isErr()) return err(device.error);
@@ -506,7 +524,7 @@ export class DeviceManager {
       this.#devices.delete(id);
     }
 
-    const newDevice = await Device.create(config);
+    const newDevice = this.#deviceConfigError(await Device.create(config));
     this.#devices.set(id, newDevice);
     this.#trackStatus(newDevice);
     if (newDevice.isErr()) return err(newDevice.error);

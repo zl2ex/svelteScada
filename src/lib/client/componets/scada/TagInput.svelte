@@ -8,12 +8,12 @@
   import { toast } from "$lib/client/toast.svelte";
   import {
     errorToString,
-    isWireErr,
     neverThrowErrorToString,
     type NeverThrowError,
   } from "$lib/util/neverThrow";
   import { attempt } from "$lib/util/attempt";
   import { err, ok } from "neverthrow";
+  import NeverThrowErrorDisplay from "$lib/client/componets/NeverThrowErrorDisplay.svelte";
 
   interface IdProps extends HTMLInputAttributes {
     id: string;
@@ -101,15 +101,6 @@
   };
 </script>
 
-{#snippet neverThrowError(error: NeverThrowError)}
-  <p class="heading-font-weight">{error.reason}</p>
-  {#if typeof error.cause === "string"}
-    <p>{error.cause}</p>
-  {:else if typeof error.cause === "object"}
-    {@render neverThrowError(error.cause)}
-  {/if}
-{/snippet}
-
 <svelte:boundary
   onerror={(err) => {
     console.error(err);
@@ -144,7 +135,7 @@
             <Tooltip.Content
               class="card p-2 preset-filled-error-400-600 text-xs"
             >
-              {@render neverThrowError(stream.value.error)}
+              <NeverThrowErrorDisplay error={stream.value.error} />
             </Tooltip.Content>
           </Tooltip.Positioner>
         </Portal>

@@ -6,7 +6,6 @@ declare module '$live/devices' {
   import type { Readable } from 'svelte/store';
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
   import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
-  import type { ok } from 'neverthrow';
   import type { DeviceStatus, FailedDevice } from '$lib/server/drivers/driver';
 
   export const applyDevicePatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, NeverThrowError>>;
