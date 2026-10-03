@@ -8,11 +8,13 @@ import {
   device_modbus_rtu_options,
   device_modbus_tcp_options,
   device_opcua_client_options,
+  endianNames,
   z_insertDevice,
   z_deviceModbusRtuOptions,
   z_deviceModbusTcpOptions,
   z_deviceOpcuaClientOptions,
   type DeviceSelect,
+  type DriverName,
 } from "../sqlite/tables";
 import { ModbusRTUDriver } from "./modbus/modbusRtu";
 import { ModbusTCPDriver } from "./modbus/modbusTcp";
@@ -58,7 +60,7 @@ export type OptionFieldsOf<O> = {
   readonly [K in keyof O & string]: OptionField<O[K]>;
 };
 
-export interface DriverRegistration<N extends string, O> {
+export interface DriverRegistration<N extends DriverName, O> {
   /** Stored verbatim on `devices.driverName`. */
   readonly id: N;
   readonly displayName: string;
@@ -77,31 +79,33 @@ export interface DriverRegistration<N extends string, O> {
 }
 
 /**
- * Adding a driver means adding a key here - the `satisfies` clause rejects the
- * object literal until the shape is updated, and `DriverName` is derived from
- * the shape, so the zod union, the persistence branches and the UI select can
- * never fall out of sync with it.
+ * Which option type belongs to which driver name. This is the one mapping the
+ * `driverName` column cannot supply, so it is written out here - and because
+ * it is keyed by the column's own union, a name added to the column without
+ * options here stops `driverRegistry` compiling.
  */
-interface DriverRegistry {
-  ModbusTCPDriver: DriverRegistration<"ModbusTCPDriver", ModbusTCPOptions>;
-  ModbusRTUDriver: DriverRegistration<"ModbusRTUDriver", ModbusRTUOptions>;
-  opcuaClientDriver: DriverRegistration<
-    "opcuaClientDriver",
-    OpcuaClientOptions
-  >;
+interface DriverOptionsByName {
+  ModbusTCPDriver: ModbusTCPOptions;
+  ModbusRTUDriver: ModbusRTUOptions;
+  opcuaClientDriver: OpcuaClientOptions;
 }
+
+/**
+ * Keyed by the names the `devices.driverName` column accepts, so the registry
+ * cannot hold a driver the column refuses or miss one it allows: the
+ * `satisfies` clause below rejects the object literal until the shape is
+ * updated, and every switch on a driver name stops being exhaustive at the
+ * same moment.
+ */
+type DriverRegistry = {
+  [N in DriverName]: DriverRegistration<N, DriverOptionsByName[N]>;
+};
 
 /**
  * The options the two modbus drivers have in common, described once so their
  * labels and input kinds cannot drift apart.
  */
-type ModbusCommonOption =
-  | "unitId"
-  | "spanGaps"
-  | "pollingIntervalMs"
-  | "startAddress"
-  | "endian"
-  | "swapWords";
+type ModbusCommonOption = "unitId" | "spanGaps" | "pollingIntervalMs" | "startAddress" | "endian" | "swapWords";
 
 const modbusCommonFields = {
   unitId: { label: "Unit Id", kind: "number" },
@@ -111,7 +115,7 @@ const modbusCommonFields = {
   endian: {
     label: "Endian",
     kind: "select",
-    choices: ["BigEndian", "LittleEndian"] as const,
+    choices: endianNames,
   },
   swapWords: { label: "Swap Words", kind: "boolean" },
 } satisfies Pick<OptionFieldsOf<ModbusTCPOptions>, ModbusCommonOption> &
@@ -143,9 +147,7 @@ export const driverRegistry = {
         .run();
     },
     deleteOptions(tx: Db, deviceId: string) {
-      tx.delete(device_modbus_tcp_options)
-        .where(eq(device_modbus_tcp_options.deviceId, deviceId))
-        .run();
+      tx.delete(device_modbus_tcp_options).where(eq(device_modbus_tcp_options.deviceId, deviceId)).run();
     },
   },
   ModbusRTUDriver: {
@@ -177,9 +179,7 @@ export const driverRegistry = {
         .run();
     },
     deleteOptions(tx: Db, deviceId: string) {
-      tx.delete(device_modbus_rtu_options)
-        .where(eq(device_modbus_rtu_options.deviceId, deviceId))
-        .run();
+      tx.delete(device_modbus_rtu_options).where(eq(device_modbus_rtu_options.deviceId, deviceId)).run();
     },
   },
   opcuaClientDriver: {
@@ -207,18 +207,15 @@ export const driverRegistry = {
         .run();
     },
     deleteOptions(tx: Db, deviceId: string) {
-      tx.delete(device_opcua_client_options)
-        .where(eq(device_opcua_client_options.deviceId, deviceId))
-        .run();
+      tx.delete(device_opcua_client_options).where(eq(device_opcua_client_options.deviceId, deviceId)).run();
     },
   },
 } satisfies DriverRegistry;
 
-export type DriverName = keyof DriverRegistry;
+export type { DriverName };
 
 /** The options type belonging to one specific driver. */
-export type DriverOptionsOf<N extends DriverName> =
-  DriverRegistry[N] extends DriverRegistration<string, infer O> ? O : never;
+export type DriverOptionsOf<N extends DriverName> = DriverOptionsByName[N];
 
 /* -------------------------------------------------------------------------- */
 /*  The device config union                                                    */
@@ -228,6 +225,9 @@ export type DriverOptionsOf<N extends DriverName> =
  * A device row plus the options for the one driver it uses. Built from the
  * registry so a driver cannot exist without a discriminated branch here, and
  * the branch cannot disagree with the table it is paired with.
+ *
+ * The branches are written out because zod wants a runtime tuple, which a type
+ * cannot produce, so `NamesAgree` below is what keeps the list honest.
  */
 export const z_DeviceConfig = z.discriminatedUnion("driverName", [
   z_insertDevice.extend({
@@ -244,6 +244,21 @@ export const z_DeviceConfig = z.discriminatedUnion("driverName", [
   }),
 ]);
 
+/** The names the column will store, read back off the column itself. */
+type ColumnDriverName = NonNullable<typeof devices.$inferSelect>["driverName"];
+type UnionDriverName = z.output<typeof z_DeviceConfig>["driverName"];
+
+/**
+ * Both directions, so neither the column nor the union can gain a name alone:
+ * `never` in either spot makes this a compile error rather than a runtime one.
+ */
+type NamesAgree = [ColumnDriverName] extends [UnionDriverName]
+  ? [UnionDriverName] extends [ColumnDriverName]
+    ? true
+    : never
+  : never;
+export const _namesAgree: NamesAgree = true;
+
 /** What a client may send: options can be partial and get defaulted. */
 export type DeviceConfigInput = z.input<typeof z_DeviceConfig>;
 /** What the server runs on: every option column present. */
@@ -258,9 +273,7 @@ export type DeviceConfig = z.output<typeof z_DeviceConfig>;
  * factory being handed it, which is why this is a switch rather than an
  * indexed lookup.
  */
-export function createDriver(
-  config: DeviceConfig,
-): Result<Driver, DriverCreateError> {
+export function createDriver(config: DeviceConfig): Result<Driver, DriverCreateError> {
   switch (config.driverName) {
     case "ModbusTCPDriver":
       return driverRegistry.ModbusTCPDriver.create(config.options);
@@ -274,23 +287,11 @@ export function createDriver(
 function writeOptionsFor(tx: Db, config: DeviceConfig) {
   switch (config.driverName) {
     case "ModbusTCPDriver":
-      return driverRegistry.ModbusTCPDriver.writeOptions(
-        tx,
-        config.id,
-        config.options,
-      );
+      return driverRegistry.ModbusTCPDriver.writeOptions(tx, config.id, config.options);
     case "ModbusRTUDriver":
-      return driverRegistry.ModbusRTUDriver.writeOptions(
-        tx,
-        config.id,
-        config.options,
-      );
+      return driverRegistry.ModbusRTUDriver.writeOptions(tx, config.id, config.options);
     case "opcuaClientDriver":
-      return driverRegistry.opcuaClientDriver.writeOptions(
-        tx,
-        config.id,
-        config.options,
-      );
+      return driverRegistry.opcuaClientDriver.writeOptions(tx, config.id, config.options);
   }
 }
 
@@ -301,10 +302,7 @@ function writeOptionsFor(tx: Db, config: DeviceConfig) {
  */
 export function writeDeviceConfig(tx: Db, config: DeviceConfig) {
   const { options: _options, ...deviceRow } = config;
-  tx.insert(devices)
-    .values(deviceRow)
-    .onConflictDoUpdate({ target: devices.id, set: deviceRow })
-    .run();
+  tx.insert(devices).values(deviceRow).onConflictDoUpdate({ target: devices.id, set: deviceRow }).run();
   writeOptionsFor(tx, config);
 }
 
@@ -324,17 +322,6 @@ export function deleteStaleOptions(tx: Db, deviceId: string, keep: DriverName) {
         break;
     }
   }
-}
-
-/** Pairs a devices row with the options row of the driver it names. */
-export function readDeviceConfig(
-  row: DeviceSelect,
-  options: Record<DriverName, unknown>,
-): DeviceConfig | undefined {
-  const candidate = options[row.driverName as DriverName];
-  if (!candidate) return undefined;
-  const parsed = z_DeviceConfig.safeParse({ ...row, options: candidate });
-  return parsed.success ? parsed.data : undefined;
 }
 
 /** Metadata for the UI, straight from the registry. */

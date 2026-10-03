@@ -2,11 +2,7 @@
   import { undoManager } from "$lib/client/history/undoManager.js";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
-  import type {
-    DeviceConfigInput,
-    DriverName,
-    OptionFieldKind,
-  } from "$lib/server/drivers/driver";
+  import type { DeviceConfigInput, DriverName, OptionFieldKind } from "$lib/server/drivers/driver";
   import type { NeverThrowError } from "$lib/util/neverThrow";
   import { applyDevicePatches, devicePatches, deviceStatus } from "$live/devices";
   import { EllipsisVerticalIcon, KeyboardMusicIcon, PlusIcon, Settings2Icon, Trash2 } from "@lucide/svelte";
@@ -74,8 +70,7 @@
    * the options its driver has not chosen yet.
    */
   type DeviceDraft =
-    | { id: string; name: string; enabled: boolean; driverName: ""; options: Record<string, never> }
-    | DeviceConfigInput;
+    { id: string; name: string; enabled: boolean; driverName: ""; options: Record<string, never> } | DeviceConfigInput;
 
   const newDevice = $state<DeviceDraft>({
     id: newId(),
@@ -96,10 +91,7 @@
    * The option fields are metadata keyed by option name, so the read goes
    * through a `string` key too.
    */
-  function readOption(
-    device: DeviceConfigInput | DeviceDraft,
-    key: string,
-  ) {
+  function readOption(device: DeviceConfigInput | DeviceDraft, key: string) {
     return (device.options as Record<string, string | number | boolean | undefined>)[key];
   }
 
@@ -108,11 +100,7 @@
    * server re-parses the whole options object against on every write - a value
    * it rejects comes back as an error and the patch is rolled back.
    */
-  function setOption(
-    device: DeviceConfigInput | DeviceDraft,
-    key: string,
-    value: string | number | boolean,
-  ) {
+  function setOption(device: DeviceConfigInput | DeviceDraft, key: string, value: string | number | boolean) {
     const options = {
       ...device.options,
       [key]: value,
@@ -137,25 +125,21 @@
   One control per field the registry describes for the selected driver, so a
   driver that has never been rendered here needs no UI of its own.
 -->
-{#snippet optionField(
-  field: UiOptionField,
-  key: string,
-  device: DeviceConfigInput | DeviceDraft,
-)}
+{#snippet optionField(field: UiOptionField, key: string, device: DeviceConfigInput | DeviceDraft, clazz?: string)}
   {@const option = readOption(device, key)}
   {@const text = String(option ?? "")}
   {#if field.kind === "boolean"}
     <input
       id={`device-${device.id}-${key}`}
       type="checkbox"
-      class="checkbox"
+      class={"checkbox " + clazz}
       checked={option === true}
       onchange={(ev) => setOption(device, key, ev.currentTarget.checked)}
     />
   {:else if field.kind === "select"}
     <select
       id={`device-${device.id}-${key}`}
-      class="select"
+      class={"select " + clazz}
       value={text}
       onchange={(ev) => setOption(device, key, ev.currentTarget.value)}
     >
@@ -167,11 +151,10 @@
     <input
       id={`device-${device.id}-${key}`}
       type={field.kind === "number" ? "number" : "text"}
-      class="input"
+      class={"input " + clazz}
       value={text}
       onblur={(ev) => {
-        const value =
-          field.kind === "number" ? numberFromInput(ev.currentTarget.value) : ev.currentTarget.value;
+        const value = field.kind === "number" ? numberFromInput(ev.currentTarget.value) : ev.currentTarget.value;
         if (value === undefined) {
           // not a number, so put the stored value back rather than store NaN
           ev.currentTarget.value = text;
@@ -231,8 +214,8 @@
             </td>
             <td class="font-bold text-lg">{device.name}</td>
             <td class="flex items-center gap-2">
-              <img src={availableDrivers[device.driverName].logo} alt="" class="w-24" />
-              {availableDrivers[device.driverName].displayName}
+              <img src={availableDrivers[device.driverName]?.logo} alt="" class="w-24" />
+              {availableDrivers[device.driverName]?.displayName}
             </td>
             <td>
               <DeviceStatus id={device.id} class="flex-row-reverse gap-6" />
@@ -250,9 +233,7 @@
             <div>
               <div class="flex justify-between">
                 <div class="p-4">
-                  <label class="w-36 shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-name`}>
-                    Name
-                  </label>
+                  <label class="shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-name`}>Name</label>
                   <input
                     id={`device-${device.id}-name`}
                     type="text"
@@ -311,13 +292,13 @@
 
               <hr />
 
-              <div class="flex items-center gap-2">
-                <label class="w-36 shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-driverName`}>
+              <div class="flex items-center justify-between">
+                <label class="shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-driverName`}>
                   Driver
                 </label>
                 <select
                   id={`device-${device.id}-driverName`}
-                  class="select"
+                  class="select w-60"
                   value={device.driverName}
                   onchange={(ev) => {
                     const driverName = String(ev.currentTarget.value);
@@ -348,14 +329,13 @@
               <!-- the selected driver's own options, whatever they turn out to be -->
               {#if isDriverName(device.driverName)}
                 {@const optionFields = availableDrivers[device.driverName].optionFields}
-                <hr />
                 <div class="flex flex-col gap-2 pt-2">
                   {#each Object.entries(optionFields) as [key, field] (key)}
-                    <div class="flex items-center gap-2">
-                      <label class="w-36 shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-${key}`}>
+                    <div class="flex items-center justify-between">
+                      <label class="shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-${key}`}>
                         {field.label}
                       </label>
-                      {@render optionField(field, key, device)}
+                      {@render optionField(field, key, device, "w-60")}
                     </div>
                   {/each}
                 </div>

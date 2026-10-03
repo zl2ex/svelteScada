@@ -12,12 +12,9 @@ export const device_opcua_client_options = sqliteTable("device_opcua_client_opti
 export type DeviceOpcuaClientOptionsSelect = typeof device_opcua_client_options.$inferSelect;
 export type DeviceOpcuaClientOptionsInsert = typeof device_opcua_client_options.$inferInsert;
 
-export const z_insertDeviceOpcuaClientOptions = createInsertSchema(
-  device_opcua_client_options,
-  {
-    endpointUrl: (s) => s.default("opc.tcp://localhost:4840"),
-  },
-);
+export const z_insertDeviceOpcuaClientOptions = createInsertSchema(device_opcua_client_options, {
+  endpointUrl: (s) => s.min(1).max(2048).default("opc.tcp://url:4840"),
+});
 
 /**
  * The same options without the `deviceId` foreign key. `deviceId` is owned by

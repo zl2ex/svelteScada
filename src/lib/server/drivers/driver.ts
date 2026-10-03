@@ -2,15 +2,12 @@ import util from "node:util";
 import { z } from "zod";
 import { err, ok, type Result } from "neverthrow";
 import { eq } from "drizzle-orm";
-import {
-  errorToString,
-  neverThrowErrorToString,
-  type NeverThrowError,
-} from "$lib/util/neverThrow";
+import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { logger } from "$lib/server/pino/logger";
 import { attempt } from "$lib/util/attempt";
 import type { BaseTypeStrings } from "$lib/server/tag/tag";
 import { publishDeviceStatus } from "../../../live/devices";
+import { tagManager } from "../../../hooks.server";
 import { db } from "../sqlite/db";
 import { devices } from "../sqlite/tables";
 import {
@@ -18,7 +15,6 @@ import {
   createDriver,
   deleteStaleOptions,
   driverRegistry,
-  readDeviceConfig,
   writeDeviceConfig,
   z_DeviceConfig,
   type Db,
@@ -26,12 +22,7 @@ import {
   type DeviceConfigInput,
   type DriverName,
 } from "./registry";
-import type {
-  Driver,
-  DriverValue,
-  DriverVariable,
-  SubscribeOptions,
-} from "./baseDriver";
+import type { Driver, DriverValue, DriverVariable, SubscribeOptions } from "./baseDriver";
 
 /**
  * The shared driver vocabulary lives in `baseDriver` so the concrete drivers
@@ -51,13 +42,7 @@ export type {
   SubscribeOptions,
 } from "./baseDriver";
 
-export type {
-  DeviceConfig,
-  DeviceConfigInput,
-  DriverName,
-  DriverOptionsOf,
-  OptionFieldKind,
-} from "./registry";
+export type { DeviceConfig, DeviceConfigInput, DriverName, DriverOptionsOf, OptionFieldKind } from "./registry";
 
 export { availableDrivers, driverRegistry, z_DeviceConfig };
 
@@ -91,9 +76,7 @@ export class Device {
     this.options = config;
     this.#driver = driver;
     // the driver is the source of truth for connection state, mirror it up
-    this.#driverUnsubscribe = driver.onConnectedChange(() =>
-      this.#refreshStatus(),
-    );
+    this.#driverUnsubscribe = driver.onConnectedChange(() => this.#refreshStatus());
   }
 
   static async create(input: DeviceConfigInput) {
@@ -132,9 +115,7 @@ export class Device {
     if (!this.options.enabled) return;
     const connected = await this.#driver.connect();
     if (connected.isErr()) {
-      logger.error(
-        `[Device] create() ${neverThrowErrorToString(connected.error)}`,
-      );
+      logger.error(`[Device] create() ${neverThrowErrorToString(connected.error)}`);
     }
   }
 
@@ -156,9 +137,7 @@ export class Device {
 
     const disconnected = await this.#driver.disconnect();
     if (disconnected.isErr()) {
-      logger.error(
-        `[Device] dispose() ${this.name} ${neverThrowErrorToString(disconnected.error)}`,
-      );
+      logger.error(`[Device] dispose() ${this.name} ${neverThrowErrorToString(disconnected.error)}`);
     }
     this.#driver.dispose();
     logger.trace(`[Device] dispose() ${this.name}`);
@@ -168,9 +147,7 @@ export class Device {
     this.options.enabled = true;
     const connected = await this.#driver.connect();
     if (connected.isErr()) {
-      logger.error(
-        `[Device] enable() ${this.name} ${neverThrowErrorToString(connected.error)}`,
-      );
+      logger.error(`[Device] enable() ${this.name} ${neverThrowErrorToString(connected.error)}`);
     }
     this.#refreshStatus();
   }
@@ -179,9 +156,7 @@ export class Device {
     this.options.enabled = false;
     const disconnected = await this.#driver.disconnect();
     if (disconnected.isErr()) {
-      logger.error(
-        `[Device] disable() ${this.name} ${neverThrowErrorToString(disconnected.error)}`,
-      );
+      logger.error(`[Device] disable() ${this.name} ${neverThrowErrorToString(disconnected.error)}`);
     }
     this.#refreshStatus();
   }
@@ -205,10 +180,7 @@ export class Device {
       try {
         cb(stauts);
       } catch (e) {
-        logger.error(
-          e,
-          `[Device] status listener for ${this.id} ${this.name} threw`,
-        );
+        logger.error(e, `[Device] status listener for ${this.id} ${this.name} threw`);
       }
     }
   }
@@ -295,9 +267,7 @@ export class DeviceManager {
     if (found.error) {
       return err({
         reason: "DB_ERROR",
-        cause: `[DeviceManager] loadAllFromDb() failed to read devices: ${errorToString(
-          found.error,
-        )}`,
+        cause: `[DeviceManager] loadAllFromDb() failed to read devices: ${errorToString(found.error)}`,
       } as const satisfies NeverThrowError);
     }
     const rows = found.data;
@@ -305,20 +275,24 @@ export class DeviceManager {
     let deviceCount = 0;
 
     for (const row of rows) {
-      const deviceConfig = readDeviceConfig(row, {
+      const optionsMap = {
         ModbusTCPDriver: row.device_modbus_tcp_options,
         ModbusRTUDriver: row.device_modbus_rtu_options,
         opcuaClientDriver: row.device_opcua_client_options,
-      });
+      };
 
-      if (!deviceConfig) {
+      const driverOptions = optionsMap[row.driverName];
+
+      if (!driverOptions) {
         logger.error(
           `[DeviceManager] loadAllFromDb() failed, no driver options provided for ${row.id} ${row.name}  ${row.driverName}`,
         );
         continue;
       }
 
-      const device = this.#deviceConfigError(await Device.create(deviceConfig));
+      const options = { ...row, options: driverOptions } as DeviceConfigInput;
+
+      const device = this.#deviceConfigError(await Device.create(options));
 
       this.#devices.set(row.id, device);
       this.#trackStatus(device);
@@ -349,9 +323,7 @@ export class DeviceManager {
     }
     const config = parsed.data;
 
-    const dbWrite = attempt(() =>
-      db.transaction((tx) => writeDeviceConfig(tx, config)),
-    );
+    const dbWrite = attempt(() => db.transaction((tx) => writeDeviceConfig(tx, config)));
 
     if (dbWrite.error) {
       return err({
@@ -368,6 +340,11 @@ export class DeviceManager {
     this.#trackStatus(device);
     logger.info(`[DeviceManager] added device ${config.id} ${config.name}`);
     if (device.isErr()) return err(device.error);
+
+    // tags can point at a device that has not been added yet, so adding one is
+    // another chance for them to be built
+    this.reloadTagsForDevice(config.name);
+
     return ok(device.value);
   }
 
@@ -381,9 +358,7 @@ export class DeviceManager {
     }
 
     // the option rows go with it: each table cascades on devices.id
-    const dbDelete = attempt(() =>
-      db.delete(devices).where(eq(devices.id, id)).run(),
-    );
+    const dbDelete = attempt(() => db.delete(devices).where(eq(devices.id, id)).run());
     if (dbDelete.error) {
       return err({
         reason: "DB_ERROR",
@@ -414,9 +389,7 @@ export class DeviceManager {
       } as const satisfies NeverThrowError);
     }
 
-    const current = existing.isOk()
-      ? existing.value.options
-      : existing.error.options;
+    const current = existing.isOk() ? existing.value.options : existing.error.options;
 
     // The old driver's options are dropped, not migrated: they describe a
     // different transport and none of it carries over. The registry lookup
@@ -466,6 +439,9 @@ export class DeviceManager {
     if (device.isErr()) return err(device.error);
 
     logger.info(`[DeviceManager] changed driver of ${id} to ${driverName}`);
+
+    this.reloadTagsForDevice(config.name);
+
     return ok(device.value);
   }
 
@@ -475,10 +451,7 @@ export class DeviceManager {
     // A driver change is not an edit of the same device - the options belong to
     // a different table and a different schema, so route it to changeDriver()
     // rather than trying to reinterpret them.
-    if (
-      existing?.isOk() &&
-      existing.value.options.driverName !== options.driverName
-    ) {
+    if (existing?.isOk() && existing.value.options.driverName !== options.driverName) {
       return this.changeDriver(id, options.driverName);
     }
 
@@ -492,9 +465,7 @@ export class DeviceManager {
     }
     const config = parsed.data;
 
-    const dbWrite = attempt(() =>
-      db.transaction((tx) => writeDeviceConfig(tx, config)),
-    );
+    const dbWrite = attempt(() => db.transaction((tx) => writeDeviceConfig(tx, config)));
 
     if (dbWrite.error) {
       return err({
@@ -510,10 +481,7 @@ export class DeviceManager {
         const { enabled, ...oldOptsWithoutEnabled } = existing.value.options;
         const { enabled: en, ...optsWithoutEnabled } = config;
         // only enabled changed
-        if (
-          util.isDeepStrictEqual(oldOptsWithoutEnabled, optsWithoutEnabled) &&
-          enabled !== config.enabled
-        ) {
+        if (util.isDeepStrictEqual(oldOptsWithoutEnabled, optsWithoutEnabled) && enabled !== config.enabled) {
           if (config.enabled) await existing.value.enable();
           else await existing.value.disable();
           // return existing device and dont delete and re-create a whole new instance
@@ -530,7 +498,30 @@ export class DeviceManager {
     if (newDevice.isErr()) return err(newDevice.error);
 
     logger.info(`[DeviceManager] updated device ${id} ${config.name}`);
+
+    // this is the path a broken device recovers on: the config that stopped it
+    // building its driver has been replaced, so the tags waiting on it get
+    // another attempt
+    this.reloadTagsForDevice(config.name);
+
     return ok(newDevice.value);
+  }
+
+  /**
+   * Build the tags that point at `name` through their `nodeId` again, returning
+   * the ids that were rebuilt.
+   *
+   * A tag subscribes to its driver while it is built, so a tag that was built
+   * while this device could not build its driver has nothing subscribed and stays
+   * broken for as long as the device cannot. Call this once the device can be
+   * built again.
+   */
+  reloadTagsForDevice(name: string) {
+    const reloaded = tagManager.reloadTagsForDevice(name);
+    if (reloaded.length) {
+      logger.info(`[DeviceManager] reloaded ${reloaded.length} tags on device ${name}`);
+    }
+    return reloaded;
   }
 
   getDevice(id: string) {
@@ -544,9 +535,7 @@ export class DeviceManager {
   getDeviceByName(name: string) {
     const [k, device] =
       this.#devices.entries().find(([key, device]) => {
-        const testName = device.isOk()
-          ? device.value.name
-          : device.error.options.name;
+        const testName = device.isOk() ? device.value.name : device.error.options.name;
         return name === testName;
       }) ?? [];
     if (!device) {
@@ -560,10 +549,6 @@ export class DeviceManager {
   }
 
   getAvalibleDevices() {
-    return this.#devices
-      .values()
-      .map((device) =>
-        device.isOk() ? device.value.name : device.error.options.name,
-      );
+    return this.#devices.values().map((device) => (device.isOk() ? device.value.name : device.error.options.name));
   }
 }

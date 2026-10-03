@@ -63,8 +63,6 @@ export const applyTagPatches = live(
           case "DUPLICATE_TAG":
           case "FOLDER_NOT_FOUND":
           case "TAG_ALREADY_EXISTS":
-          case "TAG_SERVER_NOT_INITIALISED":
-          case "FOLDER_MANAGER_NOT_INITIALISED":
             return wireErr(result.error);
           case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client
@@ -98,8 +96,6 @@ export const applyTagPatches = live(
         switch (reason) {
           case "DB_ERROR":
           case "OPCUA_FOLDER_NOT_FOUND":
-          case "TAG_SERVER_NOT_INITIALISED":
-          case "FOLDER_MANAGER_NOT_INITIALISED":
             return wireErr(result.error);
           case "TAG_CONFIG_ERROR":
             // if its just a config issue dont fail the patch but inform the client

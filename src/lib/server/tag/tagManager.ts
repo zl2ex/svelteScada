@@ -1,6 +1,6 @@
 import type { OPCUAServer } from "node-opcua";
 import { logger } from "../pino/logger";
-import { Tag, type FailedTag, type TagOptionsInput } from "./tag";
+import { resolveDevicePath, Tag, type FailedTag, type TagOptionsInput } from "./tag";
 import { OpcuaFolder } from "./opcuaFolder";
 import { db } from "../sqlite/db";
 import { tables } from "../sqlite/tables";
@@ -9,7 +9,7 @@ import type { FolderManager } from "./folderManager";
 import { err, ok, Result } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { newId } from "$lib/util/newId";
-import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
+import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { publishTagValue } from "../../../live/tags";
 
 export class TagManager {
@@ -27,10 +27,9 @@ export class TagManager {
 
   #buildPath(tagOptions: TagOptionsInput) {
     if (!this.#folderManager) {
-      return err({
-        reason: "FOLDER_MANAGER_NOT_INITIALISED",
-        cause: `[TagManager] buildPath() folderManager not initalised, please call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
+      throw Error(
+        `[TagManager] buildPath() folderManager not initalised, please call initOpcuaServer() first`,
+      );
     }
     let path = tagOptions.name;
     let folder = this.#folderManager.get(tagOptions.folderId);
@@ -38,7 +37,7 @@ export class TagManager {
       path = folder.node.name + "/" + path;
       folder = this.#folderManager.get(folder.node.parentId);
     }
-    return ok("/" + path);
+    return "/" + path;
   }
 
   /**
@@ -135,17 +134,15 @@ export class TagManager {
 
   createTag(opts: TagOptionsInput, writeToDb: boolean = true) {
     if (!this.opcuaServer) {
-      return err({
-        reason: "TAG_SERVER_NOT_INITIALISED",
-        cause: `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
+      throw Error(
+        `[TagManager] createTag() opcuaServer not initalised, please call initOpcuaServer() first`,
+      );
     }
 
     if (!this.#folderManager) {
-      return err({
-        reason: "FOLDER_MANAGER_NOT_INITIALISED",
-        cause: `[TagManager] createTag() folderManager not initalised, please call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
+      throw Error(
+        `[TagManager] createTag() folderManager not initalised, please call initOpcuaServer() first`,
+      );
     }
 
     if (this.#tags.has(opts.id)) {
@@ -186,21 +183,16 @@ export class TagManager {
       opts.folderId = newFolderId;
     }
 
-    const tag = this.tagConfigError(
-      Tag.create(this.opcuaServer, opcuaFolder, opts),
-    );
+    const tag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, opts));
 
     this.#trackValue(tag);
 
     this.#tags.set(opts.id, tag);
 
     const path = this.#buildPath(opts);
-    if (path.isErr()) return err(path.error);
-    this.#pathToId.set(path.value, opts.id);
+    this.#pathToId.set(path, opts.id);
 
-    logger.info(
-      `[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${path}`,
-    );
+    logger.info(`[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${path}`);
 
     if (tag.isErr()) {
       return err(tag.error);
@@ -210,27 +202,7 @@ export class TagManager {
   }
 
   updateTag(id: string, tagUpdates: TagOptionsInput) {
-    if (!this.opcuaServer) {
-      return err({
-        reason: "TAG_SERVER_NOT_INITIALISED",
-        cause: `[TagManager] updateTag() opcuaServer not initalised, please call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
-    }
-
-    if (!this.#folderManager) {
-      return err({
-        reason: "FOLDER_MANAGER_NOT_INITIALISED",
-        cause: `[TagManager] updateTag() folderManager not initalised, please call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
-    }
-
-    const dbResult = attempt(() =>
-      db
-        .update(tables.tags)
-        .set(tagUpdates)
-        .where(eq(tables.tags.id, id))
-        .run(),
-    );
+    const dbResult = attempt(() => db.update(tables.tags).set(tagUpdates).where(eq(tables.tags.id, id)).run());
 
     if (dbResult.error) {
       return err({
@@ -239,23 +211,88 @@ export class TagManager {
       } as const satisfies NeverThrowError);
     }
 
-    const opcuaFolder = this.#folderManager.get(tagUpdates.folderId);
-    if (!opcuaFolder)
+    return this.#replaceTag(id, tagUpdates);
+  }
+
+  // -------------------------
+  // Reload Functions
+  // -------------------------
+
+  /**
+   * Build every tag that points at `deviceName` through its `nodeId` again,
+   * returning the ids that were rebuilt.
+   *
+   * A tag subscribes to its driver while it is built, so a tag that was built
+   * while the device could not build its driver has nothing subscribed and stays
+   * broken until the device can and the tag is built again. A tag that still
+   * cannot be built is left in the map as the error it is now, so the client can
+   * keep showing it.
+   */
+  reloadTagsForDevice(deviceName: string) {
+    logger.trace(`[TagManager] reloadTagsForDevice() reloading tags on ${deviceName}`);
+
+    const reloaded: string[] = [];
+
+    // getAllTags() is a snapshot, so swapping tags out under the loop is safe
+    for (const tag of this.getAllTags()) {
+      const options = tag.isOk() ? tag.value.options : tag.error.options;
+      const nodeId = options.nodeId;
+      if (!nodeId) continue;
+      if (resolveDevicePath(nodeId).deviceName !== deviceName) continue;
+
+      const rebuilt = this.#replaceTag(options.id, { ...options });
+      if (rebuilt.isErr()) {
+        logger.error(
+          `[TagManager] reloadTagsForDevice() ${options.id} ${options.name} could not be rebuilt on ${deviceName}: ${neverThrowErrorToString(rebuilt.error)}`,
+        );
+        continue;
+      }
+      reloaded.push(options.id);
+    }
+
+    return reloaded;
+  }
+
+  /**
+   * Swap the tag at `id` for one freshly built from `options`, leaving the
+   * rebuilt tag (or the error that stopped it) in the map.
+   *
+   * Editing and reloading both land here: the driver subscription is made while
+   * the tag is built, so a tag only has one by being built again.
+   */
+  #replaceTag(id: string, options: TagOptionsInput) {
+    if (!this.opcuaServer) {
+      throw Error(
+        `[TagManager] replaceTag() opcuaServer not initalised, please call initOpcuaServer() first`,
+      );
+    }
+
+    if (!this.#folderManager) {
+      throw Error(
+        `[TagManager] replaceTag() folderManager not initalised, please call initOpcuaServer() first`,
+      );
+    }
+
+    // resolved before the old tag is touched so a tag whose folder has gone
+    // missing is left where it is rather than dropped out of the map
+    const opcuaFolder = this.#folderManager.get(options.folderId);
+    if (!opcuaFolder) {
       return err({
         reason: "OPCUA_FOLDER_NOT_FOUND",
-        cause: `no opcua folder at ${tagUpdates.folderId}`,
+        cause: `no opcua folder at ${options.folderId}`,
       } as const satisfies NeverThrowError);
+    }
 
-    // const duplicate = this.checkDuplicate(tagUpdates, opcuaFolder);
+    // const duplicate = this.checkDuplicate(options, opcuaFolder);
     // if (duplicate.isErr()) return err(duplicate.error);
 
     const oldTag = this.#tags.get(id);
     const oldPath = this.idToPath(id);
 
     if (oldTag?.isOk()) {
-      // keep old tag value when updating only if the datatype is the same
-      if (tagUpdates.dataType == oldTag.value.options.dataType) {
-        tagUpdates.initalValue = String(oldTag.value.value);
+      // keep old tag value when rebuilding only if the datatype is the same
+      if (options.dataType == oldTag.value.options.dataType) {
+        options.initalValue = String(oldTag.value.value);
       }
       const disposed = oldTag.value.dispose();
       if (disposed.isErr()) {
@@ -266,20 +303,20 @@ export class TagManager {
 
     if (oldPath) this.#pathToId.delete(oldPath);
 
-    const updatedTag = this.tagConfigError(
-      Tag.create(this.opcuaServer, opcuaFolder, tagUpdates),
-    );
+    const rebuiltTag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, options));
 
-    this.#trackValue(updatedTag);
+    this.#trackValue(rebuiltTag);
 
-    this.#tags.set(id, updatedTag);
-    this.#pathToId.set(tagUpdates.name, id);
+    this.#tags.set(id, rebuiltTag);
 
-    if (updatedTag.isErr()) {
-      return err(updatedTag.error);
+    const path = this.#buildPath(options);
+    this.#pathToId.set(path, id);
+
+    if (rebuiltTag.isErr()) {
+      return err(rebuiltTag.error);
     }
 
-    return ok(updatedTag);
+    return ok(rebuiltTag);
   }
 
   // -------------------------
@@ -297,9 +334,7 @@ export class TagManager {
         cause: `Tag not found at ${id}`,
       } as const satisfies NeverThrowError);
 
-    const dbResult = attempt(() =>
-      db.delete(tables.tags).where(eq(tables.tags.id, id)).run(),
-    );
+    const dbResult = attempt(() => db.delete(tables.tags).where(eq(tables.tags.id, id)).run());
     if (dbResult.error) {
       return err({
         reason: "DB_ERROR",
@@ -325,10 +360,7 @@ export class TagManager {
   checkDuplicate(tag: TagOptionsInput, folder: OpcuaFolder) {
     for (const t of this.#tags.values()) {
       if (t.isErr()) continue;
-      if (
-        t.value.name == tag.name &&
-        t.value.opcuaFolder.node.parentId == folder.node.parentId
-      ) {
+      if (t.value.name == tag.name && t.value.opcuaFolder.node.parentId == folder.node.parentId) {
         return err({
           reason: "DUPLICATE_TAG",
           cause: `Duplicate tag ${tag.id}  ${tag.name}`,
@@ -358,17 +390,15 @@ export class TagManager {
 
   loadAllFromDb() {
     if (!this.opcuaServer) {
-      return err({
-        reason: "TAG_SERVER_NOT_INITIALISED",
-        cause: `[TagManager] loadAllFromDb() opcuaServer not initalised, please call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
+      throw Error(
+        `[TagManager] loadAllFromDb() opcuaServer not initalised, please call initOpcuaServer() first`,
+      );
     }
 
     if (!this.#folderManager) {
-      return err({
-        reason: "FOLDER_MANAGER_NOT_INITIALISED",
-        cause: `[TagManager] loadAllFromDb() folderManager not initalised, please call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
+      throw Error(
+        `[TagManager] loadAllFromDb() folderManager not initalised, please call initOpcuaServer() first`,
+      );
     }
 
     const tagOptions = attempt(() => db.select().from(tables.tags).all());
@@ -385,19 +415,18 @@ export class TagManager {
       const opcuaFolder = this.#folderManager.get(tagOpt.folderId);
       if (!opcuaFolder) continue;
 
-      const tag = this.tagConfigError(
-        Tag.create(this.opcuaServer, opcuaFolder, tagOpt),
-      );
+      const tag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, tagOpt));
 
       this.#trackValue(tag);
 
       this.#tags.set(tagOpt.id, tag);
-      this.#pathToId.set(tagOpt.name, tagOpt.id);
+
+      // the same key createTag() uses, so a tag read from the database is
+      // looked up and published under the same path as one made at runtime
+      this.#pathToId.set(this.#buildPath(tagOpt), tagOpt.id);
     }
 
-    logger.info(
-      `[TagManager] loaded ${tagOptions.data.length} tags from database`,
-    );
+    logger.info(`[TagManager] loaded ${tagOptions.data.length} tags from database`);
     return ok(true);
   }
 }

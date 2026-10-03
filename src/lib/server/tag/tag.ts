@@ -80,10 +80,7 @@ export type BaseTypeStrings = keyof BaseTypeMap;
 
 // base type or array of base type
 export type BaseTypeStringsWithArrays =
-  | keyof BaseTypeMap
-  | `${keyof BaseTypeMap}[]`
-  | `${keyof BaseTypeMap}[${number}]`
-  | (string & {});
+  keyof BaseTypeMap | `${keyof BaseTypeMap}[]` | `${keyof BaseTypeMap}[${number}]` | (string & {});
 
 // Runtime mapping of base dataType -> "string" | "number" | "boolean"
 type PrimitiveKind<S> =
@@ -110,28 +107,19 @@ const primitiveKind = (schema: z.ZodType): "number" | "string" | "boolean" => {
     case "boolean":
       return "boolean";
     default:
-      throw new TypeError(
-        `[baseTypeMap] unsupported zod schema kind: ${def.type}`,
-      );
+      throw new TypeError(`[baseTypeMap] unsupported zod schema kind: ${def.type}`);
   }
 };
 
 export const baseTypeMap: {
   [K in keyof typeof Z_BaseTypes]: PrimitiveKind<(typeof Z_BaseTypes)[K]>;
-} = Object.fromEntries(
-  Object.entries(Z_BaseTypes).map(([key, schema]) => [
-    key,
-    primitiveKind(schema),
-  ]),
-) as {
+} = Object.fromEntries(Object.entries(Z_BaseTypes).map(([key, schema]) => [key, primitiveKind(schema)])) as {
   [K in keyof typeof Z_BaseTypes]: PrimitiveKind<(typeof Z_BaseTypes)[K]>;
 };
 
-export type TagValue =
-  string | number | boolean | Array<string | number | boolean>;
+export type TagValue = string | number | boolean | Array<string | number | boolean>;
 
-export type UpdateSource =
-  "WebClient" | "GatewayOpcua" | "TagInternal" | "TagDriver";
+export type UpdateSource = "WebClient" | "GatewayOpcua" | "TagInternal" | "TagDriver";
 
 export function getSchema<DataType extends string>(dataType: DataType) {
   const parsed = dataType.match(/^(?<base>[A-Za-z0-9]+)(?:\[(?<len>\d*?)\])?$/);
@@ -157,12 +145,12 @@ export function getSchema<DataType extends string>(dataType: DataType) {
   return ok(z.array(baseSchema).length(Number(len))); // fixed-length tuple
 }
 
-export type ResolvedDriverPath = {
+export type ResolvedDevicePath = {
   deviceName: string | undefined;
   driverPath: string | undefined;
 };
 
-export function resolveOpcuaPath(path: string): ResolvedDriverPath {
+export function resolveDevicePath(path: string): ResolvedDevicePath {
   // If identifier is a string path, split into parts
   let deviceName: string | undefined;
   let tagPath: string | undefined;
@@ -183,11 +171,7 @@ export function resolveOpcuaPath(path: string): ResolvedDriverPath {
 export type StatusCodeName = Exclude<keyof typeof StatusCodes, "prototype">;
 
 // onChange listener
-export type ChangeListener = (
-  value: TagValue,
-  source: UpdateSource,
-  statusCode: StatusCode,
-) => void;
+export type ChangeListener = (value: TagValue, source: UpdateSource, statusCode: StatusCode) => void;
 
 // the client-facing representation of a healthy tag
 export type ClientTagValue = Pick<Tag, "id" | "name" | "value" | "options"> & {
@@ -219,10 +203,7 @@ export class Tag {
     | z.ZodDefault<z.ZodBoolean>
     | z.ZodDefault<z.ZodObject>
     | z.ZodArray<
-        | z.ZodDefault<z.ZodNumber>
-        | z.ZodDefault<z.ZodString>
-        | z.ZodDefault<z.ZodBoolean>
-        | z.ZodDefault<z.ZodObject>
+        z.ZodDefault<z.ZodNumber> | z.ZodDefault<z.ZodString> | z.ZodDefault<z.ZodBoolean> | z.ZodDefault<z.ZodObject>
       >
     | undefined;
   //exposeOverOpcua: boolean = false;
@@ -282,9 +263,7 @@ export class Tag {
     tag.arrayLength = arrayMatch ? parseInt(arrayMatch[2], 10) : 0;
 
     // type without array size or brackets
-    const baseDataType = arrayMatch
-      ? arrayMatch[1]
-      : options.dataType.replace("[]", "");
+    const baseDataType = arrayMatch ? arrayMatch[1] : options.dataType.replace("[]", "");
 
     const dataType = Object.entries(DataType);
     // is a opcua primative datatype
@@ -319,14 +298,8 @@ export class Tag {
         } as const satisfies FailedTag);
       }
 
-      for (const tagOptions of udtDefinition
-        .buildTagFeilds(options, options.children)
-        .values()) {
-        const childResult = Tag.create(
-          tag.opcuaServer,
-          tag.opcuaFolder,
-          tagOptions,
-        );
+      for (const tagOptions of udtDefinition.buildTagFeilds(options, options.children).values()) {
+        const childResult = Tag.create(tag.opcuaServer, tag.opcuaFolder, tagOptions);
         if (childResult.isErr()) return err(childResult.error);
         tag.childTags.set(childResult.value.name, childResult.value);
       }
@@ -367,13 +340,11 @@ export class Tag {
     }
 
     if (options.exposeOverOpcua) {
-      const addressSpace = tag.opcuaServer?.engine.addressSpace;
+      const addressSpace = tag.opcuaServer.engine.addressSpace;
       if (!addressSpace) {
-        return err({
-          reason: "OPCUA_NOT_INITIALISED",
-          cause: `[Tag] create() id: ${tag.id} cannot initalise exposeOpcuaVariable as no opcuaServer provided`,
-          options,
-        } as const satisfies FailedTag);
+        throw Error(
+          `[Tag] create() id: ${tag.id} cannot initalise exposeOpcuaVariable as no opcuaServer provided, please call initOpcuaServer() first`,
+        );
       }
       const exposed = attempt(() => {
         const namespace = addressSpace.getOwnNamespace();
@@ -400,11 +371,7 @@ export class Tag {
               }),
             set: async (variant: Variant) => {
               console.trace(variant);
-              const update = await tag.#update(
-                variant.value,
-                "GatewayOpcua",
-                StatusCodes.Good,
-              );
+              const update = await tag.#update(variant.value, "GatewayOpcua", StatusCodes.Good);
               if (update.isErr()) {
                 logger.error(update.error);
                 const reason = update.error.reason;
@@ -523,7 +490,7 @@ export class Tag {
         cause: `no nodeId provided for tag ${this.id}  ${this.name}`,
       } as const satisfies NeverThrowError);
 
-    const resolvedPath = resolveOpcuaPath(this.options.nodeId);
+    const resolvedPath = resolveDevicePath(this.options.nodeId);
     if (!resolvedPath.deviceName) {
       return err({
         reason: "RESOLVE_DEVICE_NAME_FAILED",
@@ -540,22 +507,17 @@ export class Tag {
 
     const device = deviceManager.getDeviceByName(resolvedPath.deviceName);
     if (device.isErr()) return err(device.error);
-    const variableResult = device.value.subscribe(
-      resolvedPath.driverPath,
-      this.options.dataType,
-    );
+    const variableResult = device.value.subscribe(resolvedPath.driverPath, this.options.dataType);
     if (variableResult.isErr()) return err(variableResult.error);
     const driverVariable = variableResult.value;
 
     // driver values subscription
-    this.driverUnsubscribe = driverVariable.onChange(
-      async ({ value, status }) => {
-        const updated = await this.#update(value, "TagDriver", status);
-        if (updated.isErr()) {
-          logger.error(updated.error);
-        }
-      },
-    );
+    this.driverUnsubscribe = driverVariable.onChange(async ({ value, status }) => {
+      const updated = await this.#update(value, "TagDriver", status);
+      if (updated.isErr()) {
+        logger.error(updated.error);
+      }
+    });
 
     return ok(driverVariable);
   }
@@ -585,11 +547,7 @@ export class Tag {
    * @example
    * const statusCode = await update(50.1, "TagInternal", StatusCodes.Good);
    */
-  async #update(
-    value: TagValue,
-    source: UpdateSource,
-    statusCode: StatusCode = StatusCodes.Good,
-  ) {
+  async #update(value: TagValue, source: UpdateSource, statusCode: StatusCode = StatusCodes.Good) {
     const validated = this.#validate(value);
     if (validated.isErr()) {
       this.statusCode = StatusCodes.BadTypeMismatch;
@@ -602,11 +560,7 @@ export class Tag {
         cause: `[Tag] update() Array Type Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}`,
         options: this.options,
       } as const satisfies FailedTag);
-    if (
-      this.isArray &&
-      Array.isArray(newValue) &&
-      this.arrayLength !== newValue?.length
-    )
+    if (this.isArray && Array.isArray(newValue) && this.arrayLength !== newValue?.length)
       return err({
         reason: "ARRAY_SIZE_MISMATCH",
         cause: `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
@@ -641,8 +595,7 @@ export class Tag {
           {
             dataType: this.opcuaDataType,
             arrayType: this.isArray ? VariantArrayType.Array : undefined,
-            dimensions:
-              this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
+            dimensions: this.isArray && this.arrayLength ? [this.arrayLength] : undefined,
             value: newValue,
           },
           statusCode,
@@ -660,11 +613,12 @@ export class Tag {
     this.value = newValue;
     this.statusCode = statusCode;
 
-    logger.trace(
-      `[Tag] update() ${this.id} = ${value} : ${this.statusCode.name}`,
-    );
+    logger.trace(`[Tag] update() ${this.id} = ${value} : ${this.statusCode.name}`);
 
-    this.onChange?.(newValue, source, statusCode);
+    const changed = attempt(() => this.onChange?.(newValue, source, statusCode));
+    if (changed.error) {
+      logger.error(`[Tag] update() onChange() threw with error ${changed.error}`);
+    }
 
     return ok(this.statusCode);
   }
@@ -710,12 +664,7 @@ export class Tag {
         } as const satisfies FailedTag);
       }
 
-      const deleted = attempt(() =>
-        gatewayOpcua.deleteOpcuaVariable(
-          addressSpace,
-          this.exposeOpcuaVarible!,
-        ),
-      );
+      const deleted = attempt(() => gatewayOpcua.deleteOpcuaVariable(addressSpace, this.exposeOpcuaVarible!));
       if (deleted.error) {
         return err({
           reason: "TAG_DISPOSE_FAILED",

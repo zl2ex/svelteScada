@@ -4,11 +4,7 @@ import { z } from "zod";
 import { logger } from "$lib/server/pino/logger";
 import type { BaseTypeMap } from "$lib/server/tag/tag";
 import { attempt } from "$lib/util/attempt";
-import {
-  errorToString,
-  neverThrowErrorToString,
-  type NeverThrowError,
-} from "$lib/util/neverThrow";
+import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import {
   BaseDriver,
   type DriverVariable,
@@ -79,28 +75,16 @@ export type ModbusSubscriptionInfo = {
  * a transport only has to supply a client plus its own open/close.
  */
 export interface ModbusClientLike {
-  readHoldingRegisters(
-    start: number,
-    count: number,
-  ): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
-  readInputRegisters(
-    start: number,
-    count: number,
-  ): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
-  readCoils(
-    start: number,
-    count: number,
-  ): Promise<{ response: { body: { valuesAsArray: Array<number | boolean> } } }>;
+  readHoldingRegisters(start: number, count: number): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
+  readInputRegisters(start: number, count: number): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
+  readCoils(start: number, count: number): Promise<{ response: { body: { valuesAsArray: Array<number | boolean> } } }>;
   readDiscreteInputs(
     start: number,
     count: number,
   ): Promise<{ response: { body: { valuesAsArray: Array<number | boolean> } } }>;
   writeSingleCoil(address: number, value: boolean): Promise<unknown>;
   writeSingleRegister(address: number, value: number): Promise<unknown>;
-  writeMultipleRegisters(
-    start: number,
-    values: number[] | Buffer,
-  ): Promise<unknown>;
+  writeMultipleRegisters(start: number, values: number[] | Buffer): Promise<unknown>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -168,12 +152,8 @@ export const typeHandlers: {
     size: 8,
     default: 0,
     decode: ({ view, littleEndian }) => {
-      const hi = littleEndian
-        ? view.getInt32(4, true)
-        : view.getInt32(0, false);
-      const lo = littleEndian
-        ? view.getInt32(0, true)
-        : view.getInt32(4, false);
+      const hi = littleEndian ? view.getInt32(4, true) : view.getInt32(0, false);
+      const lo = littleEndian ? view.getInt32(0, true) : view.getInt32(4, false);
       return hi * 4294967296 + (lo >>> 0);
     },
     encode: ({ view, littleEndian }, v) => {
@@ -192,12 +172,8 @@ export const typeHandlers: {
     size: 8,
     default: 0,
     decode: ({ view, littleEndian }) => {
-      const hi = littleEndian
-        ? view.getUint32(4, true)
-        : view.getUint32(0, false);
-      const lo = littleEndian
-        ? view.getUint32(0, true)
-        : view.getUint32(4, false);
+      const hi = littleEndian ? view.getUint32(4, true) : view.getUint32(0, false);
+      const lo = littleEndian ? view.getUint32(0, true) : view.getUint32(4, false);
       return hi * 4294967296 + lo;
     },
     encode: ({ view, littleEndian }, v) => {
@@ -234,19 +210,14 @@ export const typeHandlers: {
     },
     encode: ({ view, length }, value) => {
       const n = Math.min(length ?? view.byteLength, view.byteLength);
-      const target = new Uint8Array(
-        view.buffer,
-        view.byteOffset,
-        view.byteLength,
-      );
+      const target = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
       target.fill(0);
       target.set(new TextEncoder().encode(value).subarray(0, n));
     },
   },
 };
 
-export const codecFor = (dataType: ModbusDataType) =>
-  typeHandlers[dataType] as TypeHandler<ModbusValue>;
+export const codecFor = (dataType: ModbusDataType) => typeHandlers[dataType] as TypeHandler<ModbusValue>;
 
 /* -------------------------------------------------------------------------- */
 /*  Internals                                                                 */
@@ -280,9 +251,7 @@ type Batch = {
   subs: Sub[];
 };
 
-type RawRead =
-  | { kind: "words"; bytes: Uint8Array }
-  | { kind: "bits"; bits: boolean[] };
+type RawRead = { kind: "words"; bytes: Uint8Array } | { kind: "bits"; bits: boolean[] };
 
 type ReadFailure = NeverThrowError & {
   opcuaStatus: StatusCode;
@@ -290,8 +259,7 @@ type ReadFailure = NeverThrowError & {
 };
 
 // expects a structure like (le|sw)hr20.1
-const PATH_REGEX =
-  /^(?:\((?<flags>[a-z|]+)\))?(?<registerType>hr|ir|co|di)(?<address>\d+)(?:\.(?<bit>\d+))?$/;
+const PATH_REGEX = /^(?:\((?<flags>[a-z|]+)\))?(?<registerType>hr|ir|co|di)(?<address>\d+)(?:\.(?<bit>\d+))?$/;
 
 const MAX_REGISTERS_PER_READ = 125;
 const MAX_BITS_PER_READ = 2000;
@@ -312,10 +280,7 @@ const MAX_BITS_PER_READ = 2000;
  * members are not reachable from subclasses - the same trade-off
  * `BaseDriver.setConnected` already makes.
  */
-export abstract class BaseModbusDriver<
-  O extends ModbusCommonOptions,
-  N extends string,
-> extends BaseDriver<O, N> {
+export abstract class BaseModbusDriver<O extends ModbusCommonOptions, N extends string> extends BaseDriver<O, N> {
   #subs = new Map<string, Sub>();
 
   #pollTimer?: NodeJS.Timeout;
@@ -386,18 +351,18 @@ export abstract class BaseModbusDriver<
     this.closeTransport();
   }
 
-    /** Subclass transport hook: the connection came up. */
-    protected onTransportUp() {
-      // a transport can still report "up" after dispose() if the open was
-      // already in flight; never resurrect a disposed driver
-      if (this.disposed) {
-        this.closeTransport();
-        return;
-      }
-      this.setConnected(true);
-      logger.info(`[${this.driverName}] Connected to ${this.targetLabel()}`);
-      this.#startPolling();
+  /** Subclass transport hook: the connection came up. */
+  protected onTransportUp() {
+    // a transport can still report "up" after dispose() if the open was
+    // already in flight; never resurrect a disposed driver
+    if (this.disposed) {
+      this.closeTransport();
+      return;
     }
+    this.setConnected(true);
+    logger.info(`[${this.driverName}] Connected to ${this.targetLabel()}`);
+    this.#startPolling();
+  }
 
   /** Subclass transport hook: the connection dropped. Schedules a retry. */
   protected onTransportDown(cause?: string) {
@@ -410,7 +375,7 @@ export abstract class BaseModbusDriver<
 
   #scheduleReconnect(cause?: string) {
     if (this.#reconnectTimer) return; // already waiting to retry
-    if (cause) logger.debug(`[${this.driverName}] transport error: ${cause}`);
+    if (cause) logger.warn(`[${this.driverName}] transport error: ${cause}`);
     logger.warn(
       `[${this.driverName}] connection to ${this.targetLabel()} down, retry in ${this.reconnectIntervalMs} ms`,
     );
@@ -443,11 +408,7 @@ export abstract class BaseModbusDriver<
    * byte/word order, bit and string length share one cached reading.
    * Different decodings of overlapping registers are merged into one read.
    */
-  subscribe<D extends ModbusDataType>(
-    path: string,
-    dataType: D,
-    opts: SubscribeOptions = {},
-  ) {
+  subscribe<D extends ModbusDataType>(path: string, dataType: D, opts: SubscribeOptions = {}) {
     const parsed = this.#parsePath(path);
     if (parsed.isErr()) return err(parsed.error);
     const p = parsed.value;
@@ -498,15 +459,7 @@ export abstract class BaseModbusDriver<
     }
 
     const stringLength = dataType === "String" ? opts.stringLength : undefined;
-    const key = [
-      p.registerType,
-      p.address,
-      dataType,
-      p.endian,
-      p.swapWords,
-      p.bit ?? "",
-      stringLength ?? "",
-    ].join("|");
+    const key = [p.registerType, p.address, dataType, p.endian, p.swapWords, p.bit ?? "", stringLength ?? ""].join("|");
 
     let sub = this.#subs.get(key);
     if (!sub) {
@@ -569,19 +522,14 @@ export abstract class BaseModbusDriver<
         sub.refs--;
         if (sub.refs <= 0 && this.#subs.get(sub.key) === sub) {
           this.#subs.delete(sub.key);
-          logger.debug(
-            `[${this.driverName}] release() removed subscription ${sub.key}`,
-          );
+          logger.debug(`[${this.driverName}] release() removed subscription ${sub.key}`);
         }
       },
     };
   }
 
   #publish(sub: Sub, next: Reading<ModbusValue>) {
-    if (
-      Object.is(sub.last.value, next.value) &&
-      sub.last.status.value === next.status.value
-    ) {
+    if (Object.is(sub.last.value, next.value) && sub.last.status.value === next.status.value) {
       return;
     }
     sub.last = next;
@@ -620,9 +568,7 @@ export abstract class BaseModbusDriver<
     if (this.#polling) return;
     this.#polling = true;
     this.#schedulePoll(0);
-    logger.info(
-      `[${this.driverName}] Started Modbus polling at ${this.options.pollingIntervalMs} ms interval`,
-    );
+    logger.info(`[${this.driverName}] Started Modbus polling at ${this.options.pollingIntervalMs} ms interval`);
   }
 
   #stopPolling() {
@@ -665,20 +611,13 @@ export abstract class BaseModbusDriver<
     const batches: Batch[] = [];
 
     for (const [type, list] of byType) {
-      const limit =
-        type === "hr" || type === "ir"
-          ? MAX_REGISTERS_PER_READ
-          : MAX_BITS_PER_READ;
+      const limit = type === "hr" || type === "ir" ? MAX_REGISTERS_PER_READ : MAX_BITS_PER_READ;
       list.sort((a, b) => a.address - b.address);
 
       let cur: Batch | undefined;
       for (const sub of list) {
         const end = sub.address + sub.registerLength;
-        if (
-          cur &&
-          sub.address <= cur.end + maxGap &&
-          Math.max(cur.end, end) - cur.start <= limit
-        ) {
+        if (cur && sub.address <= cur.end + maxGap && Math.max(cur.end, end) - cur.start <= limit) {
           cur.end = Math.max(cur.end, end);
           cur.subs.push(sub);
         } else {
@@ -691,11 +630,7 @@ export abstract class BaseModbusDriver<
   }
 
   async #readBatch(batch: Batch) {
-    const result = await this.#readRaw(
-      batch.type,
-      batch.start,
-      batch.end - batch.start,
-    );
+    const result = await this.#readRaw(batch.type, batch.start, batch.end - batch.start);
 
     if (result.isOk()) {
       for (const sub of batch.subs) this.#applyRead(batch, sub, result.value);
@@ -725,11 +660,7 @@ export abstract class BaseModbusDriver<
     for (const sub of batch.subs) this.#publishStatus(sub, failure.opcuaStatus);
   }
 
-  async #readRaw(
-    type: ModbusRegisterType,
-    start: number,
-    length: number,
-  ) {
+  async #readRaw(type: ModbusRegisterType, start: number, length: number) {
     const read = await attempt(() =>
       this.#enqueue(async (): Promise<RawRead> => {
         switch (type) {
@@ -751,18 +682,14 @@ export abstract class BaseModbusDriver<
             const r = await this.client.readCoils(start, length);
             return {
               kind: "bits",
-              bits: Array.from(r.response.body.valuesAsArray, (v) =>
-                Boolean(v),
-              ),
+              bits: Array.from(r.response.body.valuesAsArray, (v) => Boolean(v)),
             };
           }
           case "di": {
             const r = await this.client.readDiscreteInputs(start, length);
             return {
               kind: "bits",
-              bits: Array.from(r.response.body.valuesAsArray, (v) =>
-                Boolean(v),
-              ),
+              bits: Array.from(r.response.body.valuesAsArray, (v) => Boolean(v)),
             };
           }
         }
@@ -778,8 +705,7 @@ export abstract class BaseModbusDriver<
     const offset = sub.address - batch.start;
     const from = offset * 2;
     const to = from + sub.registerLength * 2;
-    const shortResponse =
-      raw.kind === "bits" ? offset >= raw.bits.length : to > raw.bytes.length;
+    const shortResponse = raw.kind === "bits" ? offset >= raw.bits.length : to > raw.bytes.length;
 
     const decoded = shortResponse
       ? undefined
@@ -788,10 +714,7 @@ export abstract class BaseModbusDriver<
         : attempt(() => decodeWords(sub, raw.bytes.slice(from, to)));
 
     if (!decoded || decoded.error) {
-      logger.error(
-        decoded?.error ?? "short response",
-        `[${this.driverName}] decode failed for ${sub.key}`,
-      );
+      logger.error(decoded?.error ?? "short response", `[${this.driverName}] decode failed for ${sub.key}`);
       this.#publishStatus(sub, StatusCodes.BadDecodingError);
       return;
     }
@@ -847,10 +770,7 @@ export abstract class BaseModbusDriver<
         if (sub.registerLength === 1) {
           await this.client.writeSingleRegister(sub.address, view.getUint16(0));
         } else {
-          await this.client.writeMultipleRegisters(
-            sub.address,
-            Buffer.from(buf),
-          );
+          await this.client.writeMultipleRegisters(sub.address, Buffer.from(buf));
         }
       }),
     );
@@ -939,12 +859,7 @@ function reverseWords(bytes: Uint8Array) {
 
 /** copy out of Node's shared 8K Buffer pool into a standalone Uint8Array */
 function toBytes(buffer: Buffer): Uint8Array {
-  return new Uint8Array(
-    buffer.buffer.slice(
-      buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength,
-    ),
-  );
+  return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
 }
 
 function classifyModbusError(e: unknown): ReadFailure {
@@ -975,11 +890,7 @@ function classifyModbusError(e: unknown): ReadFailure {
   }
 }
 
-function readFailure(
-  cause: string,
-  status: StatusCode,
-  deviceException: boolean,
-) {
+function readFailure(cause: string, status: StatusCode, deviceException: boolean) {
   return {
     reason: "MODBUS_REQUEST_FAILED",
     cause,

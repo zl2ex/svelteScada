@@ -72,3 +72,7 @@ export { z_deviceModbusRtuOptions } from "./device_modbus_rtu_options";
 export { z_deviceOpcuaClientOptions } from "./device_opcua_client_options";
 
 export { z_loginUser } from "./users";
+
+export { driverNames } from "./devices";
+export type { DriverName } from "./devices";
+export { endianNames } from "./enums";
