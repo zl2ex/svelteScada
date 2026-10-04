@@ -1,18 +1,12 @@
-# create-svelte
+## Todo
 
-Everything you need to build a Svelte project, powered by [`create-svelte`](https://github.com/sveltejs/kit/tree/master/packages/create-svelte).
+add trending support to the tag class, log on change in the Tag.update() function if trending is enabled,
+create a new one to one relationship in /sqlite/tables/relations.ts between tags and tag_trend_options, add settings for trend support in the tag class and in the ui Popover in /editor/+layout.svelte.
+there is a new trends table in the /sqlite/tables/trends.ts - this is for logging trend data to.
 
-## Creating a project
 
-If you're seeing this, you've probably already done this step. Congrats!
 
-```bash
-# create a new project in the current directory
-npm create svelte@latest
 
-# create a new project in my-app
-npm create svelte@latest my-app
-```
 
 ## Developing
 

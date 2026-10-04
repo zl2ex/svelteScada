@@ -251,14 +251,6 @@
                     }}
                     onkeydown={(ev) => {
                       if (ev.key === "Enter") {
-                        const name = String(ev.currentTarget.value);
-                        if (popoverDeviceId == newDevice.id) {
-                          newDevice.name = name;
-                          return;
-                        }
-                        devicesPatchesCollection.update(popoverDeviceId, {
-                          name,
-                        });
                         ev.currentTarget.blur();
                       }
                       if (ev.key === "Escape") {

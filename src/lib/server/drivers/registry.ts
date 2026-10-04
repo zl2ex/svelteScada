@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ok, type Result } from "neverthrow";
+import type { Result } from "neverthrow";
 import { eq } from "drizzle-orm";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db } from "../sqlite/db";
@@ -192,10 +192,7 @@ export const driverRegistry = {
       endpointUrl: { label: "Endpoint URL", kind: "text" },
     },
     defaultOptions: z_deviceOpcuaClientOptions.parse({}),
-    create: (options: OpcuaClientOptions) =>
-      // the constructor cannot fail: it logs and leaves `client` undefined so
-      // connect() reports CLIENT_NOT_INITIALISED rather than throwing
-      ok(new OpcuaClientDriver(options)),
+    create: (options: OpcuaClientOptions) => OpcuaClientDriver.create(options),
     writeOptions(tx: Db, deviceId: string, options: OpcuaClientOptions) {
       const row = { ...options, deviceId };
       tx.insert(device_opcua_client_options)
