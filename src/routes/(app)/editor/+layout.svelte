@@ -36,14 +36,15 @@
     requestAnimationFrame(() => node.select());
   }
 
-  import { tagPatches, applyTagPatches } from "$live/tags";
+  import { tagPatches, applyTagPatches, setTagTrendOptions } from "$live/tags";
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import type {
     BaseTypeStrings,
     TagOptionsInput,
+    TagTrendOptions,
   } from "$lib/server/tag/tag.js";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import type { TagInsertOptionalId } from "$lib/server/sqlite/tables/tags.js";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import { getDataTypeStrings } from "$lib/remote/tag.remote.js";
@@ -99,6 +100,33 @@
       onError: (e) => console.error("Tag sync error:", e),
     }),
   );
+
+  // trend settings live in their own table so they are edited directly instead
+  // of going through the tag options patch collection. the load snapshot is
+  // only the starting point - a save below replaces the row.
+  let tagTrendOptions = $state<Record<string, TagTrendOptions>>(
+    untrack(() => ({ ...data.tagTrendOptions })),
+  );
+
+  const DEFAULT_TREND_INTERVAL = 1000;
+
+  function trendSettings(tagId: string) {
+    return tagTrendOptions[tagId];
+  }
+
+  function saveTrendSettings(tagId: string, enabled: boolean, interval: number) {
+    setTagTrendOptions({ tagId, enabled, interval })
+      .then((result) => {
+        if (result.isErr) {
+          console.error(result.error);
+          return;
+        }
+        tagTrendOptions[tagId] = { tagId, enabled, interval };
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }
 
   undoManager.register("folders", tagFolderPatchesCollection);
   undoManager.register("tags", tagPatchesCollection);
@@ -883,6 +911,45 @@
                         exposeOverOpcua: e.currentTarget.checked,
                       })}
                   />
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <Settings2Icon class="size-4 shrink-0 opacity-60" />
+                  <label
+                    class="whitespace-nowrap opacity-60 w-24"
+                    for={`trending-${node.id}`}>Trending</label
+                  >
+                  <input
+                    id={`trending-${node.id}`}
+                    type="checkbox"
+                    class="checkbox"
+                    checked={trendSettings(node.id)?.enabled ?? false}
+                    onchange={(e) =>
+                      saveTrendSettings(
+                        node.id,
+                        e.currentTarget.checked,
+                        trendSettings(node.id)?.interval ?? DEFAULT_TREND_INTERVAL,
+                      )}
+                  />
+                  <input
+                    type="number"
+                    class="input w-24"
+                    min="100"
+                    step="100"
+                    placeholder="interval ms"
+                    disabled={!(trendSettings(node.id)?.enabled ?? false)}
+                    value={trendSettings(node.id)?.interval ?? DEFAULT_TREND_INTERVAL}
+                    onblur={(e) => {
+                      const interval = Number(e.currentTarget.value);
+                      if (!Number.isFinite(interval) || interval < 100) return;
+                      saveTrendSettings(
+                        node.id,
+                        trendSettings(node.id)?.enabled ?? true,
+                        interval,
+                      );
+                    }}
+                  />
+                  <span class="text-xs opacity-60">ms</span>
                 </div>
 
                 <div class="flex items-start gap-2">

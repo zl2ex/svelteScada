@@ -24,7 +24,14 @@ import {
 import z from "zod";
 import { OpcuaFolder } from "$lib/server/tag/opcuaFolder";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
-import { z_insertTag } from "$lib/server/sqlite/tables";
+import {
+  tag_trend_options,
+  trends,
+  z_insertTag,
+  z_insertTagTrendOptions,
+} from "$lib/server/sqlite/tables";
+import { db } from "$lib/server/sqlite/db";
+import { eq } from "drizzle-orm";
 import { err, ok, type Result } from "neverthrow";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { baseTypeKeys, Z_BaseTypes } from "$lib/validation/zod";
@@ -113,7 +120,9 @@ const primitiveKind = (schema: z.ZodType): "number" | "string" | "boolean" => {
 
 export const baseTypeMap: {
   [K in keyof typeof Z_BaseTypes]: PrimitiveKind<(typeof Z_BaseTypes)[K]>;
-} = Object.fromEntries(Object.entries(Z_BaseTypes).map(([key, schema]) => [key, primitiveKind(schema)])) as {
+} = Object.fromEntries(
+  Object.entries(Z_BaseTypes).map(([key, schema]) => [key, primitiveKind(schema)]),
+) as {
   [K in keyof typeof Z_BaseTypes]: PrimitiveKind<(typeof Z_BaseTypes)[K]>;
 };
 
@@ -170,8 +179,18 @@ export function resolveDevicePath(path: string): ResolvedDevicePath {
 
 export type StatusCodeName = Exclude<keyof typeof StatusCodes, "prototype">;
 
+export type TagTrendOptionsInput = z.input<typeof z_insertTagTrendOptions>;
+export type TagTrendOptions = z.output<typeof z_insertTagTrendOptions>;
+// the tag id always comes from the tag the settings belong to, so the client
+// only ever sends these two fields
+export type TagTrendSettings = Omit<TagTrendOptionsInput, "tagId">;
+
 // onChange listener
-export type ChangeListener = (value: TagValue, source: UpdateSource, statusCode: StatusCode) => void;
+export type ChangeListener = (
+  value: TagValue,
+  source: UpdateSource,
+  statusCode: StatusCode,
+) => void;
 
 // the client-facing representation of a healthy tag
 export type ClientTagValue = Pick<Tag, "id" | "name" | "value" | "options"> & {
@@ -203,7 +222,10 @@ export class Tag {
     | z.ZodDefault<z.ZodBoolean>
     | z.ZodDefault<z.ZodObject>
     | z.ZodArray<
-        z.ZodDefault<z.ZodNumber> | z.ZodDefault<z.ZodString> | z.ZodDefault<z.ZodBoolean> | z.ZodDefault<z.ZodObject>
+        | z.ZodDefault<z.ZodNumber>
+        | z.ZodDefault<z.ZodString>
+        | z.ZodDefault<z.ZodBoolean>
+        | z.ZodDefault<z.ZodObject>
       >
     | undefined;
   //exposeOverOpcua: boolean = false;
@@ -212,6 +234,9 @@ export class Tag {
   driverVarible?: DriverVariable<TagValue>; // driver subscription varible
   driverUnsubscribe?: () => void; // driver cleanup function
   onChange?: ChangeListener; // on change event for listeners
+  /** null when trending is off for this tag */
+  trendOptions: TagTrendOptions | null = null;
+  #lastTrendWrite = 0;
   #disposed = false; // disposed flag
 
   private constructor(
@@ -255,6 +280,7 @@ export class Tag {
     const options = parsed.data;
 
     const tag = new Tag(opcuaServer, opcuaFolder, options, onChange);
+    tag.#loadTrendOptions();
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
@@ -615,6 +641,8 @@ export class Tag {
 
     logger.trace(`[Tag] update() ${this.id} = ${value} : ${this.statusCode.name}`);
 
+    this.#trend(newValue, statusCode);
+
     const changed = attempt(() => this.onChange?.(newValue, source, statusCode));
     if (changed.error) {
       logger.error(`[Tag] update() onChange() threw with error ${changed.error}`);
@@ -627,6 +655,100 @@ export class Tag {
     const disposed = this.dispose();
     if (disposed.isErr()) {
       logger.error(disposed.error);
+    }
+  }
+
+  /**
+   * Loads the persisted `tag_trend_options` row for this tag. Trending is
+   * optional so a failed read only logs - it must never stop a tag loading.
+   */
+  #loadTrendOptions() {
+    const row = attempt(() =>
+      db.select().from(tag_trend_options).where(eq(tag_trend_options.tagId, this.id)).get(),
+    );
+    if (row.error) {
+      logger.error(
+        `[Tag] #loadTrendOptions() ${this.id} failed to read trend options: ${errorToString(row.error)}`,
+      );
+      return;
+    }
+    if (!row.data) return;
+    const parsed = z_insertTagTrendOptions.safeParse(row.data);
+    if (!parsed.success) {
+      logger.error(
+        `[Tag] #loadTrendOptions() ${this.id} trend options failed to parse: ${parsed.error.message}`,
+      );
+      return;
+    }
+    this.trendOptions = parsed.data;
+  }
+
+  /**
+   * Turns trending on or off for this tag and persists the options row.
+   * `enabled: false` keeps the stored interval, so switching trending back on
+   * needs no new value.
+   */
+  async setTrendOptions(options: TagTrendSettings) {
+    const parsed = z_insertTagTrendOptions.safeParse({ ...options, tagId: this.id });
+    if (!parsed.success) {
+      return err({
+        reason: "OPTIONS_PARSE_ERROR",
+        cause: `[Tag] setTrendOptions() ${this.id} failed to parse options: ${parsed.error.message}`,
+        options: this.options,
+      } as const satisfies FailedTag);
+    }
+    const written = attempt(() =>
+      db
+        .insert(tag_trend_options)
+        .values(parsed.data)
+        .onConflictDoUpdate({
+          target: tag_trend_options.tagId,
+          set: { interval: parsed.data.interval, enabled: parsed.data.enabled },
+        })
+        .run(),
+    );
+    if (written.error) {
+      return err({
+        reason: "TREND_OPTIONS_WRITE_FAILED",
+        cause: `[Tag] setTrendOptions() ${this.id} failed to write trend options: ${errorToString(written.error)}`,
+        options: this.options,
+      } as const satisfies FailedTag);
+    }
+    this.trendOptions = parsed.data;
+    this.#lastTrendWrite = 0;
+    return ok(parsed.data);
+  }
+
+  /**
+   * Writes a trend sample when this tag has trending on and the configured
+   * interval has elapsed. Writes are rate limited by `#lastTrendWrite` so a
+   * fast changing tag cannot flood the trends table.
+   */
+  #trend(value: unknown, statusCode: StatusCode) {
+    if (!this.trendOptions?.enabled) return;
+    const now = Date.now();
+    if (now - this.#lastTrendWrite < this.trendOptions.interval) return;
+    this.#lastTrendWrite = now;
+
+    const written = attempt(() =>
+      db
+        .insert(trends)
+        .values({
+          tagId: this.id,
+          timestamp: now,
+          value: JSON.stringify(value),
+          ok: statusCode === StatusCodes.Good,
+        })
+        .onConflictDoUpdate({
+          target: [trends.tagId, trends.timestamp],
+          set: { value: JSON.stringify(value), ok: statusCode === StatusCodes.Good },
+        })
+        .run(),
+    );
+    if (written.error) {
+      logger.error(
+        `[Tag] #trend() ${this.id} failed to write trend: ${errorToString(written.error)}`,
+      );
     }
   }
 
@@ -664,7 +786,9 @@ export class Tag {
         } as const satisfies FailedTag);
       }
 
-      const deleted = attempt(() => gatewayOpcua.deleteOpcuaVariable(addressSpace, this.exposeOpcuaVarible!));
+      const deleted = attempt(() =>
+        gatewayOpcua.deleteOpcuaVariable(addressSpace, this.exposeOpcuaVarible!),
+      );
       if (deleted.error) {
         return err({
           reason: "TAG_DISPOSE_FAILED",

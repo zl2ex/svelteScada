@@ -4,21 +4,14 @@ import { tagManager } from "../hooks.server";
 import {
   type ClientTagValue,
   type FailedTag,
+  type TagTrendSettings,
   type TagValue,
 } from "$lib/server/tag/tag";
 
 import { err, ok, type Result } from "neverthrow";
 import { logger } from "$lib/server/pino/logger";
-import type {
-  PatchOp,
-  PatchPayload,
-} from "$lib/client/live/patchCollection.svelte";
-import {
-  wireErr,
-  wireOk,
-  type NeverThrowError,
-  type WireResult,
-} from "$lib/util/neverThrow";
+import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.svelte";
+import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -38,10 +31,7 @@ export const tagPatches = live.stream(
 // mid-way through an array.
 
 export const applyTagPatches = live(
-  async (
-    ctx,
-    patch: PatchOp,
-  ): Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>> => {
+  async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(
@@ -128,10 +118,7 @@ export const getTagValue = live.stream(
     ctx,
     lookup: string,
   ): Promise<
-    WireResult<
-      ClientTagValue,
-      FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }
-    >
+    WireResult<ClientTagValue, FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }>
   > => {
     const id = tagManager.getTagById(lookup);
     const path = tagManager.getTagByPath(lookup);
@@ -151,10 +138,7 @@ export const getTagValue = live.stream(
   { merge: "set" },
 );
 
-export function publishTagValue(
-  tag: Result<ClientTagValue, FailedTag>,
-  ctx?: any,
-) {
+export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: any) {
   let id: string | undefined = undefined;
   let wireTag: WireResult<ClientTagValue, FailedTag>;
   if (tag.isOk()) {
@@ -209,5 +193,25 @@ export const writeTagValue = live(
     //publishTagValue(ok(tagOk.value.getClientValueTag()), ctx);
 
     return wireOk({ success: true });
+  },
+);
+
+export const setTagTrendOptions = live(
+  async (
+    ctx,
+    { tagId, ...options }: { tagId: string } & TagTrendSettings,
+  ): Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>> => {
+    const tag = tagManager.getTagById(tagId);
+    if (tag.isErr()) {
+      return wireErr(tag.error);
+    }
+    if (tag.value.isErr()) {
+      return wireErr(tag.value.error);
+    }
+    const set = await tag.value.value.setTrendOptions(options);
+    if (set.isErr()) {
+      return wireErr(set.error);
+    }
+    return wireOk({ ok: true });
   },
 );

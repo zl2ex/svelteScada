@@ -1,8 +1,9 @@
 ## Todo
 
-add trending support to the tag class, log on change in the Tag.update() function if trending is enabled,
-create a new one to one relationship in /sqlite/tables/relations.ts between tags and tag_trend_options, add settings for trend support in the tag class and in the ui Popover in /editor/+layout.svelte.
-there is a new trends table in the /sqlite/tables/trends.ts - this is for logging trend data to.
+add trending support to the tag class, log on change in the Tag.update() function if trending is enabled, ~~done - `Tag.#trend()` writes a sample on each update once `trendOptions.interval` has elapsed~~
+create a new one to one relationship in /sqlite/tables/relations.ts between tags and tag_trend_options, add settings for trend support in the tag class and in the ui Popover in /editor/+layout.svelte. ~~done - `tags.trendOptions` / `tag_trend_options.tag`, `Tag.setTrendOptions()` and the Trending row in the tag popover~~
+there is a new trends table in the /sqlite/tables/trends.ts - this is for logging trend data to. ~~done~~
+read the samples back - the `/trending` page is still a WIP stub
 
 
 

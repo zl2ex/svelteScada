@@ -47,6 +47,17 @@ export const relationsConfig = defineRelations(schema, (r) => ({
       from: r.tags.folderId,
       to: r.tag_folders.id,
     }),
+    trendOptions: r.one.tag_trend_options({
+      from: r.tags.id,
+      to: r.tag_trend_options.tagId,
+    }),
+  },
+
+  tag_trend_options: {
+    tag: r.one.tags({
+      from: r.tag_trend_options.tagId,
+      to: r.tags.id,
+    }),
   },
 
   devices: {

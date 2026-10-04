@@ -8,6 +8,8 @@ import { tag_folder_paths } from "./tag_folder_paths";
 import { device_modbus_tcp_options } from "./device_modbus_tcp_options";
 import { device_modbus_rtu_options } from "./device_modbus_rtu_options";
 import { device_opcua_client_options } from "./device_opcua_client_options";
+import { tag_trend_options } from "./tag_trend_options";
+import { trends } from "./trends";
 
 export {
   users,
@@ -20,6 +22,8 @@ export {
   device_modbus_tcp_options,
   device_modbus_rtu_options,
   device_opcua_client_options,
+  tag_trend_options,
+  trends,
 };
 
 export const tables = {
@@ -33,6 +37,8 @@ export const tables = {
   device_modbus_tcp_options,
   device_modbus_rtu_options,
   device_opcua_client_options,
+  tag_trend_options,
+  trends,
 } as const;
 
 export type { UserSelect } from "./users";
@@ -45,6 +51,8 @@ export type { TagFolderPathsSelect } from "./tag_folder_paths";
 export type { DeviceModbusTcpOptionsSelect } from "./device_modbus_tcp_options";
 export type { DeviceModbusRtuOptionsSelect } from "./device_modbus_rtu_options";
 export type { DeviceOpcuaClientOptionsSelect } from "./device_opcua_client_options";
+export type { TagTrendOptionsSelect } from "./tag_trend_options";
+export type { TrendSelect } from "./trends";
 
 export type { UserInsert } from "./users";
 export type { UserPermissionsInsert } from "./user_permissions";
@@ -56,6 +64,8 @@ export type { TagFolderPathsInsert } from "./tag_folder_paths";
 export type { DeviceModbusTcpOptionsInsert } from "./device_modbus_tcp_options";
 export type { DeviceModbusRtuOptionsInsert } from "./device_modbus_rtu_options";
 export type { DeviceOpcuaClientOptionsInsert } from "./device_opcua_client_options";
+export type { TagTrendOptionsInsert } from "./tag_trend_options";
+export type { TrendInsert } from "./trends";
 
 export { z_insertUser } from "./users";
 export { z_insertUserPermissions } from "./user_permissions";
@@ -70,6 +80,8 @@ export { z_insertDeviceOpcuaClientOptions } from "./device_opcua_client_options"
 export { z_deviceModbusTcpOptions } from "./device_modbus_tcp_options";
 export { z_deviceModbusRtuOptions } from "./device_modbus_rtu_options";
 export { z_deviceOpcuaClientOptions } from "./device_opcua_client_options";
+export { z_insertTagTrendOptions } from "./tag_trend_options";
+export { z_insertTrend } from "./trends";
 
 export { z_loginUser } from "./users";
 
