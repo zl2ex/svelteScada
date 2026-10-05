@@ -56,6 +56,9 @@
           {stream.value.isOk && stream.value.value == 'Reconnecting'
           ? 'fill-warning-500 animate-pulse'
           : ''}
+          {stream.value.isOk && stream.value.value == 'Error'
+          ? 'fill-error-500'
+          : ''}
           {stream.value.isErr ? 'fill-error-500' : ''}"
       ></CircleIcon>
       {#if stream.value.isErr}

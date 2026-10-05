@@ -41,7 +41,17 @@ export type DriverConnectError = NeverThrowError;
 export type DriverDisconnectError = NeverThrowError;
 export type DriverSubscribeError = NeverThrowError;
 
-export type DriverConnectionListener = (connected: boolean) => void;
+/**
+ * What a driver reports about its transport. `error` is only set when the
+ * transport gave up rather than merely being down, so a device can tell a
+ * failure it will not recover from on its own apart from one it is retrying.
+ */
+export type DriverConnectionState = {
+  connected: boolean;
+  error?: DriverConnectError;
+};
+
+export type DriverConnectionListener = (state: DriverConnectionState) => void;
 
 /* -------------------------------------------------------------------------- */
 /*  The consumer contract                                                      */
@@ -59,6 +69,7 @@ export interface Driver {
   /** Discriminator stored on the device row, e.g. `"ModbusTCPDriver"`. */
   readonly driverName: string;
   readonly connected: boolean;
+  readonly connectionState: DriverConnectionState;
   /** Called once immediately with the current state, then on every change. */
   onConnectedChange(cb: DriverConnectionListener): () => void;
   connect(): Promise<Result<void, DriverConnectError>>;
@@ -76,15 +87,15 @@ export interface Driver {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Owns everything every driver repeats: the connected flag, listener
- * bookkeeping, the deduped `setConnected` notify loop, and disposal. Subclasses
- * call `setConnected()` and never touch `isConnected` directly.
+ * Owns everything every driver repeats: the connection state, listener
+ * bookkeeping, the deduped notify loop, and disposal. Subclasses call
+ * `setConnected()` / `setConnectionError()` and never touch the state directly.
  */
 export abstract class BaseDriver<O, N extends string> implements Driver {
   readonly driverName: N;
   readonly options: O;
 
-  #isConnected = false;
+  #connectionState: DriverConnectionState = { connected: false };
   #isDisposed = false;
   #connectionListeners = new Set<DriverConnectionListener>();
 
@@ -94,7 +105,11 @@ export abstract class BaseDriver<O, N extends string> implements Driver {
   }
 
   get connected(): boolean {
-    return this.#isConnected;
+    return this.#connectionState.connected;
+  }
+
+  get connectionState(): DriverConnectionState {
+    return this.#connectionState;
   }
 
   /** True once `dispose()` has run; subclasses refuse to reconnect after it. */
@@ -103,21 +118,40 @@ export abstract class BaseDriver<O, N extends string> implements Driver {
   }
 
   onConnectedChange(cb: DriverConnectionListener) {
-    const entry: DriverConnectionListener = (connected) => cb(connected);
+    const entry: DriverConnectionListener = (state) => cb(state);
     this.#connectionListeners.add(entry);
-    entry(this.#isConnected);
+    entry(this.#connectionState);
     return () => {
       this.#connectionListeners.delete(entry);
     };
   }
 
-  /** Flip the connection state and fan it out, ignoring no-op changes. */
+  /**
+   * Flip the connection state and fan it out, ignoring no-op changes. Going
+   * connected clears any failure - a driver that is up has no stale error to
+   * report - while going down keeps the existing one so a terminal failure
+   * survives the `close` that follows it.
+   */
   protected setConnected(next: boolean) {
-    if (this.#isConnected === next) return;
-    this.#isConnected = next;
+    this.#setConnectionState(next, next ? undefined : this.#connectionState.error);
+  }
+
+  /**
+   * Record a failure the transport gave up on. Call this only for a terminal
+   * failure; a transport that is merely retrying should leave it unset so the
+   * device reports `Reconnecting` rather than `Error`.
+   */
+  protected setConnectionError(error: DriverConnectError | undefined) {
+    this.#setConnectionState(this.#connectionState.connected, error);
+  }
+
+  #setConnectionState(connected: boolean, error: DriverConnectError | undefined) {
+    const previous = this.#connectionState;
+    if (previous.connected === connected && previous.error === error) return;
+    this.#connectionState = { connected, error };
     for (const cb of this.#connectionListeners) {
       try {
-        cb(next);
+        cb(this.#connectionState);
       } catch (e) {
         logger.error(
           e,
@@ -130,7 +164,7 @@ export abstract class BaseDriver<O, N extends string> implements Driver {
   /** Subclasses override and call this first. */
   dispose() {
     this.#isDisposed = true;
-    this.setConnected(false);
+    this.#setConnectionState(false, undefined);
     this.#connectionListeners.clear();
     logger.trace(`[${this.driverName}] dispose()`);
   }

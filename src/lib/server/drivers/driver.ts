@@ -165,8 +165,25 @@ export class Device {
     return this.#computeStatus();
   }
 
+  /**
+   * The failure behind an `"Error"` status, shaped like any other `FailedDevice`
+   * so the status stream can carry the driver reason and cause to the client.
+   * Undefined while the driver is merely disconnected, which is a `Reconnecting`.
+   */
+  connectionFailure(): FailedDevice | undefined {
+    const error = this.#driver.connectionState.error;
+    if (!error) return undefined;
+    return {
+      ...error,
+      options: this.options,
+    } as const satisfies FailedDevice;
+  }
+
   #computeStatus(): DeviceStatus {
     if (this.options.enabled) {
+      // a driver that gave up is an Error, not a Reconnecting - the transport
+      // is not retrying and will not come back without a new connect()
+      if (this.#driver.connectionState.error) return "Error";
       return this.#driver.connected ? "Connected" : "Reconnecting";
     } else {
       return "Disabled";
@@ -242,6 +259,8 @@ export class DeviceManager {
   /**
    * Mirror device status changes to the front end. The driver owns the
    * connection state, Device fans it out through onStatusChange() and we publish.
+   * An `"Error"` status is published as a neverthrow err so the client shows the
+   * driver's reason instead of a bare word.
    */
   #trackStatus(device: Result<Device, FailedDevice>) {
     if (device.isErr()) {
@@ -250,6 +269,13 @@ export class DeviceManager {
     }
     const created = device.value;
     created.onStatusChange((status) => {
+      if (status === "Error") {
+        const failure = created.connectionFailure();
+        if (failure) {
+          publishDeviceStatus(created.id, err(failure));
+          return;
+        }
+      }
       publishDeviceStatus(created.id, ok(status));
     });
   }

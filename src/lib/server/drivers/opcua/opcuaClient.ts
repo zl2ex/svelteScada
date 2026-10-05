@@ -116,8 +116,16 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       logger.warn(`[opcuaClientDriver] reconnection_canceled`);
     });
 
+    // node-opcua only emits this for the initial connect: once a secure channel
+    // exists a dropped connection goes down the repair path, which retries with
+    // maxRetry -1 forever and never emits it. so this is the one event that
+    // means the device is not coming back on its own.
     client.on("connection_failed", (err) => {
       this.setConnected(false);
+      this.setConnectionError({
+        reason: "CONNECT_FAILED",
+        cause: `[opcuaClientDriver] connection_failed for ${this.options.endpointUrl} after ${CONNECT_RETRY_BUDGET.maxRetry} retries: ${errorToString(err)}`,
+      } as const satisfies OpcuaClientDriverError);
       logger.error(err, `[opcuaClientDriver] connection_failed`);
     });
 
@@ -259,6 +267,9 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       } as const satisfies OpcuaClientDriverError);
     }
     if (this.connected) return ok(undefined);
+    // a fresh attempt is a Reconnecting until it fails, so drop the error the
+    // previous attempt left behind rather than reporting a stale Error
+    this.setConnectionError(undefined);
     let client = this.#client;
     if (!client) {
       const recreated = this.#createClient();
@@ -266,7 +277,17 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       client = recreated.value;
     }
     void attempt(() => client.connect(this.options.endpointUrl)).catch((e) => {
-      logger.debug(e, "[opcuaClientDriver] connect() initiation failed");
+      // a terminal connect failure emits connection_failed and rejects with the
+      // same error, so only fill this in when the event never arrived - a
+      // synchronous setup throw such as a malformed endpoint url
+      if (!this.connectionState.error) {
+        this.setConnected(false);
+        this.setConnectionError({
+          reason: "CONNECT_FAILED",
+          cause: `[opcuaClientDriver] connect() to ${this.options.endpointUrl} threw: ${errorToString(e)}`,
+        } as const satisfies OpcuaClientDriverError);
+      }
+      logger.error(e, "[opcuaClientDriver] connect() failed");
     });
     return ok(undefined);
   }
