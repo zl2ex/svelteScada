@@ -62,6 +62,16 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
   #client: OPCUAClient | undefined;
   #session: ClientSession | undefined;
   #subscription: ClientSubscription | undefined;
+  /** Bumped by disconnect()/dispose() and by every setup run, so a run that
+   * resolves late can tell its session belongs to a channel that is gone. */
+  #setupGeneration = 0;
+  /** True while a setup run is in flight, so the next event folds into one
+   * follow-up run instead of opening a second session. */
+  #setupRunning = false;
+  #setupRequested = false;
+  /** Subscriptions this driver terminated itself, so the `terminated` event
+   * they raise is not mistaken for the server dropping them. */
+  #terminatedSubscriptions = new WeakSet<ClientSubscription>();
 
   /** Takes a client `create()` already built, so construction cannot fail. */
   private constructor(options: OpcuaClientDriverConfig, client: OPCUAClient) {
@@ -143,14 +153,17 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       void this.#setupAfterConnect();
     });
 
+    // after_reconnection fires the moment a new secure channel exists, before
+    // node-opcua has reactivated the sessions, and it rolls the channel back
+    // again when that repair fails. connection_reestablished is the event that
+    // means the channel and the sessions are both usable, so that is the one
+    // setup hangs off; this one only reports the noise.
     client.on("after_reconnection", (err) => {
-      this.setConnected(true);
       if (err) {
         logger.debug(err, `[opcuaClientDriver] after_reconnection`);
       } else {
         logger.info(`[opcuaClientDriver] after_reconnection`);
       }
-      void this.#setupAfterConnect();
     });
 
     client.on("connection_reestablished", () => {
@@ -193,19 +206,51 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
     return ok(client.data);
   }
 
+  /**
+   * Rebuild the session, subscription and monitored item once the transport is
+   * back. Two events reach this and they can overlap - a repair that is itself
+   * interrupted lands a second `connection_reestablished` on top of the first -
+   * so a request that arrives mid run is folded into one follow-up run rather
+   * than opening a second session on the server.
+   */
   async #setupAfterConnect() {
+    this.#setupRequested = true;
+    if (this.#setupRunning) return;
+    this.#setupRunning = true;
+    try {
+      while (this.#setupRequested) {
+        this.#setupRequested = false;
+        await this.#setupOnce(++this.#setupGeneration);
+      }
+    } finally {
+      this.#setupRunning = false;
+    }
+  }
+
+  async #setupOnce(generation: number) {
     const client = this.#client;
     if (!client) return;
+    // whatever the previous run left behind belongs to a channel that has been
+    // replaced, so it goes before the replacement is built
+    const stale = await this.#teardownSession();
+    if (stale.isErr()) {
+      logger.debug(stale.error.cause);
+    }
+    if (this.#superseded(generation)) return;
+
     const session = await attempt(() => client.createSession());
     if (session.error) {
-      this.setConnected(false);
-      logger.error(session.error, "[opcuaClientDriver] failed to create session");
+      this.#setupFailed(generation, session.error, "failed to create session");
+      return;
+    }
+    if (this.#superseded(generation)) {
+      await this.#discardSession(session.data);
       return;
     }
     this.#session = session.data;
 
     const subscription = await attempt(() =>
-      this.#session!.createSubscription2({
+      session.data.createSubscription2({
         requestedPublishingInterval: PUBLISHING_INTERVAL_MS,
         requestedMaxKeepAliveCount: MAX_KEEP_ALIVE_COUNT,
         requestedLifetimeCount: LIFETIME_COUNT,
@@ -215,17 +260,26 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       }),
     );
     if (subscription.error) {
-      this.setConnected(false);
-      logger.error(subscription.error, "[opcuaClientDriver] failed to create subscription");
+      this.#setupFailed(generation, subscription.error, "failed to create subscription");
+      return;
+    }
+    if (this.#superseded(generation)) {
+      await this.#discardSession(session.data, subscription.data);
       return;
     }
     this.#subscription = subscription.data;
 
-    this.#subscription.on("keepalive", () => {
+    subscription.data.on("keepalive", () => {
       logger.debug("[opcuaClientDriver] keepalive");
     });
 
-    this.#subscription.on("terminated", () => {
+    subscription.data.on("terminated", () => {
+      // a subscription this driver tore down on purpose says nothing about the
+      // transport, only one the server dropped is a real signal
+      if (this.#terminatedSubscriptions.has(subscription.data)) {
+        logger.debug("[opcuaClientDriver] subscription terminated by our own teardown");
+        return;
+      }
       this.setConnected(false);
       logger.debug("[opcuaClientDriver] TERMINATED ------------------------------>");
     });
@@ -241,11 +295,12 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       queueSize: 100,
     };
     const monitoredItem = await attempt(() =>
-      this.#subscription!.monitor(itemToMonitor, parameters, TimestampsToReturn.Both),
+      subscription.data.monitor(itemToMonitor, parameters, TimestampsToReturn.Both),
     );
     if (monitoredItem.error) {
-      this.setConnected(false);
-      logger.error(monitoredItem.error, "[opcuaClientDriver] failed to monitor node");
+      // the probe node is a placeholder, and a server that does not expose it
+      // says nothing about the transport
+      this.#setupFailed(generation, monitoredItem.error, "failed to monitor node", false);
       return;
     }
 
@@ -253,9 +308,60 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       logger.debug(dataValue.value.toString());
     });
 
+    if (this.#superseded(generation)) return;
     const initialBrowse = await this.browse("ns=0;i=84");
     if (initialBrowse.isErr()) {
       logger.debug(initialBrowse.error.cause);
+    }
+  }
+
+  /**
+   * True once this run has been overtaken, either by a disconnect/dispose that
+   * moved the generation on or by a newer run. Whatever the run created after
+   * that point belongs to a channel nobody will use again.
+   */
+  #superseded(generation: number) {
+    return generation !== this.#setupGeneration;
+  }
+
+  /**
+   * A step failed. When the run has been overtaken the step was talking about a
+   * channel that is already going away, so reporting the device as down would
+   * blame a connection that is fine. `marksDeviceDown` is false for a step
+   * that fails on a healthy channel.
+   */
+  #setupFailed(generation: number, error: unknown, message: string, marksDeviceDown = true) {
+    if (this.#superseded(generation)) {
+      logger.debug(
+        `[opcuaClientDriver] ${message} on a superseded setup run: ${errorToString(error)}`,
+      );
+      return;
+    }
+    if (marksDeviceDown) {
+      this.setConnected(false);
+    }
+    logger.error(error, `[opcuaClientDriver] ${message}`);
+  }
+
+  /**
+   * Closes what a superseded run built. It never published the handles, so
+   * nothing else can close them and the server is left to time them out.
+   */
+  async #discardSession(session: ClientSession, subscription?: ClientSubscription) {
+    if (subscription) {
+      this.#terminatedSubscriptions.add(subscription);
+      const terminated = await attempt(() => subscription.terminate());
+      if (terminated.error) {
+        logger.debug(
+          `[opcuaClientDriver] discard() could not terminate a stale subscription: ${errorToString(terminated.error)}`,
+        );
+      }
+    }
+    const closed = await attempt(() => session.close());
+    if (closed.error) {
+      logger.debug(
+        `[opcuaClientDriver] discard() could not close a stale session: ${errorToString(closed.error)}`,
+      );
     }
   }
 
@@ -361,26 +467,13 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
   }
 
   async disconnect() {
-        this.setConnected(false);
-    if (this.#subscription) {
-      const terminated = await attempt(() => this.#subscription!.terminate());
-      if (terminated.error) {
-        return err({
-          reason: "DISCONNECT_FAILED",
-          cause: `[opcuaClientDriver] disconnect() failed to terminate the subscription: ${errorToString(terminated.error)}`,
-        } as const satisfies OpcuaClientDriverError);
-      }
-      this.#subscription = undefined;
-    }
-    if (this.#session) {
-      const closed = await attempt(() => this.#session!.close());
-      if (closed.error) {
-        return err({
-          reason: "DISCONNECT_FAILED",
-          cause: `[opcuaClientDriver] disconnect() failed to close the session: ${errorToString(closed.error)}`,
-        } as const satisfies OpcuaClientDriverError);
-      }
-      this.#session = undefined;
+    this.setConnected(false);
+    // any setup run still in flight is now building against a channel that is
+    // going away, so it discards what it created instead of publishing it
+    this.#setupGeneration++;
+    const torn = await this.#teardownSession();
+    if (torn.isErr()) {
+      return err(torn.error);
     }
     const client = this.#client;
     if (client) {
@@ -394,6 +487,37 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
       // a disconnected client cannot be reused, so drop it and let the next
       // connect() build a fresh one
       this.#client = undefined;
+    }
+    return ok(undefined);
+  }
+
+  /**
+   * Terminates the subscription and closes the session, dropping both handles
+   * first so a failure cannot leave the driver pointing at dead ones.
+   */
+  async #teardownSession() {
+    const subscription = this.#subscription;
+    this.#subscription = undefined;
+    if (subscription) {
+      this.#terminatedSubscriptions.add(subscription);
+      const terminated = await attempt(() => subscription.terminate());
+      if (terminated.error) {
+        return err({
+          reason: "DISCONNECT_FAILED",
+          cause: `[opcuaClientDriver] disconnect() failed to terminate the subscription: ${errorToString(terminated.error)}`,
+        } as const satisfies OpcuaClientDriverError);
+      }
+    }
+    const session = this.#session;
+    this.#session = undefined;
+    if (session) {
+      const closed = await attempt(() => session.close());
+      if (closed.error) {
+        return err({
+          reason: "DISCONNECT_FAILED",
+          cause: `[opcuaClientDriver] disconnect() failed to close the session: ${errorToString(closed.error)}`,
+        } as const satisfies OpcuaClientDriverError);
+      }
     }
     return ok(undefined);
   }
@@ -420,7 +544,7 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
   }
 
   dispose() {
-        super.dispose();
+    super.dispose();
     logger.debug(`[opcuaClientDriver] dispose()`);
     void this.disconnect().then((disconnected) => {
       if (disconnected.isErr()) {
