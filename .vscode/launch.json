@@ -2,11 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "node-terminal",
+      "type": "node",
       "request": "launch",
       "name": "Debug SvelteKit (Vite)",
-      "command": "npm run dev",
-      "cwd": "${workspaceFolder}"
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
     }
   ]
 }

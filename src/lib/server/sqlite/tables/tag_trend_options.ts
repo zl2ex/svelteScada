@@ -7,14 +7,14 @@ export const tag_trend_options = sqliteTable("tag_trend_options", {
     .notNull()
     .primaryKey()
     .references(() => tags.id, { onDelete: "cascade" }),
-  interval: integer("interval").notNull(), // log interval ms
+  minimumIntervalMs: integer("minimumIntervalMs").notNull().default(100), // log interval ms
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 });
+
 export type TagTrendOptionsSelect = typeof tag_trend_options.$inferSelect;
 export type TagTrendOptionsInsert = typeof tag_trend_options.$inferInsert;
 
 export const z_insertTagTrendOptions = createInsertSchema(tag_trend_options, {
   enabled: (s) => s.default(true),
-  // guards the trends table against an interval fast enough to flood it
-  interval: (s) => s.min(100),
+  minimumIntervalMs: (s) => s.min(100), // guards the trends table against an interval fast enough to flood it
 });

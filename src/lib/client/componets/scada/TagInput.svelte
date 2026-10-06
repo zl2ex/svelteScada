@@ -132,9 +132,7 @@
       <Tooltip positioning={{ placement: "top" }}>
         <Portal>
           <Tooltip.Positioner>
-            <Tooltip.Content
-              class="card p-2 preset-filled-error-400-600 text-xs"
-            >
+            <Tooltip.Content class="card p-2 preset-filled-error-400-600 text-xs">
               <NeverThrowErrorDisplay error={stream.value.error} />
             </Tooltip.Content>
           </Tooltip.Positioner>
@@ -142,9 +140,7 @@
         <Tooltip.Trigger tabindex={-1} class="shrink min-w-0">
           <p class="truncate">
             {label ??
-              ("options" in stream.value.error
-                ? stream.value.error.options.name
-                : undefined) ??
+              ("options" in stream.value.error ? stream.value.error.options.name : undefined) ??
               lookup}
           </p>
           <p class="text-error-400-600 truncate">
@@ -158,18 +154,14 @@
         {#if stream.value.value.statusString !== "Good"}
           <Portal>
             <Tooltip.Positioner>
-              <Tooltip.Content
-                class="card p-2 preset-filled-error-400-600 text-xs"
-              >
+              <Tooltip.Content class="card p-2 preset-filled-error-400-600 text-xs">
                 <p>{stream.value.value.statusString}</p>
               </Tooltip.Content>
             </Tooltip.Positioner>
           </Portal>
         {/if}
         <Tooltip.Trigger tabindex={-1}>
-          <label for="input" class="label"
-            >{label ?? stream.value.value.name ?? lookup}</label
-          >
+          <label for="input" class="label">{label ?? stream.value.value.name ?? lookup}</label>
           {#if typeof stream.value.value.value === "boolean"}
             <input
               type="checkbox"
@@ -199,7 +191,6 @@
               onkeyup={(ev) => {
                 if (ev.currentTarget) {
                   if (ev.key === "Enter") {
-                    write(Number(ev.currentTarget.value));
                     ev.currentTarget.blur();
                   }
                   if (ev.key === "Escape") {
@@ -208,7 +199,7 @@
                   }
                 }
               }}
-              onfocusout={(ev) => {
+              onblur={(ev) => {
                 if (ev.currentTarget.value) {
                   write(Number(ev.currentTarget.value));
                 } else {
@@ -231,7 +222,6 @@
               onkeyup={(ev) => {
                 if (ev.currentTarget) {
                   if (ev.key === "Enter") {
-                    write(String(ev.currentTarget.value));
                     ev.currentTarget.blur();
                   }
                   if (ev.key === "Escape") {
@@ -240,7 +230,7 @@
                   }
                 }
               }}
-              onfocusout={(ev) => {
+              onblur={(ev) => {
                 if (ev.currentTarget.value) {
                   write(String(ev.currentTarget.value));
                 } else {

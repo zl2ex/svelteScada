@@ -88,46 +88,7 @@ export class TagManager {
   idToPath(findId: string) {
     return this.#pathToId.entries().find(([id, path]) => id == findId)?.[0];
   }
-  /*
-  getClientTagByIdOrPath(lookup: string): ClientTag {
-    const tag = this.getTagById(lookup) ?? this.getTagByPath(lookup);
 
-    if (!tag) {
-      return {
-        ok: false,
-        error: {
-          error: {
-            reason: "NOT_FOUND",
-          },
-        },
-        value: undefined,
-      };
-    }
-
-    if (tag instanceof Tag) {
-      return {
-        ok: true,
-        value: {
-          id: tag.id,
-          name: tag.name,
-          value: tag.value,
-          statusString: tag.statusCode.name as StatusCodeName,
-          options: tag.options,
-        },
-        error: undefined,
-      };
-    }
-
-    return {
-      ok: false,
-      error: {
-        error: tag.error,
-        options: tag.options,
-      },
-      value: undefined,
-    };
-  }
-*/
   // -------------------------
   // Update Functions
   // -------------------------
@@ -166,14 +127,21 @@ export class TagManager {
     if (duplicate.isErr()) return err(duplicate.error);
 
     if (writeToDb) {
-      const dbWrite = attempt(() => {
-        db.insert(tables.tags).values(opts).run();
-      });
+      const dbWrite = attempt(() => db.insert(tables.tags).values(opts).run());
 
       if (dbWrite.error) {
         return err({
           reason: "DB_ERROR",
           cause: errorToString(dbWrite.error),
+        } as const satisfies NeverThrowError);
+      }
+
+      const dbTrend = attempt(() => db.insert(tables.tag_trend_options).values(opts.trend).run());
+
+      if (dbTrend.error) {
+        return err({
+          reason: "DB_ERROR",
+          cause: errorToString(dbTrend.error),
         } as const satisfies NeverThrowError);
       }
     }
@@ -202,12 +170,29 @@ export class TagManager {
   }
 
   updateTag(id: string, tagUpdates: TagOptionsInput) {
-    const dbResult = attempt(() => db.update(tables.tags).set(tagUpdates).where(eq(tables.tags.id, id)).run());
+    const dbResult = attempt(() =>
+      db.update(tables.tags).set(tagUpdates).where(eq(tables.tags.id, id)).run(),
+    );
 
     if (dbResult.error) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(dbResult.error),
+      } as const satisfies NeverThrowError);
+    }
+
+    const dbTrend = attempt(() =>
+      db
+        .update(tables.tag_trend_options)
+        .set(tagUpdates.trend)
+        .where(eq(tables.tag_trend_options.tagId, id))
+        .run(),
+    );
+
+    if (dbTrend.error) {
+      return err({
+        reason: "DB_ERROR",
+        cause: errorToString(dbTrend.error),
       } as const satisfies NeverThrowError);
     }
 
@@ -388,7 +373,7 @@ export class TagManager {
   // Bulk Loader
   // -------------------------
 
-  loadAllFromDb() {
+  async loadAllFromDb() {
     if (!this.opcuaServer) {
       throw Error(
         `[TagManager] loadAllFromDb() opcuaServer not initalised, please call initOpcuaServer() first`,
@@ -401,7 +386,13 @@ export class TagManager {
       );
     }
 
-    const tagOptions = attempt(() => db.select().from(tables.tags).all());
+    const tagOptions = await attempt(() =>
+      db.query.tags.findMany({
+        with: {
+          trend: true,
+        },
+      }),
+    );
     if (tagOptions.error) {
       return err({
         reason: "DB_ERROR",
@@ -414,6 +405,8 @@ export class TagManager {
 
       const opcuaFolder = this.#folderManager.get(tagOpt.folderId);
       if (!opcuaFolder) continue;
+
+      if (!tagOpt.trend) continue;
 
       const tag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, tagOpt));
 

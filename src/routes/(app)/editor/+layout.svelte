@@ -23,29 +23,14 @@
   import { attempt } from "$lib/util/attempt";
   import { newId } from "$lib/util/newId";
   import { err, ok } from "neverthrow";
-  import {
-    z_shared_insertClosureTableNode,
-    z_shared_insertTag,
-  } from "$lib/validation/zod";
+  import { z_shared_insertClosureTableNode, z_shared_insertTag } from "$lib/validation/zod";
   import { browser } from "$app/env";
 
-  let { data, children } = $props();
-
-  function focusOnMount(node: HTMLInputElement) {
-    node.focus();
-    requestAnimationFrame(() => node.select());
-  }
-
-  import { tagPatches, applyTagPatches, setTagTrendOptions } from "$live/tags";
+  import { tagPatches, applyTagPatches } from "$live/tags";
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
-  import type {
-    BaseTypeStrings,
-    TagOptionsInput,
-    TagTrendOptions,
-  } from "$lib/server/tag/tag.js";
-  import { onMount, untrack } from "svelte";
-  import type { TagInsertOptionalId } from "$lib/server/sqlite/tables/tags.js";
+  import type { BaseTypeStrings, TagOptionsInput } from "$lib/server/tag/tag.js";
+  import { onMount } from "svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import { getDataTypeStrings } from "$lib/remote/tag.remote.js";
   import {
@@ -55,6 +40,8 @@
   } from "$lib/util/neverThrow.js";
   import { PanelLayout } from "$lib/client/util/panelLayout.svelte.js";
   import { undoManager } from "$lib/client/history/undoManager.js";
+
+  let { data, children } = $props();
 
   const panelLayout = new PanelLayout();
 
@@ -101,33 +88,6 @@
     }),
   );
 
-  // trend settings live in their own table so they are edited directly instead
-  // of going through the tag options patch collection. the load snapshot is
-  // only the starting point - a save below replaces the row.
-  let tagTrendOptions = $state<Record<string, TagTrendOptions>>(
-    untrack(() => ({ ...data.tagTrendOptions })),
-  );
-
-  const DEFAULT_TREND_INTERVAL = 1000;
-
-  function trendSettings(tagId: string) {
-    return tagTrendOptions[tagId];
-  }
-
-  function saveTrendSettings(tagId: string, enabled: boolean, interval: number) {
-    setTagTrendOptions({ tagId, enabled, interval })
-      .then((result) => {
-        if (result.isErr) {
-          console.error(result.error);
-          return;
-        }
-        tagTrendOptions[tagId] = { tagId, enabled, interval };
-      })
-      .catch((error) => {
-        console.error(error);
-      });
-  }
-
   undoManager.register("folders", tagFolderPatchesCollection);
   undoManager.register("tags", tagPatchesCollection);
 
@@ -163,9 +123,7 @@
           node.id === "root"
             ? Object.values(allFolders).filter((f) => f.parentId == undefined)
             : Object.values(allFolders).filter((f) => f.parentId == node.id);
-        const subTags = Object.values(allTags).filter(
-          (t) => t.folderId == node.id,
-        );
+        const subTags = Object.values(allTags).filter((t) => t.folderId == node.id);
         return [...subFolders, ...subTags];
       },
       rootNode: {
@@ -175,6 +133,11 @@
       },
     }),
   );
+
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus();
+    requestAnimationFrame(() => node.select());
+  }
 
   const id = "TAGS_TREE";
   const TREE_EXPANDED_KEY = `editor-tree-expanded-${id}`;
@@ -203,10 +166,7 @@
     defaultExpandedValue: loadExpandedFromStorage(),
     onExpandedChange: (details) => {
       const result = attempt(() =>
-        localStorage.setItem(
-          TREE_EXPANDED_KEY,
-          JSON.stringify(details.expandedValue),
-        ),
+        localStorage.setItem(TREE_EXPANDED_KEY, JSON.stringify(details.expandedValue)),
       );
       if (result.error) {
         console.error(`onExpandedChange() ${errorToString(result.error)}`);
@@ -218,17 +178,13 @@
 
   function isClosureTableNode(node: object): node is ClosureTableNode {
     return (
-      Object.hasOwn(node, "id") &&
-      Object.hasOwn(node, "name") &&
-      Object.hasOwn(node, "parentId")
+      Object.hasOwn(node, "id") && Object.hasOwn(node, "name") && Object.hasOwn(node, "parentId")
     );
   }
 
   function isTagOptions(node: object): node is TagOptionsInput {
     return (
-      Object.hasOwn(node, "id") &&
-      Object.hasOwn(node, "name") &&
-      Object.hasOwn(node, "dataType")
+      Object.hasOwn(node, "id") && Object.hasOwn(node, "name") && Object.hasOwn(node, "dataType")
     );
   }
 
@@ -275,9 +231,7 @@
 
   function getChildTags(nodes: ClosureTableNode[]): TagOptionsInput[] {
     return nodes.flatMap((n) => {
-      let childTags = Object.values(tagPatchesCollection.state).filter(
-        (f) => f.folderId == n.id,
-      );
+      let childTags = Object.values(tagPatchesCollection.state).filter((f) => f.folderId == n.id);
       let childFolders = Object.values(tagFolderPatchesCollection.state).filter(
         (f) => f.parentId == n.id,
       );
@@ -369,8 +323,7 @@
     if (!hasSelection) return;
 
     // excusively one folder or one tag
-    const onlyOneFolder =
-      folders.length === 1 && tags.length === 0 ? true : false;
+    const onlyOneFolder = folders.length === 1 && tags.length === 0 ? true : false;
     const onlyOneTag = tags.length === 1 && folders.length === 0 ? true : false;
 
     if (e.key === "Delete") {
@@ -405,9 +358,7 @@
       ]);
       const copied = await copyToClipboard(json);
       if (copied.isErr()) {
-        console.error(
-          `handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`,
-        );
+        console.error(`handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`);
       }
     }
 
@@ -420,9 +371,7 @@
       ]);
       const copied = await copyToClipboard(json);
       if (copied.isErr()) {
-        console.error(
-          `handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`,
-        );
+        console.error(`handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`);
         return;
       }
       undoManager.beginTransaction();
@@ -464,6 +413,10 @@
       folderId: parentNode.id ?? null,
       name: "New Tag",
       dataType: "Double" as BaseTypeStrings,
+      trend: {
+        tagId: id,
+        minimumIntervalMs: 1000,
+      },
     };
     renamingTagId = id;
     treeView().expand([parentNode.id]);
@@ -520,10 +473,7 @@
   }
 
   // checks for duplicate tag names in a specific folder and returns a new unique name if neeeded
-  function checkDuplicateTagName(
-    name: string,
-    parentNode: ClosureTableNode | undefined,
-  ) {
+  function checkDuplicateTagName(name: string, parentNode: ClosureTableNode | undefined) {
     let newName = name;
     const children = Object.values(tagPatchesCollection.state).filter(
       (f) => f.folderId == parentNode?.id,
@@ -538,10 +488,7 @@
   }
 
   // checks for duplicate folder name in a specific folder and returns a new unique name if neeeded
-  function checkDuplicateFolderName(
-    name: string,
-    parentNode: ClosureTableNode | undefined,
-  ) {
+  function checkDuplicateFolderName(name: string, parentNode: ClosureTableNode | undefined) {
     let newName = name;
     const children = Object.values(tagFolderPatchesCollection.state).filter(
       (f) => f.parentId == parentNode?.id,
@@ -568,10 +515,7 @@
     return ok(result.data);
   }
 
-  function handlePasteText(
-    text: string,
-    parentNode: ClosureTableNode | undefined,
-  ) {
+  function handlePasteText(text: string, parentNode: ClosureTableNode | undefined) {
     const json = attempt(() => JSON.parse(text));
     if (json.error) {
       return err({
@@ -588,7 +532,7 @@
       } as const satisfies NeverThrowError);
     }
 
-    let tags: TagInsertOptionalId[] = [];
+    let tags: TagOptionsInput[] = [];
     let folders: ClosureTableNode[] = [];
 
     for (const data of json.data) {
@@ -668,6 +612,7 @@
         writeable: tag.writeable ?? true,
         exposeOverOpcua: tag.exposeOverOpcua ?? true,
         parameters: tag.parameters ?? null,
+        trend: tag.trend,
       });
     }
 
@@ -676,10 +621,7 @@
     return ok(null);
   }
 
-  async function handlePaste(
-    e: ClipboardEvent,
-    parentNode: ClosureTableNode | undefined,
-  ) {
+  async function handlePaste(e: ClipboardEvent, parentNode: ClosureTableNode | undefined) {
     const text = e.clipboardData?.getData("text/plain");
     e.stopPropagation();
     if (!text) return;
@@ -690,10 +632,7 @@
   }
 </script>
 
-{#snippet treeNode(
-  node: ClosureTableNode | TagOptionsInput,
-  indexPath: number[],
-)}
+{#snippet treeNode(node: ClosureTableNode | TagOptionsInput, indexPath: number[])}
   {@const folders = Object.values({
     ...tagFolderPatchesCollection.state,
     ...stagingFolders,
@@ -716,9 +655,7 @@
       >
         <TreeView.BranchControl>
           <TreeView.BranchIndicator class="data-loading:hidden" />
-          <TreeView.BranchIndicator
-            class="hidden data-loading:inline animate-spin"
-          >
+          <TreeView.BranchIndicator class="hidden data-loading:inline animate-spin">
             <LoaderIcon class="size-4" />
           </TreeView.BranchIndicator>
           <TreeView.BranchText class="truncate">
@@ -730,11 +667,9 @@
                 class="border-none p-0 m-0 text-inherit bg-inherit"
                 value={node.name}
                 use:focusOnMount
-                onblur={(e) =>
-                  finalizeFolderRename(node.id, e.currentTarget.value)}
+                onblur={(e) => finalizeFolderRename(node.id, e.currentTarget.value)}
                 onkeydown={(e) => {
-                  if (e.key === "Enter")
-                    finalizeFolderRename(node.id, e.currentTarget.value);
+                  if (e.key === "Enter") finalizeFolderRename(node.id, e.currentTarget.value);
                   if (e.key === "Escape") cancelFolderRename(node.id);
                 }}
               />
@@ -776,11 +711,9 @@
                   class="border-none p-0 m-0 text-inherit bg-inherit"
                   value={node.name}
                   use:focusOnMount
-                  onblur={(e) =>
-                    finalizeTagRename(node.id, e.currentTarget.value)}
+                  onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
                   onkeydown={(e) => {
-                    if (e.key === "Enter")
-                      finalizeTagRename(node.id, e.currentTarget.value);
+                    if (e.key === "Enter") finalizeTagRename(node.id, e.currentTarget.value);
                     if (e.key === "Escape") cancelTagRename(node.id);
                   }}
                 />
@@ -806,10 +739,9 @@
               <div class="flex flex-col gap-2 p-1">
                 <div class="flex items-center gap-2">
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                  <label
-                    class="whitespace-nowrap opacity-60 w-24"
-                    for={`nodeId-${node.id}`}>Node Id</label
-                  >
+                  <label class="whitespace-nowrap opacity-60 w-24" for={`nodeId-${node.id}`}>
+                    Node Id
+                  </label>
                   <input
                     id={`nodeId-${node.id}`}
                     type="text"
@@ -831,10 +763,9 @@
 
                 <div class="flex items-center gap-2">
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                  <label
-                    class="whitespace-nowrap opacity-60 w-24"
-                    for={`dataType-${node.id}`}>Data Type</label
-                  >
+                  <label class="whitespace-nowrap opacity-60 w-24" for={`dataType-${node.id}`}>
+                    Data Type
+                  </label>
                   <select
                     id={`dataType-${node.id}`}
                     class="input py-0 px-1 border-none flex-1"
@@ -852,10 +783,9 @@
 
                 <div class="flex items-center gap-2">
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                  <label
-                    class="whitespace-nowrap opacity-60 w-24"
-                    for={`initalValue-${node.id}`}>Inital Value</label
-                  >
+                  <label class="whitespace-nowrap opacity-60 w-24" for={`initalValue-${node.id}`}>
+                    Inital Value
+                  </label>
                   <input
                     id={`initalValue-${node.id}`}
                     type="text"
@@ -864,9 +794,7 @@
                     onblur={(e) =>
                       tagPatchesCollection.update(node.id, {
                         initalValue:
-                          e.currentTarget.value === ""
-                            ? null
-                            : String(e.currentTarget.value),
+                          e.currentTarget.value === "" ? null : String(e.currentTarget.value),
                       })}
                     onkeydown={(e) => {
                       if (e.key === "Enter") e.currentTarget.blur();
@@ -880,10 +808,9 @@
 
                 <div class="flex items-center gap-2">
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                  <label
-                    class="whitespace-nowrap opacity-60 w-24"
-                    for={`writeable-${node.id}`}>Writeable</label
-                  >
+                  <label class="whitespace-nowrap opacity-60 w-24" for={`writeable-${node.id}`}>
+                    Writeable
+                  </label>
                   <input
                     id={`writeable-${node.id}`}
                     type="checkbox"
@@ -899,8 +826,10 @@
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
                   <label
                     class="whitespace-nowrap opacity-60 w-24"
-                    for={`exposeOverOpcua-${node.id}`}>Expose OPC UA</label
+                    for={`exposeOverOpcua-${node.id}`}
                   >
+                    Expose OPC UA
+                  </label>
                   <input
                     id={`exposeOverOpcua-${node.id}`}
                     type="checkbox"
@@ -915,38 +844,32 @@
 
                 <div class="flex items-center gap-2">
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                  <label
-                    class="whitespace-nowrap opacity-60 w-24"
-                    for={`trending-${node.id}`}>Trending</label
-                  >
+                  <label class="whitespace-nowrap opacity-60 w-24" for={`trending-${node.id}`}>
+                    Trending
+                  </label>
                   <input
                     id={`trending-${node.id}`}
                     type="checkbox"
                     class="checkbox"
-                    checked={trendSettings(node.id)?.enabled ?? false}
+                    checked={node.trend.enabled ?? false}
                     onchange={(e) =>
-                      saveTrendSettings(
-                        node.id,
-                        e.currentTarget.checked,
-                        trendSettings(node.id)?.interval ?? DEFAULT_TREND_INTERVAL,
-                      )}
+                      tagPatchesCollection.update(node.id, {
+                        trend: { ...node.trend, enabled: Boolean(e.currentTarget.checked) },
+                      })}
                   />
                   <input
                     type="number"
                     class="input w-24"
                     min="100"
                     step="100"
-                    placeholder="interval ms"
-                    disabled={!(trendSettings(node.id)?.enabled ?? false)}
-                    value={trendSettings(node.id)?.interval ?? DEFAULT_TREND_INTERVAL}
+                    placeholder="minimum interval ms"
+                    disabled={!(node.trend.enabled ?? false)}
+                    value={node.trend.minimumIntervalMs}
                     onblur={(e) => {
-                      const interval = Number(e.currentTarget.value);
-                      if (!Number.isFinite(interval) || interval < 100) return;
-                      saveTrendSettings(
-                        node.id,
-                        trendSettings(node.id)?.enabled ?? true,
-                        interval,
-                      );
+                      const minimumIntervalMs = Number(e.currentTarget.value);
+                      tagPatchesCollection.update(node.id, {
+                        trend: { ...node.trend, minimumIntervalMs },
+                      });
                     }}
                   />
                   <span class="text-xs opacity-60">ms</span>
@@ -956,15 +879,15 @@
                   <Settings2Icon class="size-4 shrink-0 opacity-60 mt-1" />
                   <label
                     class="whitespace-nowrap opacity-60 w-24 pt-1"
-                    for={`parameters-${node.id}`}>Parameters</label
+                    for={`parameters-${node.id}`}
                   >
+                    Parameters
+                  </label>
                   <textarea
                     id={`parameters-${node.id}`}
                     rows="4"
                     class="input py-0 px-1 border-none flex-1 font-mono text-xs"
-                    value={node.parameters
-                      ? JSON.stringify(node.parameters, null, 2)
-                      : ""}
+                    value={node.parameters ? JSON.stringify(node.parameters, null, 2) : ""}
                     onblur={(e) => {
                       const raw = e.currentTarget.value;
                       if (!raw.trim()) {
@@ -975,11 +898,7 @@
                       }
                       const parsed = attempt(() => JSON.parse(raw));
                       if (parsed.error) {
-                        e.currentTarget.value = JSON.stringify(
-                          node.parameters ?? null,
-                          null,
-                          2,
-                        );
+                        e.currentTarget.value = JSON.stringify(node.parameters ?? null, null, 2);
                         return;
                       }
                       tagPatchesCollection.update(node.id, {
@@ -988,11 +907,7 @@
                     }}
                     onkeydown={(e) => {
                       if (e.key === "Escape") {
-                        e.currentTarget.value = JSON.stringify(
-                          node.parameters ?? null,
-                          null,
-                          2,
-                        );
+                        e.currentTarget.value = JSON.stringify(node.parameters ?? null, null, 2);
                         e.currentTarget.blur();
                       }
                     }}
@@ -1001,10 +916,9 @@
 
                 <div class="flex items-center gap-2">
                   <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                  <label
-                    class="whitespace-nowrap opacity-60 w-24"
-                    for={`type-${node.id}`}>Type</label
-                  >
+                  <label class="whitespace-nowrap opacity-60 w-24" for={`type-${node.id}`}>
+                    Type
+                  </label>
                   <input
                     id={`type-${node.id}`}
                     type="text"
@@ -1105,19 +1019,15 @@
             <Menu.Separator />
             <Menu.Item
               value="cut"
-              disabled={contextMenuFolders.length === 0 &&
-                contextMenuTags.length === 0}
+              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
             >
               <Menu.ItemText class="w-full">
                 <button
                   class="flex items-center gap-2 w-full"
-                  disabled={contextMenuFolders.length === 0 &&
-                    contextMenuTags.length === 0}
+                  disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
                   onclick={async () => {
-                    if (contextMenuFolders.length > 0)
-                      await foldersCut(contextMenuFolders);
-                    else if (contextMenuTags.length > 0)
-                      await tagsCut(contextMenuTags);
+                    if (contextMenuFolders.length > 0) await foldersCut(contextMenuFolders);
+                    else if (contextMenuTags.length > 0) await tagsCut(contextMenuTags);
                   }}
                 >
                   <Scissors class="size-4" />
@@ -1128,24 +1038,17 @@
             </Menu.Item>
             <Menu.Item
               value="copy"
-              disabled={contextMenuFolders.length === 0 &&
-                contextMenuTags.length === 0}
+              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
             >
               <Menu.ItemText class="w-full">
                 <button
                   class="flex items-center gap-2 w-full"
-                  disabled={contextMenuFolders.length === 0 &&
-                    contextMenuTags.length === 0}
+                  disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
                   onclick={async () => {
-                    let json = JSON.stringify([
-                      ...contextMenuTags,
-                      ...contextMenuFolders,
-                    ]);
+                    let json = JSON.stringify([...contextMenuTags, ...contextMenuFolders]);
                     const copied = await copyToClipboard(json);
                     if (copied.isErr()) {
-                      console.error(
-                        `copy() ${neverThrowErrorToString(copied.error)}`,
-                      );
+                      console.error(`copy() ${neverThrowErrorToString(copied.error)}`);
                     }
                   }}
                 >
@@ -1157,30 +1060,21 @@
             </Menu.Item>
             <Menu.Item
               value="paste"
-              disabled={contextMenuFolders.length === 0 &&
-                contextMenuTags.length === 0}
+              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
             >
               <Menu.ItemText class="w-full">
                 <button
                   class="flex items-center gap-2 w-full"
-                  disabled={contextMenuFolders.length === 0 &&
-                    contextMenuTags.length === 0}
+                  disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
                   onclick={async () => {
                     const text = await readClipboard();
                     if (text.isErr()) {
-                      console.error(
-                        `paste() ${neverThrowErrorToString(text.error)}`,
-                      );
+                      console.error(`paste() ${neverThrowErrorToString(text.error)}`);
                       return;
                     }
-                    const result = handlePasteText(
-                      text.value,
-                      contextMenuFolders[0],
-                    );
+                    const result = handlePasteText(text.value, contextMenuFolders[0]);
                     if (result.isErr()) {
-                      console.error(
-                        `paste() ${neverThrowErrorToString(result.error)}`,
-                      );
+                      console.error(`paste() ${neverThrowErrorToString(result.error)}`);
                     }
                   }}
                 >
@@ -1193,14 +1087,12 @@
             <Menu.Separator />
             <Menu.Item
               value="delete"
-              disabled={contextMenuFolders.length === 0 &&
-                contextMenuTags.length === 0}
+              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
             >
               <Menu.ItemText class="w-full">
                 <button
                   class="flex items-center gap-2 w-full"
-                  disabled={contextMenuFolders.length === 0 &&
-                    contextMenuTags.length === 0}
+                  disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
                   onclick={() => {
                     undoManager.beginTransaction();
                     tagsDelete(contextMenuTags);
@@ -1247,10 +1139,7 @@
   title="drag to resize right panel"
 ></button>
 
-<div
-  id="right-panel"
-  style={panelLayout.width.right ? `width: ${panelLayout.width.right}px` : ""}
->
+<div id="right-panel" style={panelLayout.width.right ? `width: ${panelLayout.width.right}px` : ""}>
   Right panel
 </div>
 
@@ -1260,10 +1149,7 @@
     [data-scope="tree-view"] [data-part="branch-control"][data-selected]
   ) {
     outline: var(--color-primary-300-700);
-    background-color: light-dark(
-      var(--color-neutral-300),
-      var(--color-neutral-800)
-    );
+    background-color: light-dark(var(--color-neutral-300), var(--color-neutral-800));
     color: light-dark(var(--color-neutral-000), var(--color-neutral-900));
   }
 </style>

@@ -13,7 +13,6 @@ import {
   z_deviceModbusRtuOptions,
   z_deviceModbusTcpOptions,
   z_deviceOpcuaClientOptions,
-  type DeviceSelect,
   type DriverName,
 } from "../sqlite/tables";
 import { ModbusRTUDriver } from "./modbus/modbusRtu";
@@ -105,7 +104,8 @@ type DriverRegistry = {
  * The options the two modbus drivers have in common, described once so their
  * labels and input kinds cannot drift apart.
  */
-type ModbusCommonOption = "unitId" | "spanGaps" | "pollingIntervalMs" | "startAddress" | "endian" | "swapWords";
+type ModbusCommonOption =
+  "unitId" | "spanGaps" | "pollingIntervalMs" | "startAddress" | "endian" | "swapWords";
 
 const modbusCommonFields = {
   unitId: { label: "Unit Id", kind: "number" },
@@ -147,7 +147,9 @@ export const driverRegistry = {
         .run();
     },
     deleteOptions(tx: Db, deviceId: string) {
-      tx.delete(device_modbus_tcp_options).where(eq(device_modbus_tcp_options.deviceId, deviceId)).run();
+      tx.delete(device_modbus_tcp_options)
+        .where(eq(device_modbus_tcp_options.deviceId, deviceId))
+        .run();
     },
   },
   ModbusRTUDriver: {
@@ -179,7 +181,9 @@ export const driverRegistry = {
         .run();
     },
     deleteOptions(tx: Db, deviceId: string) {
-      tx.delete(device_modbus_rtu_options).where(eq(device_modbus_rtu_options.deviceId, deviceId)).run();
+      tx.delete(device_modbus_rtu_options)
+        .where(eq(device_modbus_rtu_options.deviceId, deviceId))
+        .run();
     },
   },
   opcuaClientDriver: {
@@ -190,6 +194,9 @@ export const driverRegistry = {
     optionsSchema: z_deviceOpcuaClientOptions,
     optionFields: {
       endpointUrl: { label: "Endpoint URL", kind: "text" },
+      samplingIntervalMs: { label: "Sampling Interval (ms)", kind: "number" },
+      queueSize: { label: "Queue Size", kind: "number" },
+      deadbandValue: { label: "Deadband", kind: "number" },
     },
     defaultOptions: z_deviceOpcuaClientOptions.parse({}),
     create: (options: OpcuaClientOptions) => OpcuaClientDriver.create(options),
@@ -204,7 +211,9 @@ export const driverRegistry = {
         .run();
     },
     deleteOptions(tx: Db, deviceId: string) {
-      tx.delete(device_opcua_client_options).where(eq(device_opcua_client_options.deviceId, deviceId)).run();
+      tx.delete(device_opcua_client_options)
+        .where(eq(device_opcua_client_options.deviceId, deviceId))
+        .run();
     },
   },
 } satisfies DriverRegistry;
@@ -299,7 +308,10 @@ function writeOptionsFor(tx: Db, config: DeviceConfig) {
  */
 export function writeDeviceConfig(tx: Db, config: DeviceConfig) {
   const { options: _options, ...deviceRow } = config;
-  tx.insert(devices).values(deviceRow).onConflictDoUpdate({ target: devices.id, set: deviceRow }).run();
+  tx.insert(devices)
+    .values(deviceRow)
+    .onConflictDoUpdate({ target: devices.id, set: deviceRow })
+    .run();
   writeOptionsFor(tx, config);
 }
 

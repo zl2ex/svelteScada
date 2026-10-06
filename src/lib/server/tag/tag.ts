@@ -24,12 +24,7 @@ import {
 import z from "zod";
 import { OpcuaFolder } from "$lib/server/tag/opcuaFolder";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
-import {
-  tag_trend_options,
-  trends,
-  z_insertTag,
-  z_insertTagTrendOptions,
-} from "$lib/server/sqlite/tables";
+import { trends, z_insertTag, z_insertTagTrendOptions } from "$lib/server/sqlite/tables";
 import { db } from "$lib/server/sqlite/db";
 import { eq } from "drizzle-orm";
 import { err, ok, type Result } from "neverthrow";
@@ -38,7 +33,11 @@ import { baseTypeKeys, Z_BaseTypes } from "$lib/validation/zod";
 import { attempt } from "$lib/util/attempt";
 import type { DriverVariable } from "$lib/server/drivers/driver";
 
-export type TagOptionsInput = z.input<typeof z_insertTag>;
+const z_tagOptions = z_insertTag.extend({
+  trend: z_insertTagTrendOptions,
+});
+
+export type TagOptionsInput = z.input<typeof z_tagOptions>;
 
 export async function getAllDataTypeStrings() {
   const udtNames = udtManager.getAllUdts().map((udt) => {
@@ -46,36 +45,6 @@ export async function getAllDataTypeStrings() {
   });
   return [...baseTypeKeys, ...udtNames];
 }
-
-type OpcuaDataTypeMapping = {
-  Null: null;
-  Boolean: boolean;
-  SByte: SByte;
-  Byte: Byte;
-  Int16: Int16;
-  UInt16: UInt16;
-  Int32: Int32;
-  UInt32: UInt32;
-  Int64: Int64;
-  UInt64: UInt64;
-  Float: Float;
-  Double: Double;
-  String: string;
-  DateTime: DateTime;
-  Guid: Guid;
-  ByteString: ByteString;
-  XmlElement: number;
-  NodeId: number;
-  ExpandedNodeId: number;
-  StatusCode: number;
-  QualifiedName: number;
-  LocalizedText: number;
-  ExtensionObject: object;
-  DataValue: number;
-  Variant: Variant;
-  DiagnosticInfo: number;
-  // Add more user-defined types as needed
-};
 
 // TypeScript mapping inferred from Zod
 export type BaseTypeMap = {
@@ -164,8 +133,10 @@ export function resolveDevicePath(path: string): ResolvedDevicePath {
   let deviceName: string | undefined;
   let tagPath: string | undefined;
 
-  // extract device and tagPath from a string like [device]/tagPath
-  const match = path.match(/\[(.*?)\](.*)/);
+  // extract device and tagPath from a string like [device]/tagPath. the
+  // separator is optional but never part of the driver path, otherwise an OPC UA
+  // NodeId arrives as "/ns=1;s=SENSOR1" and no driver can parse it.
+  const match = path.match(/\[(.*?)\]\/?(.*)/);
   if (match) {
     deviceName = match[1]; // "device"
     tagPath = match[2]; // "tagPath"
@@ -177,20 +148,14 @@ export function resolveDevicePath(path: string): ResolvedDevicePath {
   };
 }
 
-export type StatusCodeName = Exclude<keyof typeof StatusCodes, "prototype">;
-
-export type TagTrendOptionsInput = z.input<typeof z_insertTagTrendOptions>;
-export type TagTrendOptions = z.output<typeof z_insertTagTrendOptions>;
-// the tag id always comes from the tag the settings belong to, so the client
-// only ever sends these two fields
-export type TagTrendSettings = Omit<TagTrendOptionsInput, "tagId">;
-
 // onChange listener
 export type ChangeListener = (
   value: TagValue,
   source: UpdateSource,
   statusCode: StatusCode,
 ) => void;
+
+export type StatusCodeName = Exclude<keyof typeof StatusCodes, "prototype">;
 
 // the client-facing representation of a healthy tag
 export type ClientTagValue = Pick<Tag, "id" | "name" | "value" | "options"> & {
@@ -234,9 +199,7 @@ export class Tag {
   driverVarible?: DriverVariable<TagValue>; // driver subscription varible
   driverUnsubscribe?: () => void; // driver cleanup function
   onChange?: ChangeListener; // on change event for listeners
-  /** null when trending is off for this tag */
-  trendOptions: TagTrendOptions | null = null;
-  #lastTrendWrite = 0;
+  #lastTrendWriteMs = 0;
   #disposed = false; // disposed flag
 
   private constructor(
@@ -268,7 +231,7 @@ export class Tag {
     onChange?: ChangeListener,
   ): Result<Tag, FailedTag> {
     // parse for any errors but also to get default values
-    const parsed = z_insertTag.safeParse(opts);
+    const parsed = z_tagOptions.safeParse(opts);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
@@ -280,7 +243,6 @@ export class Tag {
     const options = parsed.data;
 
     const tag = new Tag(opcuaServer, opcuaFolder, options, onChange);
-    tag.#loadTrendOptions();
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
@@ -659,76 +621,15 @@ export class Tag {
   }
 
   /**
-   * Loads the persisted `tag_trend_options` row for this tag. Trending is
-   * optional so a failed read only logs - it must never stop a tag loading.
-   */
-  #loadTrendOptions() {
-    const row = attempt(() =>
-      db.select().from(tag_trend_options).where(eq(tag_trend_options.tagId, this.id)).get(),
-    );
-    if (row.error) {
-      logger.error(
-        `[Tag] #loadTrendOptions() ${this.id} failed to read trend options: ${errorToString(row.error)}`,
-      );
-      return;
-    }
-    if (!row.data) return;
-    const parsed = z_insertTagTrendOptions.safeParse(row.data);
-    if (!parsed.success) {
-      logger.error(
-        `[Tag] #loadTrendOptions() ${this.id} trend options failed to parse: ${parsed.error.message}`,
-      );
-      return;
-    }
-    this.trendOptions = parsed.data;
-  }
-
-  /**
-   * Turns trending on or off for this tag and persists the options row.
-   * `enabled: false` keeps the stored interval, so switching trending back on
-   * needs no new value.
-   */
-  async setTrendOptions(options: TagTrendSettings) {
-    const parsed = z_insertTagTrendOptions.safeParse({ ...options, tagId: this.id });
-    if (!parsed.success) {
-      return err({
-        reason: "OPTIONS_PARSE_ERROR",
-        cause: `[Tag] setTrendOptions() ${this.id} failed to parse options: ${parsed.error.message}`,
-        options: this.options,
-      } as const satisfies FailedTag);
-    }
-    const written = attempt(() =>
-      db
-        .insert(tag_trend_options)
-        .values(parsed.data)
-        .onConflictDoUpdate({
-          target: tag_trend_options.tagId,
-          set: { interval: parsed.data.interval, enabled: parsed.data.enabled },
-        })
-        .run(),
-    );
-    if (written.error) {
-      return err({
-        reason: "TREND_OPTIONS_WRITE_FAILED",
-        cause: `[Tag] setTrendOptions() ${this.id} failed to write trend options: ${errorToString(written.error)}`,
-        options: this.options,
-      } as const satisfies FailedTag);
-    }
-    this.trendOptions = parsed.data;
-    this.#lastTrendWrite = 0;
-    return ok(parsed.data);
-  }
-
-  /**
    * Writes a trend sample when this tag has trending on and the configured
    * interval has elapsed. Writes are rate limited by `#lastTrendWrite` so a
    * fast changing tag cannot flood the trends table.
    */
-  #trend(value: unknown, statusCode: StatusCode) {
-    if (!this.trendOptions?.enabled) return;
+  #trend(value: TagValue, statusCode: StatusCode) {
+    if (!this.options.trend.enabled) return;
     const now = Date.now();
-    if (now - this.#lastTrendWrite < this.trendOptions.interval) return;
-    this.#lastTrendWrite = now;
+    if (now - this.#lastTrendWriteMs < this.options.trend.minimumIntervalMs) return;
+    this.#lastTrendWriteMs = now;
 
     const written = attempt(() =>
       db
@@ -737,11 +638,11 @@ export class Tag {
           tagId: this.id,
           timestamp: now,
           value: JSON.stringify(value),
-          ok: statusCode === StatusCodes.Good,
+          statusCode: statusCode.value,
         })
         .onConflictDoUpdate({
           target: [trends.tagId, trends.timestamp],
-          set: { value: JSON.stringify(value), ok: statusCode === StatusCodes.Good },
+          set: { value: JSON.stringify(value), statusCode: statusCode.value },
         })
         .run(),
     );

@@ -39,11 +39,10 @@ declare module '$live/tags' {
   import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
   import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
   import type { ok } from 'neverthrow';
-  import type { ClientTagValue, FailedTag, TagTrendSettings, TagValue } from '$lib/server/tag/tag';
+  import type { ClientTagValue, FailedTag, TagValue } from '$lib/server/tag/tag';
 
   export const applyTagPatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>>;
   export const writeTagValue: ({ id, value }: { id: string; value: TagValue }) => Promise<WireResult<{ success: true }, NeverThrowError>>;
-  export const setTagTrendOptions: ({ tagId, ...options }: { tagId: string } & TagTrendSettings) => Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>>;
   export type ErrorCode = 'INVALID_PATCH' | 'SERVER_ERROR' | 'UNAUTHENTICATED';
   export const tagPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
   export const getTagValue: ((lookup: string) => StreamStore<WireResult<ClientTagValue, FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }> | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<WireResult<ClientTagValue, FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }>> };

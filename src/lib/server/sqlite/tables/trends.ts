@@ -11,7 +11,7 @@ export const trends = sqliteTable(
       .notNull()
       .references(() => tags.id, { onDelete: "cascade" }),
     value: text("value").notNull(),
-    ok: integer("ok", { mode: "boolean" }).notNull(), // value status true = Good, false = Bad
+    statusCode: integer("statusCode").notNull(), // value status code from opcua StatusCodes
   },
   (table) => [primaryKey({ name: "trends_pk", columns: [table.tagId, table.timestamp] })],
 );

@@ -1,10 +1,10 @@
 import { type TagSelect } from "$lib/server/sqlite/tables";
-import { guard, live, LiveError, publish } from "svelte-realtime/server";
+import { guard, getPlatform, live, LiveError } from "svelte-realtime/server";
 import { tagManager } from "../hooks.server";
 import {
   type ClientTagValue,
   type FailedTag,
-  type TagTrendSettings,
+  type TagOptionsInput,
   type TagValue,
 } from "$lib/server/tag/tag";
 
@@ -32,7 +32,7 @@ export const tagPatches = live.stream(
 
 export const applyTagPatches = live(
   async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>> => {
-    logger.trace(patch);
+    logger.trace(patch, "tag-patches");
     if (patch.path.length !== 1) {
       throw new LiveError(
         "INVALID_PATCH",
@@ -41,7 +41,7 @@ export const applyTagPatches = live(
     }
 
     const id = patch.path[0].toString();
-    const value = patch.value as TagSelect;
+    const value = patch.value as TagOptionsInput;
 
     if (patch.op === "add") {
       const result = tagManager.createTag(value);
@@ -156,14 +156,22 @@ export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: an
 
   const path = tagManager.idToPath(id);
 
+  logger.trace(wireTag, `tag-values:${id}`);
+
   if (ctx) {
     ctx.publish(`tag-values:${id}`, "set", wireTag);
     ctx.publish(`tag-values:${path}`, "set", wireTag);
     return;
   }
 
-  publish(`tag-values:${id}`, "set", wireTag);
-  publish(`tag-values:${path}`, "set", wireTag);
+  // see publishDeviceStatus() - startup publishes precede platform capture
+  const platform = getPlatform();
+  if (!platform) {
+    logger.debug(`[publishTagValue] ${id} skipped, realtime platform not captured yet`);
+    return;
+  }
+  platform.publish(`tag-values:${id}`, "set", wireTag);
+  platform.publish(`tag-values:${path}`, "set", wireTag);
 }
 
 export const writeTagValue = live(
@@ -193,25 +201,5 @@ export const writeTagValue = live(
     //publishTagValue(ok(tagOk.value.getClientValueTag()), ctx);
 
     return wireOk({ success: true });
-  },
-);
-
-export const setTagTrendOptions = live(
-  async (
-    ctx,
-    { tagId, ...options }: { tagId: string } & TagTrendSettings,
-  ): Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>> => {
-    const tag = tagManager.getTagById(tagId);
-    if (tag.isErr()) {
-      return wireErr(tag.error);
-    }
-    if (tag.value.isErr()) {
-      return wireErr(tag.value.error);
-    }
-    const set = await tag.value.value.setTrendOptions(options);
-    if (set.isErr()) {
-      return wireErr(set.error);
-    }
-    return wireOk({ ok: true });
   },
 );

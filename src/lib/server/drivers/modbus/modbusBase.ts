@@ -75,9 +75,18 @@ export type ModbusSubscriptionInfo = {
  * a transport only has to supply a client plus its own open/close.
  */
 export interface ModbusClientLike {
-  readHoldingRegisters(start: number, count: number): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
-  readInputRegisters(start: number, count: number): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
-  readCoils(start: number, count: number): Promise<{ response: { body: { valuesAsArray: Array<number | boolean> } } }>;
+  readHoldingRegisters(
+    start: number,
+    count: number,
+  ): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
+  readInputRegisters(
+    start: number,
+    count: number,
+  ): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
+  readCoils(
+    start: number,
+    count: number,
+  ): Promise<{ response: { body: { valuesAsArray: Array<number | boolean> } } }>;
   readDiscreteInputs(
     start: number,
     count: number,
@@ -217,7 +226,8 @@ export const typeHandlers: {
   },
 };
 
-export const codecFor = (dataType: ModbusDataType) => typeHandlers[dataType] as TypeHandler<ModbusValue>;
+export const codecFor = (dataType: ModbusDataType) =>
+  typeHandlers[dataType] as TypeHandler<ModbusValue>;
 
 /* -------------------------------------------------------------------------- */
 /*  Internals                                                                 */
@@ -259,7 +269,8 @@ type ReadFailure = NeverThrowError & {
 };
 
 // expects a structure like (le|sw)hr20.1
-const PATH_REGEX = /^(?:\((?<flags>[a-z|]+)\))?(?<registerType>hr|ir|co|di)(?<address>\d+)(?:\.(?<bit>\d+))?$/;
+const PATH_REGEX =
+  /^(?:\((?<flags>[a-z|]+)\))?(?<registerType>hr|ir|co|di)(?<address>\d+)(?:\.(?<bit>\d+))?$/;
 
 const MAX_REGISTERS_PER_READ = 125;
 const MAX_BITS_PER_READ = 2000;
@@ -280,7 +291,10 @@ const MAX_BITS_PER_READ = 2000;
  * members are not reachable from subclasses - the same trade-off
  * `BaseDriver.setConnected` already makes.
  */
-export abstract class BaseModbusDriver<O extends ModbusCommonOptions, N extends string> extends BaseDriver<O, N> {
+export abstract class BaseModbusDriver<
+  O extends ModbusCommonOptions,
+  N extends string,
+> extends BaseDriver<O, N> {
   #subs = new Map<string, Sub>();
 
   #pollTimer?: NodeJS.Timeout;
@@ -459,7 +473,15 @@ export abstract class BaseModbusDriver<O extends ModbusCommonOptions, N extends 
     }
 
     const stringLength = dataType === "String" ? opts.stringLength : undefined;
-    const key = [p.registerType, p.address, dataType, p.endian, p.swapWords, p.bit ?? "", stringLength ?? ""].join("|");
+    const key = [
+      p.registerType,
+      p.address,
+      dataType,
+      p.endian,
+      p.swapWords,
+      p.bit ?? "",
+      stringLength ?? "",
+    ].join("|");
 
     let sub = this.#subs.get(key);
     if (!sub) {
@@ -568,7 +590,9 @@ export abstract class BaseModbusDriver<O extends ModbusCommonOptions, N extends 
     if (this.#polling) return;
     this.#polling = true;
     this.#schedulePoll(0);
-    logger.info(`[${this.driverName}] Started Modbus polling at ${this.options.pollingIntervalMs} ms interval`);
+    logger.info(
+      `[${this.driverName}] Started Modbus polling at ${this.options.pollingIntervalMs} ms interval`,
+    );
   }
 
   #stopPolling() {
@@ -714,7 +738,10 @@ export abstract class BaseModbusDriver<O extends ModbusCommonOptions, N extends 
         : attempt(() => decodeWords(sub, raw.bytes.slice(from, to)));
 
     if (!decoded || decoded.error) {
-      logger.error(decoded?.error ?? "short response", `[${this.driverName}] decode failed for ${sub.key}`);
+      logger.error(
+        decoded?.error ?? "short response",
+        `[${this.driverName}] decode failed for ${sub.key}`,
+      );
       this.#publishStatus(sub, StatusCodes.BadDecodingError);
       return;
     }
@@ -730,6 +757,13 @@ export abstract class BaseModbusDriver<O extends ModbusCommonOptions, N extends 
         reason: "WRITE_NOT_SUPPORTED",
         cause: `write not supported for modbus type ${sub.registerType}`,
         opcuaStatus: StatusCodes.BadNotWritable,
+      } as const satisfies DriverWriteError);
+    }
+    if (!this.connected && !this.#shouldReconnect) {
+      return err({
+        reason: "WRITE_DISABLED",
+        cause: "device not enabled",
+        opcuaStatus: StatusCodes.BadConditionDisabled,
       } as const satisfies DriverWriteError);
     }
     if (!this.connected) {
@@ -859,7 +893,9 @@ function reverseWords(bytes: Uint8Array) {
 
 /** copy out of Node's shared 8K Buffer pool into a standalone Uint8Array */
 function toBytes(buffer: Buffer): Uint8Array {
-  return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+  return new Uint8Array(
+    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+  );
 }
 
 function classifyModbusError(e: unknown): ReadFailure {

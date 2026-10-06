@@ -1,4 +1,4 @@
-import { guard, live, LiveError, publish } from "svelte-realtime/server";
+import { guard, getPlatform, live, LiveError } from "svelte-realtime/server";
 import { type Result } from "neverthrow";
 import { logger } from "$lib/server/pino/logger";
 import type {
@@ -74,7 +74,16 @@ export function publishDeviceStatus(
     ctx.publish(`device-status:${id}`, "set", wireStatus);
     return;
   }
-  publish(`device-status:${id}`, "set", wireStatus);
+
+  // production evaluates SvelteKit's init() before the adapter captures the
+  // platform, so startup publishes always land here. no client can subscribe
+  // before it exists and this stream re-reads live status on subscribe.
+  const platform = getPlatform();
+  if (!platform) {
+    logger.debug(`[publishDeviceStatus] ${id} skipped, realtime platform not captured yet`);
+    return;
+  }
+  platform.publish(`device-status:${id}`, "set", wireStatus);
 }
 
 // One op per call: the client batches ops by calling this once per op, so a

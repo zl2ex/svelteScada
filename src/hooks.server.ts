@@ -34,9 +34,7 @@ export const init: ServerInit = async () => {
 
   const started = await gatewayOpcua.start();
   if (started.isErr()) {
-    throw Error(
-      `[hooks.server.ts] init() failed to start gatewayOpcua: ${started.error.cause}`,
-    );
+    throw Error(`[hooks.server.ts] init() failed to start gatewayOpcua: ${started.error.cause}`);
   }
 
   if (!gatewayOpcua.server || !gatewayOpcua.server.engine.addressSpace) {
@@ -51,30 +49,22 @@ export const init: ServerInit = async () => {
 
   const devices = await deviceManager.loadAllFromDb();
   if (devices.isErr()) {
-    throw Error(
-      `[hooks.server.ts] init() failed to load devices: ${devices.error.cause}`,
-    );
+    throw Error(`[hooks.server.ts] init() failed to load devices: ${devices.error.cause}`);
   }
 
   const udts = await udtManager.loadAllFromDb();
   if (udts.isErr()) {
-    throw Error(
-      `[hooks.server.ts] init() failed to load udts: ${udts.error.cause}`,
-    );
+    throw Error(`[hooks.server.ts] init() failed to load udts: ${udts.error.cause}`);
   }
 
   const folders = folderManager.loadAllFromDb();
   if (folders.isErr()) {
-    throw Error(
-      `[hooks.server.ts] init() failed to load folders: ${folders.error.cause}`,
-    );
+    throw Error(`[hooks.server.ts] init() failed to load folders: ${folders.error.cause}`);
   }
 
-  const tags = tagManager.loadAllFromDb();
+  const tags = await tagManager.loadAllFromDb();
   if (tags.isErr()) {
-    throw Error(
-      `[hooks.server.ts] init() failed to load tags: ${tags.error.cause}`,
-    );
+    throw Error(`[hooks.server.ts] init() failed to load tags: ${tags.error.cause}`);
   }
 };
 

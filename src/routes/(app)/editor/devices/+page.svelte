@@ -4,8 +4,8 @@
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
   import type { DeviceConfigInput, DriverName, OptionFieldKind } from "$lib/server/drivers/driver";
   import type { NeverThrowError } from "$lib/util/neverThrow";
-  import { applyDevicePatches, devicePatches, deviceStatus } from "$live/devices";
-  import { EllipsisVerticalIcon, KeyboardMusicIcon, PlusIcon, Settings2Icon, Trash2 } from "@lucide/svelte";
+  import { applyDevicePatches, devicePatches } from "$live/devices";
+  import { EllipsisVerticalIcon, PlusIcon, Trash2 } from "@lucide/svelte";
   import { Popover, Portal, usePopover } from "@skeletonlabs/skeleton-svelte";
   import { newId } from "$lib/util/newId";
   import { getAvalibleDrivers } from "$lib/remote/devices.remote";
@@ -70,7 +70,8 @@
    * the options its driver has not chosen yet.
    */
   type DeviceDraft =
-    { id: string; name: string; enabled: boolean; driverName: ""; options: Record<string, never> } | DeviceConfigInput;
+    | { id: string; name: string; enabled: boolean; driverName: ""; options: Record<string, never> }
+    | DeviceConfigInput;
 
   const newDevice = $state<DeviceDraft>({
     id: newId(),
@@ -100,7 +101,11 @@
    * server re-parses the whole options object against on every write - a value
    * it rejects comes back as an error and the patch is rolled back.
    */
-  function setOption(device: DeviceConfigInput | DeviceDraft, key: string, value: string | number | boolean) {
+  function setOption(
+    device: DeviceConfigInput | DeviceDraft,
+    key: string,
+    value: string | number | boolean,
+  ) {
     const options = {
       ...device.options,
       [key]: value,
@@ -125,7 +130,12 @@
   One control per field the registry describes for the selected driver, so a
   driver that has never been rendered here needs no UI of its own.
 -->
-{#snippet optionField(field: UiOptionField, key: string, device: DeviceConfigInput | DeviceDraft, clazz?: string)}
+{#snippet optionField(
+  field: UiOptionField,
+  key: string,
+  device: DeviceConfigInput | DeviceDraft,
+  clazz?: string,
+)}
   {@const option = readOption(device, key)}
   {@const text = String(option ?? "")}
   {#if field.kind === "boolean"}
@@ -154,7 +164,10 @@
       class={"input " + clazz}
       value={text}
       onblur={(ev) => {
-        const value = field.kind === "number" ? numberFromInput(ev.currentTarget.value) : ev.currentTarget.value;
+        const value =
+          field.kind === "number"
+            ? numberFromInput(ev.currentTarget.value)
+            : ev.currentTarget.value;
         if (value === undefined) {
           // not a number, so put the stored value back rather than store NaN
           ev.currentTarget.value = text;
@@ -233,7 +246,12 @@
             <div>
               <div class="flex justify-between">
                 <div class="p-4">
-                  <label class="shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-name`}>Name</label>
+                  <label
+                    class="shrink-0 whitespace-nowrap opacity-60"
+                    for={`device-${device.id}-name`}
+                  >
+                    Name
+                  </label>
                   <input
                     id={`device-${device.id}-name`}
                     type="text"
@@ -262,7 +280,9 @@
                 </div>
 
                 <div class="p-4 flex gap-4 items-center">
-                  <label class=" whitespace-nowrap opacity-60" for={`device-${device.id}-enabled`}>Enabled</label>
+                  <label class=" whitespace-nowrap opacity-60" for={`device-${device.id}-enabled`}>
+                    Enabled
+                  </label>
                   <input
                     id={`device-${device.id}-enabled`}
                     type="checkbox"
@@ -285,7 +305,10 @@
               <hr />
 
               <div class="flex items-center justify-between">
-                <label class="shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-driverName`}>
+                <label
+                  class="shrink-0 whitespace-nowrap opacity-60"
+                  for={`device-${device.id}-driverName`}
+                >
                   Driver
                 </label>
                 <select
@@ -324,7 +347,10 @@
                 <div class="flex flex-col gap-2 pt-2">
                   {#each Object.entries(optionFields) as [key, field] (key)}
                     <div class="flex items-center justify-between">
-                      <label class="shrink-0 whitespace-nowrap opacity-60" for={`device-${device.id}-${key}`}>
+                      <label
+                        class="shrink-0 whitespace-nowrap opacity-60"
+                        for={`device-${device.id}-${key}`}
+                      >
                         {field.label}
                       </label>
                       {@render optionField(field, key, device, "w-60")}

@@ -6,5 +6,8 @@ import realtime from "svelte-realtime/vite";
 import lucidePreprocess from "vite-plugin-lucide-preprocess";
 
 export default defineConfig({
-  plugins: [lucidePreprocess(), sveltekit(), uws(), realtime(), tailwindcss()],
+  plugins: [lucidePreprocess(), uws(), realtime(), sveltekit(), tailwindcss()],
+   optimizeDeps: {
+    exclude: ["node-opcua", "node-opcua-client"],
+  },
 });
