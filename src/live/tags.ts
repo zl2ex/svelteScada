@@ -156,7 +156,7 @@ export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: an
 
   const path = tagManager.idToPath(id);
 
-  logger.trace(wireTag, `tag-values:${id}`);
+  //logger.trace(wireTag, `tag-values:${id}`);
 
   if (ctx) {
     ctx.publish(`tag-values:${id}`, "set", wireTag);

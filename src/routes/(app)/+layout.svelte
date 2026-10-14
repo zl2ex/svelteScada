@@ -1,11 +1,6 @@
 <script lang="ts">
   import { CircleUserIcon, MenuIcon, SearchIcon, XIcon } from "@lucide/svelte";
-  import {
-    AppBar,
-    Popover,
-    Portal,
-    Toast,
-  } from "@skeletonlabs/skeleton-svelte";
+  import { AppBar, Popover, Portal, Toast } from "@skeletonlabs/skeleton-svelte";
   import { browser } from "$app/environment";
   import { themeManager } from "$lib/client/theme.svelte.js";
   import { getToaster, toast } from "$lib/client/toast.svelte";
@@ -83,20 +78,20 @@
   ClientTag.initSocketIo(socket);*/
 </script>
 
-<div id="app">
+<div id="app" class="h-svh">
   <header>
     <AppBar class="bg-surface-50-950 border-b-surface-200-800 border-b-1">
       <AppBar.Toolbar class="grid-cols-[auto_1fr_auto]">
         <AppBar.Lead>
-          <button type="button" class="btn-icon btn-icon-lg hover:preset-tonal"
-            ><MenuIcon /></button
-          >
+          <button type="button" class="btn-icon btn-icon-lg hover:preset-tonal">
+            <MenuIcon />
+          </button>
         </AppBar.Lead>
         <AppBar.Headline></AppBar.Headline>
         <AppBar.Trail>
-          <button type="button" class="btn-icon hover:preset-tonal"
-            ><SearchIcon class="size-8" /></button
-          >
+          <button type="button" class="btn-icon hover:preset-tonal">
+            <SearchIcon class="size-8" />
+          </button>
 
           <Popover>
             <Popover.Trigger class="btn-icon hover:preset-tonal">
@@ -106,12 +101,8 @@
               <Popover.Positioner>
                 <Popover.Content class="card p-4 bg-surface-100-900 shadow-xl">
                   <header class="flex justify-between">
-                    <Popover.Title class="text-lg font-bold"
-                      >{data.user?.name}</Popover.Title
-                    >
-                    <Popover.CloseTrigger
-                      class="btn-icon hover:preset-tonal self-start"
-                    >
+                    <Popover.Title class="text-lg font-bold">{data.user?.name}</Popover.Title>
+                    <Popover.CloseTrigger class="btn-icon hover:preset-tonal self-start">
                       <XIcon class="size-4" />
                     </Popover.CloseTrigger>
                   </header>
@@ -123,15 +114,16 @@
                         onclick={async () => {
                           const result = await logoutAndGotoLogin();
                           if (result.isErr()) {
-                            console.error(
-                              `logout() ${neverThrowErrorToString(result.error)}`,
-                            );
+                            console.error(`logout() ${neverThrowErrorToString(result.error)}`);
                           }
                         }}
-                        class="btn preset-filled">logout</button
+                        class="btn preset-filled"
                       >
+                        logout
+                      </button>
 
                       <a class="anchor block" href="/editor">editor</a>
+                      <a class="anchor block" href="/trending">trending</a>
                       <nav class="btn-group preset-outlined-surface-300-700">
                         {#each themeManager.themes as theme}
                           <button
@@ -146,8 +138,8 @@
                         {/each}
                       </nav>
                     </div>
-                  </div></Popover.Content
-                >
+                  </div>
+                </Popover.Content>
               </Popover.Positioner>
             </Portal>
           </Popover>
@@ -156,7 +148,7 @@
     </AppBar>
   </header>
 
-  <main class="flex">
+  <main class="flex h-full">
     {@render children()}
   </main>
 </div>

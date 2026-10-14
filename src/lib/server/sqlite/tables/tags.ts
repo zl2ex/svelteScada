@@ -16,10 +16,9 @@ export const tags = sqliteTable("tags", {
   initalValue: text("intialValue"),
   nodeId: text("nodeId"),
   writeable: integer("writeable", { mode: "boolean" }).default(true),
-  exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).default(
-    true,
-  ),
+  exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).default(true),
   parameters: text("parameters", { mode: "json" }),
+  unit: text("unit").notNull().default(""),
 });
 
 export type TagSelect = typeof tags.$inferSelect;
@@ -32,4 +31,5 @@ export const z_insertTag = createInsertSchema(tags, {
   type: (s) => s.default("tag"),
   writeable: (s) => s.default(true),
   exposeOverOpcua: (s) => s.default(true),
+  unit: (s) => s.default(""),
 });

@@ -1,10 +1,7 @@
 import type { OPCUAServer, UAObject } from "node-opcua";
 import { logger } from "../pino/logger";
 import { OpcuaFolder } from "./opcuaFolder";
-import {
-  tagFoldersClosureTable,
-  type ClosureTableNode,
-} from "../sqlite/util/tagClosureTable";
+import { tagFoldersClosureTable, type ClosureTableNode } from "../sqlite/util/tagClosureTable";
 import { err, ok } from "neverthrow";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
@@ -28,14 +25,9 @@ export class FolderManager {
       } as const satisfies NeverThrowError);
     }
 
-    const parent =
-      this.#opcuaFolders.get(folder.parentId ?? "")?.uaObject ?? this.rootFolder;
+    const parent = this.#opcuaFolders.get(folder.parentId ?? "")?.uaObject ?? this.rootFolder;
 
-    const result = OpcuaFolder.create(
-      this.opcuaServer.engine.addressSpace,
-      parent,
-      folder,
-    );
+    const result = OpcuaFolder.create(this.opcuaServer.engine.addressSpace, parent, folder);
 
     if (result.isErr()) return err(result.error);
 
@@ -135,9 +127,7 @@ export class FolderManager {
   // ── Read helpers ────────────────────────────────────
 
   getAll(parentId: string | null = null) {
-    return this.#opcuaFolders
-      .values()
-      .filter((folder) => folder.node.parentId == parentId);
+    return this.#opcuaFolders.values().filter((folder) => folder.node.parentId == parentId);
   }
 
   get(id: string | null | undefined) {
@@ -156,9 +146,7 @@ export class FolderManager {
         logger.error(newFolder.error);
       }
     }
-    logger.info(
-      `[FolderManager] loaded ${folders.value.length} folders to OPC UA`,
-    );
+    logger.info(`[FolderManager] loaded ${folders.value.length} folders from database`);
     return ok(true);
   }
 }

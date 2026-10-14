@@ -1,0 +1,1 @@
+ALTER TABLE `tags` ADD `unit` text DEFAULT '' NOT NULL;

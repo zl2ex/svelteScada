@@ -57,3 +57,13 @@ declare module '$live/toast' {
   export const toastPush: StreamStore<any | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<any> };
   export const empty: Readable<undefined>;
 }
+
+declare module '$live/trends' {
+  import type { StreamStore, RpcError } from 'svelte-realtime/client';
+  import type { Readable } from 'svelte/store';
+  import type { TrendPoint } from '$lib/util/trend';
+
+  export type ErrorCode = 'SERVER_ERROR' | 'UNAUTHENTICATED';
+  export const getTagTrend: ((tagId: string) => StreamStore<TrendPoint[] | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<TrendPoint[]> };
+  export const empty: Readable<undefined>;
+}

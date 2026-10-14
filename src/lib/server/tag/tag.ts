@@ -32,6 +32,9 @@ import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { baseTypeKeys, Z_BaseTypes } from "$lib/validation/zod";
 import { attempt } from "$lib/util/attempt";
 import type { DriverVariable } from "$lib/server/drivers/driver";
+import { getPlatform, publish } from "svelte-realtime/server";
+import { toTrendValue, type TrendPoint } from "$lib/util/trend";
+import { publishTrend } from "../trend/trend";
 
 const z_tagOptions = z_insertTag.extend({
   trend: z_insertTagTrendOptions,
@@ -298,11 +301,13 @@ export class Tag {
       }
     }
 
+    // try load inital value fron database
     if (options.initalValue) {
       let parsed = tag.#stringToTagValue(options.initalValue);
       const validated = tag.#validate(parsed);
 
       if (validated.isOk()) {
+        tag.statusCode = StatusCodes.Good;
         tag.value = validated.value;
       }
     }
@@ -320,11 +325,35 @@ export class Tag {
         } as const satisfies FailedTag);
       }
 
+      tag.statusCode = StatusCodes.BadWaitingForInitialData;
       if (tag.isArray) {
         tag.value = Array(tag.arrayLength).fill(result.data);
       } else {
         tag.value = result.data;
       }
+    }
+
+    // subscribe to value from driver if nodeId provided
+    if (options.nodeId) {
+      const driverSub = tag.subscribeToDriver();
+      if (driverSub.isErr()) {
+        logger.error(driverSub.error);
+        return err({
+          reason: "DRIVER_CONFIG_ERROR",
+          cause: driverSub.error,
+          options,
+        } as const satisfies FailedTag);
+      }
+      tag.driverVarible = driverSub.value;
+    }
+    // if no node id it is a purley memory tag on the server so load an inital value if possible
+    else {
+      // update tag value with initalValue or default
+      tag.#update(tag.value, "TagInternal", StatusCodes.Good).then((updated) => {
+        if (updated.isErr()) {
+          logger.error(updated.error);
+        }
+      });
     }
 
     if (options.exposeOverOpcua) {
@@ -397,28 +426,9 @@ export class Tag {
       tag.exposeOpcuaVarible = exposed.data;
     }
 
-    // subscribe to value from driver if nodeId provided
-    if (options.nodeId) {
-      const driverSub = tag.subscribeToDriver();
-      if (driverSub.isErr()) {
-        logger.error(driverSub.error);
-        return err({
-          reason: "DRIVER_CONFIG_ERROR",
-          cause: driverSub.error,
-          options,
-        } as const satisfies FailedTag);
-      }
-      tag.driverVarible = driverSub.value;
-    }
-
-    // update tag value when created if it is there, if not set to inital value
-    tag.#update(tag.value, "TagInternal", StatusCodes.Good).then((updated) => {
-      if (updated.isErr()) {
-        logger.error(updated.error);
-      }
-    });
-
-    logger.debug(`[Tag] created new tag ${tag.id}  ${tag.name} = ${tag.value}`);
+    logger.debug(
+      `[Tag] created new tag ${tag.id}  ${tag.name} = ${tag.value} : ${tag.statusCode.name}`,
+    );
 
     return ok(tag);
   }
@@ -650,7 +660,12 @@ export class Tag {
       logger.error(
         `[Tag] #trend() ${this.id} failed to write trend: ${errorToString(written.error)}`,
       );
+      return;
     }
+
+    const trendValue = toTrendValue(value);
+    if (trendValue === null) return;
+    publishTrend(this.id, { timestamp: now, value: trendValue, statusCode: statusCode.value });
   }
 
   dispose() {

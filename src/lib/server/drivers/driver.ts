@@ -42,7 +42,13 @@ export type {
   SubscribeOptions,
 } from "./baseDriver";
 
-export type { DeviceConfig, DeviceConfigInput, DriverName, DriverOptionsOf, OptionFieldKind } from "./registry";
+export type {
+  DeviceConfig,
+  DeviceConfigInput,
+  DriverName,
+  DriverOptionsOf,
+  OptionFieldKind,
+} from "./registry";
 
 export { availableDrivers, driverRegistry, z_DeviceConfig };
 
@@ -137,7 +143,9 @@ export class Device {
 
     const disconnected = await this.#driver.disconnect();
     if (disconnected.isErr()) {
-      logger.error(`[Device] dispose() ${this.name} ${neverThrowErrorToString(disconnected.error)}`);
+      logger.error(
+        `[Device] dispose() ${this.name} ${neverThrowErrorToString(disconnected.error)}`,
+      );
     }
     this.#driver.dispose();
     logger.trace(`[Device] dispose() ${this.name}`);
@@ -156,7 +164,9 @@ export class Device {
     this.options.enabled = false;
     const disconnected = await this.#driver.disconnect();
     if (disconnected.isErr()) {
-      logger.error(`[Device] disable() ${this.name} ${neverThrowErrorToString(disconnected.error)}`);
+      logger.error(
+        `[Device] disable() ${this.name} ${neverThrowErrorToString(disconnected.error)}`,
+      );
     }
     this.#refreshStatus();
   }
@@ -507,7 +517,10 @@ export class DeviceManager {
         const { enabled, ...oldOptsWithoutEnabled } = existing.value.options;
         const { enabled: en, ...optsWithoutEnabled } = config;
         // only enabled changed
-        if (util.isDeepStrictEqual(oldOptsWithoutEnabled, optsWithoutEnabled) && enabled !== config.enabled) {
+        if (
+          util.isDeepStrictEqual(oldOptsWithoutEnabled, optsWithoutEnabled) &&
+          enabled !== config.enabled
+        ) {
           if (config.enabled) await existing.value.enable();
           else await existing.value.disable();
           // return existing device and dont delete and re-create a whole new instance
@@ -575,6 +588,8 @@ export class DeviceManager {
   }
 
   getAvalibleDevices() {
-    return this.#devices.values().map((device) => (device.isOk() ? device.value.name : device.error.options.name));
+    return this.#devices
+      .values()
+      .map((device) => (device.isOk() ? device.value.name : device.error.options.name));
   }
 }

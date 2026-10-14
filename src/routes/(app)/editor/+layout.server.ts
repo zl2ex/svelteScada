@@ -2,7 +2,7 @@ import {
   tagFoldersClosureTable,
   type ClosureTableNode,
 } from "$lib/server/sqlite/util/tagClosureTable";
-import { Tag, type TagOptionsInput, type TagTrendOptionsSelect } from "$lib/server/tag/tag";
+import { type TagOptionsInput } from "$lib/server/tag/tag";
 import { tagManager } from "../../../hooks.server";
 
 export async function load() {
@@ -14,12 +14,6 @@ export async function load() {
   const tagRows = allTags.map((t) => {
     if (t.isErr()) return t.error.options;
     return t.value.options;
-  });
-  // trend options live in their own table so they are loaded alongside the
-  // tags instead of being patched through the tag options collection
-  const tagTrendRows = allTags.flatMap((t) => {
-    if (t.isErr() || !t.value.options.trend) return [];
-    return [t.value.options.trend];
   });
 
   return {
@@ -37,14 +31,6 @@ export async function load() {
         return map;
       },
       {} as Record<string, TagOptionsInput>,
-    ),
-
-    tagTrendOptions: tagTrendRows.reduce(
-      (map, options) => {
-        map[options.tagId] = options;
-        return map;
-      },
-      {} as Record<string, TagTrendOptionsSelect>,
     ),
   };
 }

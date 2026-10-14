@@ -23,7 +23,8 @@
 import { authenticateUser } from "$lib/server/auth/auth";
 import { logger } from "$lib/server/pino/logger";
 import { realtime } from "svelte-realtime/server";
-export const { message, init } = realtime();
+
+export const { open, close, message, init } = realtime();
 
 export async function upgrade({ cookies }) {
   logger.trace("hooks.ws.ts");

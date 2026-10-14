@@ -295,7 +295,6 @@
     window.addEventListener("keydown", (event) => {
       // Add the unique physical key code to our tracking Set
       activeKeys.add(event.code);
-      console.log(`Keys currently held:`, Array.from(activeKeys));
       // Example check: Is *any* key being held right now?
       if (activeKeys.size > 0) {
         // Your logic here
@@ -416,6 +415,7 @@
       trend: {
         tagId: id,
         minimumIntervalMs: 1000,
+        enabled: true,
       },
     };
     renamingTagId = id;
@@ -1144,12 +1144,13 @@
 </div>
 
 <style>
+  /* skeleton <TreeView> change selected apperance */
+
   :global(
     [data-scope="tree-view"] [data-part="item"][data-selected],
     [data-scope="tree-view"] [data-part="branch-control"][data-selected]
   ) {
-    outline: var(--color-primary-300-700);
-    background-color: light-dark(var(--color-neutral-300), var(--color-neutral-800));
+    background-color: light-dark(var(--color-primary-300), var(--color-primary-800));
     color: light-dark(var(--color-neutral-000), var(--color-neutral-900));
   }
 </style>

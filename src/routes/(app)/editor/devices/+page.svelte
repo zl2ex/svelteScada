@@ -244,10 +244,10 @@
           {#if devicesPatchesCollection.state[popoverDeviceId] || newDevice.id == popoverDeviceId}
             {@const device = devicesPatchesCollection.state[popoverDeviceId] ?? newDevice}
             <div>
-              <div class="flex justify-between">
-                <div class="p-4">
+              <div class="flex gap-8 justify-between py-4">
+                <div class="">
                   <label
-                    class="shrink-0 whitespace-nowrap opacity-60"
+                    class="shrink-0 whitespace-nowrap opacity-80"
                     for={`device-${device.id}-name`}
                   >
                     Name
@@ -279,7 +279,7 @@
                   />
                 </div>
 
-                <div class="p-4 flex gap-4 items-center">
+                <div class="flex gap-4 items-center">
                   <label class=" whitespace-nowrap opacity-60" for={`device-${device.id}-enabled`}>
                     Enabled
                   </label>
@@ -304,7 +304,7 @@
 
               <hr />
 
-              <div class="flex items-center justify-between">
+              <div class="py-4 flex items-center justify-between">
                 <label
                   class="shrink-0 whitespace-nowrap opacity-60"
                   for={`device-${device.id}-driverName`}
@@ -346,14 +346,16 @@
                 {@const optionFields = availableDrivers[device.driverName].optionFields}
                 <div class="flex flex-col gap-2 pt-2">
                   {#each Object.entries(optionFields) as [key, field] (key)}
-                    <div class="flex items-center justify-between">
+                    <div
+                      class="flex items-center justify-between [&>*:not([type='checkbox'])]:w-60"
+                    >
                       <label
                         class="shrink-0 whitespace-nowrap opacity-60"
                         for={`device-${device.id}-${key}`}
                       >
                         {field.label}
                       </label>
-                      {@render optionField(field, key, device, "w-60")}
+                      {@render optionField(field, key, device)}
                     </div>
                   {/each}
                 </div>

@@ -136,6 +136,7 @@ export class TagManager {
         } as const satisfies NeverThrowError);
       }
 
+      opts.trend.tagId = opts.id; // make sure the id's match
       const dbTrend = attempt(() => db.insert(tables.tag_trend_options).values(opts.trend).run());
 
       if (dbTrend.error) {
