@@ -78,29 +78,27 @@ export class OpcuaFolder {
 
     const listeners = attempt(() => this.uaObject.removeAllListeners());
     if (listeners.error) {
-      return err({
-        reason: "OPCUA_DISPOSE_FAILED",
-        cause: errorToString(listeners.error),
-      } as const satisfies NeverThrowError);
+      logger.error(
+        `[OpcuaFolder] dispose() failed to remove listeners on ${this.uaObject.browseName.toString()}: ${errorToString(listeners.error)}`,
+      );
     }
 
     const parents = attempt(() =>
       this.uaObject.findReferences("HasComponent", false),
     );
     if (parents.error) {
-      return err({
-        reason: "OPCUA_DISPOSE_FAILED",
-        cause: errorToString(parents.error),
-      } as const satisfies NeverThrowError);
+      logger.error(
+        `[OpcuaFolder] dispose() failed to find references on ${this.uaObject.browseName.toString()}: ${errorToString(parents.error)}`,
+      );
     }
 
-    for (const p of parents.data) {
+    for (const p of parents.data ?? []) {
       const parentNode = attempt(() => this.#addressSpace.findNode(p.nodeId));
       if (parentNode.error) {
-        return err({
-          reason: "OPCUA_DISPOSE_FAILED",
-          cause: errorToString(parentNode.error),
-        } as const satisfies NeverThrowError);
+        logger.error(
+          `[OpcuaFolder] dispose() failed to find parent node ${p.nodeId.toString()}: ${errorToString(parentNode.error)}`,
+        );
+        continue;
       }
 
       if (parentNode.data) {
@@ -112,20 +110,19 @@ export class OpcuaFolder {
           }),
         );
         if (removed.error) {
-          return err({
-            reason: "OPCUA_DISPOSE_FAILED",
-            cause: errorToString(removed.error),
-          } as const satisfies NeverThrowError);
+          logger.error(
+            `[OpcuaFolder] dispose() failed to remove reference to ${this.uaObject.browseName.toString()}: ${errorToString(removed.error)}`,
+          );
+          continue;
         }
       }
     }
 
     const deleted = attempt(() => this.#addressSpace.deleteNode(this.uaObject));
     if (deleted.error) {
-      return err({
-        reason: "OPCUA_DISPOSE_FAILED",
-        cause: errorToString(deleted.error),
-      } as const satisfies NeverThrowError);
+      logger.error(
+        `[OpcuaFolder] dispose() failed to delete node ${this.uaObject.browseName.toString()}: ${errorToString(deleted.error)}`,
+      );
     }
 
     return ok(true);

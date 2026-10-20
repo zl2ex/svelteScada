@@ -19,10 +19,9 @@ export class FolderManager {
 
   #createOpcuaFolder(folder: ClosureTableNode) {
     if (!this.opcuaServer?.engine.addressSpace || !this.rootFolder) {
-      return err({
-        reason: "OPCUA_NOT_INITIALISED",
-        cause: `[FolderManager] createOpcuaFolder() ocpuaServer not initalised, call initOpcuaServer() first`,
-      } as const satisfies NeverThrowError);
+      throw Error(
+        `[FolderManager] createOpcuaFolder() ocpuaServer not initalised, call initOpcuaServer() first`,
+      );
     }
 
     const parent = this.#opcuaFolders.get(folder.parentId ?? "")?.uaObject ?? this.rootFolder;

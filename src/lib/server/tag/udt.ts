@@ -4,7 +4,7 @@ import z from "zod";
 import { err, ok } from "neverthrow";
 import { logger } from "../pino/logger";
 import type { NeverThrowError } from "$lib/util/neverThrow";
-import type { Z_UdtDefinitionOptions, Z_UdtParams } from "$lib/validation/zod";
+import type { z_UdtDefinitionOptions, z_UdtParams } from "$lib/validation/udt";
 
 export type BaseDataTypeMap = {
   Double: number;
@@ -204,9 +204,9 @@ type UdtClassMap<Udts extends UdtDefinitionWithTypedDefaults> = {
 
 //export type UdtParams = Record<string, number | boolean | string>;
 
-export type UdtParams = z.input<typeof Z_UdtParams>;
+export type UdtParams = z.input<typeof z_UdtParams>;
 
-export type UdtDefinitionOptions = z.input<typeof Z_UdtDefinitionOptions>;
+export type UdtDefinitionOptions = z.input<typeof z_UdtDefinitionOptions>;
 
 export class UdtDefinition {
   name: string;
@@ -214,7 +214,7 @@ export class UdtDefinition {
 
   constructor(opts: UdtDefinitionOptions) {
     this.name = opts.name;
-    this.options = opts; // TD WIP ZOD Z_UdtDefinitionOptions.parse(opts);
+    this.options = opts; // TD WIP ZOD z_UdtDefinitionOptions.parse(opts);
     //this.initalValue = opts.initalValue;
   }
 
@@ -249,16 +249,19 @@ export class UdtDefinition {
       options.writeable = options.writeable ?? parentTagOptions.writeable;
 
       // instance overrides take priroity
-      options.children = undefined;
+      const overrides = options as unknown as Record<string, unknown> & {
+        children?: Record<string, unknown>;
+      };
+      overrides.children = undefined;
       if (override) {
         for (const [key, value] of Object.entries(override)) {
           // only accept valid property names
-          if (key in options) {
+          if (key in overrides) {
             // only accept the override if it acutally different from computed values
-            if (options[key as keyof typeof options] !== value) {
-              options[key as keyof typeof options] = value;
-              if (!options.children) options.children = {};
-              options.children[key] = value;
+            if (overrides[key] !== value) {
+              overrides[key] = value;
+              if (!overrides.children) overrides.children = {};
+              overrides.children[key] = value;
               logger.trace(`[udt] buildTagFeilds() override ${key} ${value}`);
             }
           }

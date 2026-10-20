@@ -26,7 +26,7 @@
     saveView,
     type TrendViewSavedConfig,
     type TrendViewSavedConfigList,
-  } from "$lib/client/util/trendViewStorage.svelte.js";
+  } from "$lib/client/util/localStorage/trendView.svelte";
   import { browser } from "$app/environment";
   import { errorToString, neverThrowErrorToString } from "$lib/util/neverThrow";
   import {
@@ -44,16 +44,15 @@
     ChevronRightIcon,
     FolderIcon,
     ListIcon,
+    LoaderIcon,
     SaveIcon,
-    SearchIcon,
     TagIcon,
-    TagsIcon,
     Trash2Icon,
   } from "@lucide/svelte";
   import { getAllTags, getAllTagFolders, getOpcuaStatusCodeMap } from "$lib/remote/tag.remote";
-  import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable.js";
+  import type { ClosureTableNodeWithPath } from "$lib/server/sqlite/util/tagClosureTable";
 
-  type SelectedTag = { id: string; name: string; folderId: string | null };
+  type SelectedTag = { id: string; name: string; folderId: string | null; path: string };
 
   type TrendChartOptions = {
     stepped: boolean; // when true values are plotted at the same value till the next point instead of going diagoanlly to the next point
@@ -77,6 +76,7 @@
         id: tag.value.id,
         name: tag.value.name,
         folderId: tag.value.options.folderId ?? null,
+        path: tag.value.path,
       });
     }
     return acc;
@@ -84,7 +84,7 @@
 
   // tag folder tree, used to group the selection popover by folder
   const foldersResult = await getAllTagFolders();
-  let folders: ClosureTableNode[] = [];
+  let folders: ClosureTableNodeWithPath[] = [];
   if (foldersResult.isErr) {
     console.error(`getAllTagFolders failed: ${neverThrowErrorToString(foldersResult.error)}`);
   } else {
@@ -143,7 +143,7 @@
 
   const tagPopover = usePopover({
     id: `trending-tags-popover-${newId()}`,
-    positioning: { placement: "bottom-start" },
+    positioning: { placement: "bottom-start", offset: { mainAxis: 50 } },
     onOpenChange: (details) => {
       if (!details.open) tagQuery = "";
     },
@@ -161,7 +161,6 @@
   }
 
   function toggleTag(tagId: string) {
-    console.debug(selectedTagIds);
     if (selectedTagIds.includes(tagId)) {
       selectedTagIds = selectedTagIds.filter((id) => id !== tagId);
     } else {
@@ -172,15 +171,17 @@
   // ── Tag selection tree ────────────────────────────────
 
   // folders carry `parentId`, tags carry `folderId`
-  function isFolderNode(node: ClosureTableNode | SelectedTag): node is ClosureTableNode {
+  function isFolderNode(
+    node: ClosureTableNodeWithPath | SelectedTag,
+  ): node is ClosureTableNodeWithPath {
     return Object.hasOwn(node, "parentId");
   }
 
-  function rootFolders(): ClosureTableNode[] {
+  function rootFolders(): ClosureTableNodeWithPath[] {
     return folders.filter((folder) => folder.parentId == null);
   }
 
-  function childFolders(folderId: string): ClosureTableNode[] {
+  function childFolders(folderId: string): ClosureTableNodeWithPath[] {
     return folders.filter((folder) => folder.parentId === folderId);
   }
 
@@ -196,35 +197,61 @@
   }
 
   const normalizedTagQuery = $derived(tagQuery.trim().toLowerCase());
+  // a query containing a slash is matched against full paths ("/root/f1/te").
+  // otherwise it is a substring match on the node name
+  const queryIsPath = $derived(normalizedTagQuery.includes("/"));
+  const normalizedPathQuery = $derived.by(() => {
+    if (normalizedTagQuery === "") return "";
+    let query = normalizedTagQuery.replace(/\/+/g, "/");
+    if (!query.startsWith("/")) query = "/" + query;
+    if (query.length > 1) query = query.replace(/\/+$/, "");
+    return query;
+  });
 
-  function tagMatchesQuery(name: string): boolean {
-    return normalizedTagQuery === "" || name.toLowerCase().includes(normalizedTagQuery);
+  function tagMatchesQuery(tag: SelectedTag): boolean {
+    if (normalizedTagQuery === "") return true;
+    if (queryIsPath) return tag.path.toLowerCase().startsWith(normalizedPathQuery);
+    return tag.name.toLowerCase().includes(normalizedTagQuery);
   }
 
-  // a folder is kept while searching when any tag in its subtree matches
+  function folderMatchesQuery(folder: ClosureTableNodeWithPath): boolean {
+    if (normalizedTagQuery === "") return true;
+    if (queryIsPath) return folder.path.toLowerCase().startsWith(normalizedPathQuery);
+    return folder.name.toLowerCase().includes(normalizedTagQuery);
+  }
+
+  // a folder is kept while searching when it matches itself or any tag in its
+  // subtree matches
   function folderHasMatch(folderId: string): boolean {
-    if (folderTags(folderId).some((tag) => tagMatchesQuery(tag.name))) return true;
-    return childFolders(folderId).some((folder) => folderHasMatch(folder.id));
+    const folder = folders.find((candidate) => candidate.id === folderId);
+    if (folder && folderMatchesQuery(folder)) return true;
+    if (folderTags(folderId).some(tagMatchesQuery)) return true;
+    return childFolders(folderId).some((child) => folderHasMatch(child.id));
   }
 
   // the collection owns the (filtered) child order and the template renders the
   // same order, so every node's indexPath stays valid while searching
   function visibleChildren(
-    node: ClosureTableNode | SelectedTag,
-  ): (ClosureTableNode | SelectedTag)[] {
+    node: ClosureTableNodeWithPath | SelectedTag,
+  ): (ClosureTableNodeWithPath | SelectedTag)[] {
     if (!isFolderNode(node)) return [];
     const subFolders = node.id === "root" ? rootFolders() : childFolders(node.id);
     const subTags = node.id === "root" ? rootTags() : folderTags(node.id);
     return [
       ...subFolders.filter((folder) => folderHasMatch(folder.id)),
-      ...subTags.filter((tag) => tagMatchesQuery(tag.name)),
+      ...subTags.filter(tagMatchesQuery),
     ];
   }
 
-  const rootNode = { id: "root", name: "", parentId: null } satisfies ClosureTableNode;
+  const rootNode = {
+    id: "root",
+    name: "",
+    parentId: null,
+    path: "",
+  } satisfies ClosureTableNodeWithPath;
 
   let tagTreeCollection = $state(
-    createTreeViewCollection<ClosureTableNode | SelectedTag>({
+    createTreeViewCollection<ClosureTableNodeWithPath | SelectedTag>({
       nodeToValue: (node) => node.id,
       nodeToString: (node) => node.name,
       nodeToChildren: (node) => visibleChildren(node),
@@ -257,10 +284,10 @@
   });
 
   const hasTrendTags = $derived(tags.length > 0);
-  const hasSearchResults = $derived(
-    normalizedTagQuery === "" ? tags.length > 0 : tags.some((tag) => tagMatchesQuery(tag.name)),
-  );
   const visibleRootNodes = $derived(visibleChildren(rootNode));
+  const hasSearchResults = $derived(
+    normalizedTagQuery === "" ? tags.length > 0 : visibleRootNodes.length > 0,
+  );
 
   function clampWindow(start: number, end: number) {
     const now = Date.now();
@@ -735,213 +762,230 @@
 </script>
 
 <div class="flex h-full w-full flex-col gap-2 p-2">
-  <div class="flex flex-wrap items-center gap-2">
-    <Menu>
-      <Menu.Trigger
-        class="btn preset-filled-surface-200-800 p-3"
-        aria-label="Saved views"
-        title="Saved views"
-      >
-        <ListIcon class="size-4" />
-      </Menu.Trigger>
-      <Portal>
-        <Menu.Positioner>
-          <Menu.Content>
-            <Menu>
-              <Menu.TriggerItem value="saveCurrent">
-                <SaveIcon class="size-4"></SaveIcon>
-                <Menu.ItemText class="px-2">Save Current View</Menu.ItemText>
-                <Menu.ItemIndicator>
-                  <ChevronRightIcon class="size-4" />
-                </Menu.ItemIndicator>
-              </Menu.TriggerItem>
-              <Portal>
-                <Menu.Positioner>
-                  <Menu.Content>
-                    <div class="flex flex-col gap-3">
-                      <h2 class="text-sm font-semibold">Save current view</h2>
-                      <input
-                        type="text"
-                        class="input"
-                        placeholder="View name"
-                        bind:value={saveViewName}
-                        onkeydown={(e) => {
-                          if (e.key === "Enter") handleSaveCurrentAs();
-                        }}
-                      />
-                      {#if saveError}
-                        <span class="text-xs text-error-500">{saveError}</span>
-                      {/if}
-                      <div class="flex justify-end gap-2">
-                        <button type="button" class="btn preset-ghost">Cancel</button>
-                        <button
-                          type="button"
-                          class="btn preset-filled"
-                          onclick={handleSaveCurrentAs}
-                        >
-                          Save
-                        </button>
+  <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-2">
+    <div>
+      <Menu>
+        <Menu.Trigger
+          class="btn preset-filled-surface-200-800 p-3"
+          aria-label="Saved views"
+          title="Saved views"
+        >
+          <ListIcon class="size-4" />
+        </Menu.Trigger>
+        <Portal>
+          <Menu.Positioner>
+            <Menu.Content>
+              <Menu>
+                <Menu.TriggerItem value="saveCurrent">
+                  <SaveIcon class="size-4"></SaveIcon>
+                  <Menu.ItemText class="px-2">Save Current View</Menu.ItemText>
+                  <Menu.ItemIndicator>
+                    <ChevronRightIcon class="size-4" />
+                  </Menu.ItemIndicator>
+                </Menu.TriggerItem>
+                <Portal>
+                  <Menu.Positioner>
+                    <Menu.Content>
+                      <div class="flex flex-col gap-3">
+                        <h2 class="text-sm font-semibold">Save current view</h2>
+                        <input
+                          type="text"
+                          class="input"
+                          placeholder="View name"
+                          bind:value={saveViewName}
+                          onkeydown={(e) => {
+                            if (e.key === "Enter") handleSaveCurrentAs();
+                          }}
+                        />
+                        {#if saveError}
+                          <span class="text-xs text-error-500">{saveError}</span>
+                        {/if}
+                        <div class="flex justify-end gap-2">
+                          <button type="button" class="btn preset-ghost">Cancel</button>
+                          <button
+                            type="button"
+                            class="btn preset-filled"
+                            onclick={handleSaveCurrentAs}
+                          >
+                            Save
+                          </button>
+                        </div>
                       </div>
+                    </Menu.Content>
+                  </Menu.Positioner>
+                </Portal>
+              </Menu>
+              <Menu.Separator />
+              {#if savedViews.length === 0}
+                <span class="text-sm opacity-60">no saved views</span>
+              {:else}
+                {#each savedViews as view (view.id)}
+                  <Menu.Item value={view.name} onclick={() => applySavedConfig(view)}>
+                    <div class="flex items-center gap-2">
+                      <ChartNoAxesCombinedIcon class="size-4" />
+                      <Menu.ItemText class="cursor-default">
+                        {view.name} ({view.selectedTagIds.length})
+                      </Menu.ItemText>
                     </div>
-                  </Menu.Content>
-                </Menu.Positioner>
-              </Portal>
-            </Menu>
-            <Menu.Separator />
-            {#if savedViews.length === 0}
-              <span class="text-sm opacity-60">no saved views</span>
-            {:else}
-              {#each savedViews as view (view.id)}
-                <Menu.Item value={view.name} onclick={() => applySavedConfig(view)}>
-                  <div class="flex items-center gap-2">
-                    <ChartNoAxesCombinedIcon class="size-4" />
-                    <Menu.ItemText class="cursor-default">
-                      {view.name} ({view.selectedTagIds.length})
-                    </Menu.ItemText>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn-icon btn-icon-sm preset-ghost"
-                    onclick={(ev) => {
-                      ev.stopPropagation(); // stop from applying the saved config on delete
-                      handleDeleteSaved(view.id);
-                    }}
-                    aria-label="Delete saved view"
-                  >
-                    <Trash2Icon class="size-4" />
-                  </button>
-                </Menu.Item>
-              {/each}
-            {/if}
-            {#if saveError}
-              <span class="mt-1 block text-xs text-error-500">{saveError}</span>
-            {/if}
-          </Menu.Content>
-        </Menu.Positioner>
-      </Portal>
-    </Menu>
+                    <button
+                      type="button"
+                      class="btn-icon btn-icon-sm preset-ghost"
+                      onclick={(ev) => {
+                        ev.stopPropagation(); // stop from applying the saved config on delete
+                        handleDeleteSaved(view.id);
+                      }}
+                      aria-label="Delete saved view"
+                    >
+                      <Trash2Icon class="size-4" />
+                    </button>
+                  </Menu.Item>
+                {/each}
+              {/if}
+              {#if saveError}
+                <span class="mt-1 block text-xs text-error-500">{saveError}</span>
+              {/if}
+            </Menu.Content>
+          </Menu.Positioner>
+        </Portal>
+      </Menu>
 
-    {#snippet tagTreeNode(node: ClosureTableNode | SelectedTag, indexPath: number[])}
-      <TreeView.NodeProvider value={{ node, indexPath }}>
-        {#if isFolderNode(node)}
-          {@const children = visibleChildren(node)}
-          {#if children.length > 0}
+      {#snippet tagTreeNode(node: ClosureTableNodeWithPath | SelectedTag, indexPath: number[])}
+        <TreeView.NodeProvider value={{ node, indexPath }}>
+          {#if isFolderNode(node)}
+            {@const children = visibleChildren(node)}
+
             <TreeView.Branch>
               <TreeView.BranchControl>
                 <TreeView.BranchIndicator />
-                <TreeView.BranchText class="truncate">
+                <TreeView.BranchText
+                  class="truncate"
+                  onclick={(ev) => {
+                    tagQuery = node.path;
+                    wasSearching = false;
+                    tagTree().expand();
+                  }}
+                >
                   <FolderIcon class="size-4 shrink-0 opacity-75" />
                   {node.name}
                 </TreeView.BranchText>
               </TreeView.BranchControl>
               <TreeView.BranchContent>
                 <TreeView.BranchIndentGuide />
-                {#each children as child, i (child.id)}
-                  {@render tagTreeNode(child, [...indexPath, i])}
-                {/each}
+                {#if children.length > 0}
+                  {#each children as child, i (child.id)}
+                    {@render tagTreeNode(child, [...indexPath, i])}
+                  {/each}
+                {/if}
               </TreeView.BranchContent>
             </TreeView.Branch>
-          {/if}
-        {:else}
-          <TreeView.Item>
-            <label class="flex cursor-pointer items-center gap-2 p-1">
-              <input
-                type="checkbox"
-                class="checkbox"
-                checked={selectedTagIds.includes(node.id)}
-                // fix the skeleton <TreeView> not letting click events through
-                onclick={(ev) => ev.stopPropagation()}
-                onchange={(ev) => toggleTag(node.id)}
-              />
-              <span
-                class="size-3 shrink-0 rounded-full"
-                style:background={colorFor(node.id)}
-              ></span>
-              <TagIcon class="size-4 shrink-0 opacity-75" />
-              <span class="truncate">{node.name}</span>
-            </label>
-          </TreeView.Item>
-        {/if}
-      </TreeView.NodeProvider>
-    {/snippet}
-
-    <Popover.Provider value={tagPopover}>
-      <Popover.Trigger class="btn preset-filled p-3" title="select tags to plot">
-        <TagIcon />
-        tags ({selectedTagIds.length})
-      </Popover.Trigger>
-      <Popover.Positioner>
-        <Popover.Content
-          class="card max-h-96 overflow-y-auto p-2 preset-filled-surface-100-900 z-10"
-        >
-          {#if hasTrendTags}
-            <div class="input-group mb-2 grid-cols-[auto_1fr]">
-              <input
-                class="input"
-                type="search"
-                placeholder="Search tags..."
-                bind:value={tagQuery}
-              />
-            </div>
-          {/if}
-          {#if hasSearchResults}
-            <TreeView.Provider value={tagTree}>
-              <TreeView.Tree class="w-full">
-                {#each visibleRootNodes as node, i (node.id)}
-                  {@render tagTreeNode(node, [i])}
-                {/each}
-              </TreeView.Tree>
-            </TreeView.Provider>
           {:else}
-            <span class="opacity-60">
-              {hasTrendTags ? "no tags match your search" : "no tags with trending enabled"}
-            </span>
+            <TreeView.Item>
+              <label class="flex cursor-pointer items-center gap-2 p-1">
+                <input
+                  type="checkbox"
+                  class="checkbox"
+                  checked={selectedTagIds.includes(node.id)}
+                  // fix the skeleton <TreeView> not letting click events through
+                  onclick={(ev) => ev.stopPropagation()}
+                  onchange={(ev) => toggleTag(node.id)}
+                />
+                <span
+                  class="size-3 shrink-0 rounded-full"
+                  style:background={colorFor(node.id)}
+                ></span>
+                <TagIcon class="size-4 shrink-0 opacity-75" />
+                <span class="truncate">{node.name}</span>
+              </label>
+            </TreeView.Item>
           {/if}
-        </Popover.Content>
-      </Popover.Positioner>
-    </Popover.Provider>
+        </TreeView.NodeProvider>
+      {/snippet}
 
-    <div class="btn-group bg-surface-100-900">
-      {#each PRESETS as preset (preset.label)}
-        <button
-          type="button"
-          class="btn"
-          class:preset-filled={liveFollow && to - from === preset.ms}
-          onclick={() => applyPreset(preset.ms)}
-        >
-          {preset.label}
-        </button>
-      {/each}
+      <Popover.Provider value={tagPopover}>
+        <Popover.Trigger class="btn preset-filled p-3" title="Select tags to plot">
+          <TagIcon />
+          tags ({selectedTagIds.length})
+        </Popover.Trigger>
+        <Popover.Positioner>
+          <Popover.Content
+            class="card max-h-96 overflow-y-auto p-2 preset-filled-surface-100-900 z-10"
+          >
+            {#if hasTrendTags}
+              <div class="input-group mb-2 grid-cols-[auto_1fr]">
+                <input
+                  class="input"
+                  type="search"
+                  placeholder="Search tags or /folder/path..."
+                  bind:value={tagQuery}
+                />
+              </div>
+            {/if}
+            {#if hasSearchResults}
+              <TreeView.Provider value={tagTree}>
+                <TreeView.Tree class="w-full">
+                  {#each visibleRootNodes as node, i (node.id)}
+                    {@render tagTreeNode(node, [i])}
+                  {/each}
+                </TreeView.Tree>
+              </TreeView.Provider>
+            {:else}
+              <span class="opacity-60">
+                {hasTrendTags
+                  ? "no tags or folders match your search"
+                  : "no tags with trending enabled"}
+              </span>
+            {/if}
+          </Popover.Content>
+        </Popover.Positioner>
+      </Popover.Provider>
     </div>
 
-    <label class="flex items-center gap-1 text-sm">
-      from
-      <input
-        type="datetime-local"
-        class="input"
-        value={toInputValue(from)}
-        onchange={onFromChange}
-      />
-    </label>
-    <label class="flex items-center gap-1 text-sm">
-      to
-      <input type="datetime-local" class="input" value={toInputValue(to)} onchange={onToChange} />
-    </label>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {#if liveFollow}
+        <span class="badge preset-filled-success-500">live</span>
+      {/if}
+      {#if loading}
+        <LoaderIcon class="size-4 animate-spin" />
+      {/if}
+      {#if loadError}
+        <span class="text-sm text-error-500">{loadError}</span>
+      {/if}
 
-    {#if liveFollow}
-      <span class="badge preset-filled-success-500">live</span>
-    {/if}
-    {#if loading}
-      <span class="text-sm opacity-60">loading…</span>
-    {/if}
-    {#if loadError}
-      <span class="text-sm text-error-500">{loadError}</span>
-    {/if}
+      <div class="btn-group bg-surface-100-900">
+        {#each PRESETS as preset (preset.label)}
+          <button
+            type="button"
+            class="btn"
+            class:preset-filled={liveFollow && to - from === preset.ms}
+            onclick={() => applyPreset(preset.ms)}
+          >
+            {preset.label}
+          </button>
+        {/each}
+      </div>
+
+      <label class="flex items-center gap-1 text-sm">
+        from
+        <input
+          type="datetime-local"
+          class="input"
+          value={toInputValue(from)}
+          onchange={onFromChange}
+        />
+      </label>
+      <label class="flex items-center gap-1 text-sm">
+        to
+        <input type="datetime-local" class="input" value={toInputValue(to)} onchange={onToChange} />
+      </label>
+    </div>
   </div>
 
   <div class="flex flex-wrap items-center gap-2">
     {#each selectedTagIds as tagId (tagId)}
-      <span class="chip preset-tonal flex items-center gap-1">
+      <span
+        class="chip preset-tonal flex items-center gap-1"
+        title={tags.find((t) => t.id == tagId)?.path}
+      >
         <span class="size-2 rounded-full" style:background={colorFor(tagId)}></span>
         {tagName(tagId)}
         <button type="button" class="cursor-pointer" onclick={() => toggleTag(tagId)}>×</button>

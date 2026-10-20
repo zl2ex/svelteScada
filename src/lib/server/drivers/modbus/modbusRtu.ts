@@ -1,29 +1,21 @@
 import Modbus from "jsmodbus";
 import { err, ok } from "neverthrow";
-import { z } from "zod";
 import { SerialPort } from "serialport";
 import { logger } from "$lib/server/pino/logger";
-import { z_deviceModbusRtuOptions } from "$lib/server/sqlite/tables";
+import {
+  z_DeviceModbusRtuOptionsInsert,
+  type DeviceModbusRtuOptionsConfig,
+  type DeviceModbusRtuOptionsInsert,
+} from "$lib/sqlite/tables";
 import { attempt } from "$lib/util/attempt";
 import { errorToString } from "$lib/util/neverThrow";
-import {
-  BaseModbusDriver,
-  type ModbusClientLike,
-  type ModbusDriverError,
-} from "./modbusBase";
+import { BaseModbusDriver, type ModbusClientLike, type ModbusDriverError } from "./modbusBase";
 
 /* -------------------------------------------------------------------------- */
 /*  Driver                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/**
- * What a caller may hand to `create()`: every field is optional and gets
- * defaulted.
- */
-export type ModbusRTUDriverOptions = z.input<typeof z_deviceModbusRtuOptions>;
-/** What the driver actually runs on: defaulted, so nothing is optional. */
-export type ModbusRTUDriverConfig = z.output<typeof z_deviceModbusRtuOptions>;
-export type ModbusRTUDriverError = ModbusDriverError<ModbusRTUDriverOptions>;
+export type ModbusRTUDriverError = ModbusDriverError<DeviceModbusRtuOptionsInsert>;
 
 /**
  * Modbus RTU over a serial port.
@@ -35,13 +27,13 @@ export type ModbusRTUDriverError = ModbusDriverError<ModbusRTUDriverOptions>;
  * covers.
  */
 export class ModbusRTUDriver extends BaseModbusDriver<
-  ModbusRTUDriverConfig,
+  DeviceModbusRtuOptionsConfig,
   "ModbusRTUDriver"
 > {
   #port: SerialPort;
   #client: ModbusClientLike;
 
-  private constructor(config: ModbusRTUDriverConfig) {
+  private constructor(config: DeviceModbusRtuOptionsConfig) {
     super("ModbusRTUDriver", config);
 
     // autoOpen is false so the client below can attach its 'open' listener
@@ -69,8 +61,8 @@ export class ModbusRTUDriver extends BaseModbusDriver<
     this.#port.on("error", (e) => this.onTransportDown(e.message));
   }
 
-  static create(opts: ModbusRTUDriverOptions) {
-    const parsed = z_deviceModbusRtuOptions.safeParse(opts);
+  static create(opts: DeviceModbusRtuOptionsInsert) {
+    const parsed = z_DeviceModbusRtuOptionsInsert.safeParse(opts);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
@@ -85,9 +77,7 @@ export class ModbusRTUDriver extends BaseModbusDriver<
         options: opts,
       } as const satisfies ModbusRTUDriverError);
     }
-    const created = attempt(
-      () => new ModbusRTUDriver(parsed.data as ModbusRTUDriverConfig),
-    );
+    const created = attempt(() => new ModbusRTUDriver(parsed.data as DeviceModbusRtuOptionsConfig));
     if (created.error) {
       return err({
         reason: "DRIVER_CREATE_FAILED",

@@ -1,4 +1,4 @@
-import { type TagSelect } from "$lib/server/sqlite/tables";
+import { type TagSelect } from "$lib/sqlite/tables";
 import { guard, getPlatform, live, LiveError } from "svelte-realtime/server";
 import { tagManager } from "../hooks.server";
 import {
@@ -154,7 +154,7 @@ export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: an
     return;
   }
 
-  const path = tagManager.idToPath(id);
+  const path = tag.isOk() ? tag.value.path : tagManager.idToPath(id);
 
   //logger.trace(wireTag, `tag-values:${id}`);
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm";
-  import { register } from "$lib/remote/user.remote.js";
+  import { register } from "$lib/remote/user.remote";
 </script>
 
 <div id="register">

@@ -1,6 +1,6 @@
 import { check, sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { devices } from "./devices";
 import { endianNames, sqlEnumList } from "./enums";
@@ -25,9 +25,16 @@ export const device_modbus_tcp_options = sqliteTable(
 );
 
 export type DeviceModbusTcpOptionsSelect = typeof device_modbus_tcp_options.$inferSelect;
-export type DeviceModbusTcpOptionsInsert = typeof device_modbus_tcp_options.$inferInsert;
 
-export const z_insertDeviceModbusTcpOptions = createInsertSchema(device_modbus_tcp_options, {
+export const z_DeviceModbusTcpOptionsSelect = createSelectSchema(device_modbus_tcp_options);
+
+/**
+ * The insert schema without a required `deviceId`: the owning device supplies
+ * the foreign key when the row is written, so the client and the drivers work
+ * with this shape.
+ */
+export const z_DeviceModbusTcpOptionsInsert = createInsertSchema(device_modbus_tcp_options, {
+  deviceId: (s) => s.optional(),
   ip: (s) => s.min(1).default("127.0.0.1"),
   port: (s) => s.min(1).max(65535).default(502),
   unitId: (s) => s.min(1).max(247).default(1),
@@ -39,11 +46,5 @@ export const z_insertDeviceModbusTcpOptions = createInsertSchema(device_modbus_t
   swapWords: (s) => s.default(false),
 });
 
-/**
- * The same options without the `deviceId` foreign key. `deviceId` is owned by
- * the devices row, not by the user, so drivers and the client work with this
- * shape and the id is attached when the row is written.
- */
-export const z_deviceModbusTcpOptions = z_insertDeviceModbusTcpOptions.omit({
-  deviceId: true,
-});
+export type DeviceModbusTcpOptionsInsert = z.input<typeof z_DeviceModbusTcpOptionsInsert>;
+export type DeviceModbusTcpOptionsConfig = z.output<typeof z_DeviceModbusTcpOptionsInsert>;

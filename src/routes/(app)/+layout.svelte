@@ -2,9 +2,9 @@
   import { CircleUserIcon, MenuIcon, SearchIcon, XIcon } from "@lucide/svelte";
   import { AppBar, Popover, Portal, Toast } from "@skeletonlabs/skeleton-svelte";
   import { browser } from "$app/environment";
-  import { themeManager } from "$lib/client/theme.svelte.js";
+  import { themeManager } from "$lib/client/theme.svelte";
   import { getToaster, toast } from "$lib/client/toast.svelte";
-  import { logout } from "$lib/remote/user.remote.js";
+  import { logout } from "$lib/remote/user.remote";
   import { goto } from "$app/navigation";
   import { configure } from "svelte-realtime/client";
   import { attempt } from "$lib/util/attempt";
@@ -78,7 +78,7 @@
   ClientTag.initSocketIo(socket);*/
 </script>
 
-<div id="app" class="h-svh">
+<div id="app" class="flex flex-col h-svh">
   <header>
     <AppBar class="bg-surface-50-950 border-b-surface-200-800 border-b-1">
       <AppBar.Toolbar class="grid-cols-[auto_1fr_auto]">
@@ -148,7 +148,7 @@
     </AppBar>
   </header>
 
-  <main class="flex h-full">
+  <main class="flex grow shrink-0 h-0">
     {@render children()}
   </main>
 </div>

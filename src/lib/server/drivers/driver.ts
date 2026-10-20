@@ -9,7 +9,7 @@ import type { BaseTypeStrings } from "$lib/server/tag/tag";
 import { publishDeviceStatus } from "../../../live/devices";
 import { tagManager } from "../../../hooks.server";
 import { db } from "../sqlite/db";
-import { devices } from "../sqlite/tables";
+import { devices } from "$lib/sqlite/tables";
 import {
   availableDrivers,
   createDriver,

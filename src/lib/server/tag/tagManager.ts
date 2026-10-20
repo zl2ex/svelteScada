@@ -3,7 +3,7 @@ import { logger } from "../pino/logger";
 import { resolveDevicePath, Tag, type FailedTag, type TagOptionsInput } from "./tag";
 import { OpcuaFolder } from "./opcuaFolder";
 import { db } from "../sqlite/db";
-import { tables } from "../sqlite/tables";
+import { tables } from "$lib/sqlite/tables";
 import { eq } from "drizzle-orm";
 import type { FolderManager } from "./folderManager";
 import { err, ok, Result } from "neverthrow";
@@ -11,11 +11,11 @@ import { attempt } from "$lib/util/attempt";
 import { newId } from "$lib/util/newId";
 import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { publishTagValue } from "../../../live/tags";
+import { tagFoldersClosureTable } from "../sqlite/util/tagClosureTable";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
   #tags: Map<string, Result<Tag, FailedTag>> = new Map();
-  #pathToId: Map<string, string> = new Map();
   #folderManager: FolderManager | undefined;
 
   constructor() {}
@@ -26,18 +26,19 @@ export class TagManager {
   }
 
   #buildPath(tagOptions: TagOptionsInput) {
-    if (!this.#folderManager) {
-      throw Error(
-        `[TagManager] buildPath() folderManager not initalised, please call initOpcuaServer() first`,
-      );
-    }
-    let path = tagOptions.name;
-    let folder = this.#folderManager.get(tagOptions.folderId);
-    while (folder?.node.parentId) {
-      path = folder.node.name + "/" + path;
-      folder = this.#folderManager.get(folder.node.parentId);
-    }
-    return "/" + path;
+    const folderId = tagOptions.folderId;
+    if (!folderId) return "/" + tagOptions.name;
+
+    const folder = tagFoldersClosureTable.get(folderId);
+    if (folder.isErr()) return "/" + tagOptions.name;
+
+    return folder.value.path + "/" + tagOptions.name;
+  }
+
+  // the full path of a tag, whether it built or not
+  #pathOf(tag: Result<Tag, FailedTag>): string | undefined {
+    if (tag.isOk()) return tag.value.path;
+    return tag.error.options ? this.#buildPath(tag.error.options) : undefined;
   }
 
   /**
@@ -60,14 +61,13 @@ export class TagManager {
   // -------------------------
 
   getTagByPath(path: string) {
-    const id = this.#pathToId.get(path);
-    if (!id) {
-      return err({
-        reason: "TAG_NOT_FOUND",
-        cause: `no tag at path ${path}`,
-      } as const satisfies NeverThrowError);
+    for (const tag of this.#tags.values()) {
+      if (this.#pathOf(tag) === path) return ok(tag);
     }
-    return ok(this.#tags.get(id));
+    return err({
+      reason: "TAG_NOT_FOUND",
+      cause: `no tag at path ${path}`,
+    } as const satisfies NeverThrowError);
   }
 
   getTagById(id: string) {
@@ -86,7 +86,18 @@ export class TagManager {
   }
 
   idToPath(findId: string) {
-    return this.#pathToId.entries().find(([id, path]) => id == findId)?.[0];
+    const tag = this.#tags.get(findId);
+    return tag ? this.#pathOf(tag) : undefined;
+  }
+
+  /**
+   * Recompute every built tag's path. Folder renames and moves change the
+   * closure table, so the client-facing paths have to be rebuilt to match.
+   */
+  rebuildPaths() {
+    for (const tag of this.#tags.values()) {
+      if (tag.isOk()) tag.value.path = this.#buildPath(tag.value.options);
+    }
   }
 
   // -------------------------
@@ -119,7 +130,7 @@ export class TagManager {
     if (!opcuaFolder) {
       return err({
         reason: "FOLDER_NOT_FOUND",
-        cause: `opcua Folder not foind at ${opts.folderId}`,
+        cause: `opcua Folder not found at ${opts.folderId}`,
       } as const satisfies NeverThrowError);
     }
 
@@ -154,14 +165,15 @@ export class TagManager {
 
     const tag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, opts));
 
+    if (tag.isOk()) tag.value.path = this.#buildPath(opts);
+
     this.#trackValue(tag);
 
     this.#tags.set(opts.id, tag);
 
-    const path = this.#buildPath(opts);
-    this.#pathToId.set(path, opts.id);
-
-    logger.info(`[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${path}`);
+    logger.info(
+      `[TagManager] added tag ${opts.id}  ${opts.name}  into folder ${this.#buildPath(opts)}`,
+    );
 
     if (tag.isErr()) {
       return err(tag.error);
@@ -273,7 +285,6 @@ export class TagManager {
     // if (duplicate.isErr()) return err(duplicate.error);
 
     const oldTag = this.#tags.get(id);
-    const oldPath = this.idToPath(id);
 
     if (oldTag?.isOk()) {
       // keep old tag value when rebuilding only if the datatype is the same
@@ -287,16 +298,13 @@ export class TagManager {
     }
     this.#tags.delete(id);
 
-    if (oldPath) this.#pathToId.delete(oldPath);
-
     const rebuiltTag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, options));
+
+    if (rebuiltTag.isOk()) rebuiltTag.value.path = this.#buildPath(options);
 
     this.#trackValue(rebuiltTag);
 
     this.#tags.set(id, rebuiltTag);
-
-    const path = this.#buildPath(options);
-    this.#pathToId.set(path, id);
 
     if (rebuiltTag.isErr()) {
       return err(rebuiltTag.error);
@@ -336,8 +344,6 @@ export class TagManager {
     }
 
     this.#tags.delete(id);
-    const oldPath = this.idToPath(id);
-    if (oldPath) this.#pathToId.delete(oldPath);
 
     return ok(true);
   }
@@ -411,13 +417,11 @@ export class TagManager {
 
       const tag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, tagOpt));
 
+      if (tag.isOk()) tag.value.path = this.#buildPath(tagOpt);
+
       this.#trackValue(tag);
 
       this.#tags.set(tagOpt.id, tag);
-
-      // the same key createTag() uses, so a tag read from the database is
-      // looked up and published under the same path as one made at runtime
-      this.#pathToId.set(this.#buildPath(tagOpt), tagOpt.id);
     }
 
     logger.info(`[TagManager] loaded ${tagOptions.data.length} tags from database`);

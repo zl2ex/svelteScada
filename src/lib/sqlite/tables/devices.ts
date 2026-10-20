@@ -1,6 +1,6 @@
 import { check, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { sqlEnumList } from "./enums";
 
 /**
@@ -25,7 +25,9 @@ export const devices = sqliteTable(
 export type DeviceSelect = typeof devices.$inferSelect;
 export type DeviceInsert = typeof devices.$inferInsert;
 
-export const z_insertDevice = createInsertSchema(devices, {
+export const z_DeviceSelect = createSelectSchema(devices);
+
+export const z_DeviceInsert = createInsertSchema(devices, {
   name: (s) => s.min(1).max(64),
   enabled: (s) => s.default(true),
 });

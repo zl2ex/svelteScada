@@ -1,6 +1,6 @@
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { tags } from "./tags";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 
 // wip disable row id
 export const trends = sqliteTable(
@@ -19,6 +19,8 @@ export const trends = sqliteTable(
 export type TrendSelect = typeof trends.$inferSelect;
 export type TrendInsert = typeof trends.$inferInsert;
 
-export const z_insertTrend = createInsertSchema(trends, {
+export const z_TrendSelect = createSelectSchema(trends);
+
+export const z_TrendInsert = createInsertSchema(trends, {
   timestamp: (s) => s.default(Date.now()),
 });

@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import { PRIVATE_KEY } from "$env/static/private";
 import { logger } from "../pino/logger";
 import { db } from "../sqlite/db";
-import type { UserSelect } from "../sqlite/tables";
+import type { UserSelect } from "$lib/sqlite/tables";
 import { err, ok } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";

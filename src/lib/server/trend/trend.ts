@@ -10,7 +10,7 @@ import {
   type TrendSeries,
 } from "$lib/util/trend";
 import { db } from "$lib/server/sqlite/db";
-import { trends } from "$lib/server/sqlite/tables";
+import { trends } from "$lib/sqlite/tables";
 import { getPlatform } from "svelte-realtime";
 import { logger } from "../pino/logger";
 

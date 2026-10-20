@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { tag_folders } from "./tag_folders";
-import { baseTypeKeys } from "../../../../lib/validation/zod";
+import { baseTypeKeys } from "../../validation/baseTypes";
 
 export const tags = sqliteTable("tags", {
   id: text("id").primaryKey(),
@@ -23,11 +23,10 @@ export const tags = sqliteTable("tags", {
 
 export type TagSelect = typeof tags.$inferSelect;
 export type TagInsert = typeof tags.$inferInsert;
-export type TagInsertOptionalId = Omit<typeof tags.$inferInsert, "id"> & {
-  id?: string;
-};
 
-export const z_insertTag = createInsertSchema(tags, {
+export const z_TagSelect = createSelectSchema(tags);
+
+export const z_TagInsert = createInsertSchema(tags, {
   type: (s) => s.default("tag"),
   writeable: (s) => s.default(true),
   exposeOverOpcua: (s) => s.default(true),

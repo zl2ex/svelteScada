@@ -4,7 +4,7 @@ import {
   text,
   primaryKey,
 } from "drizzle-orm/sqlite-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { tag_folders } from "./tag_folders";
 
 export const tag_folder_paths = sqliteTable(
@@ -21,7 +21,9 @@ export const tag_folder_paths = sqliteTable(
   (t) => [primaryKey({ columns: [t.parent, t.child] })],
 );
 
-export type TagFolderPathsSelect = typeof tag_folder_paths.$inferSelect;
-export type TagFolderPathsInsert = typeof tag_folder_paths.$inferInsert;
+export type TagFolderPathSelect = typeof tag_folder_paths.$inferSelect;
+export type TagFolderPathInsert = typeof tag_folder_paths.$inferInsert;
 
-export const z_insertTagFolderPaths = createInsertSchema(tag_folder_paths);
+export const z_TagFolderPathSelect = createSelectSchema(tag_folder_paths);
+
+export const z_TagFolderPathInsert = createInsertSchema(tag_folder_paths);

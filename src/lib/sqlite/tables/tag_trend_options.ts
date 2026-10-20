@@ -1,6 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { tags } from "./tags";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 
 export const tag_trend_options = sqliteTable("tag_trend_options", {
   tagId: text("tagId")
@@ -14,7 +14,9 @@ export const tag_trend_options = sqliteTable("tag_trend_options", {
 export type TagTrendOptionsSelect = typeof tag_trend_options.$inferSelect;
 export type TagTrendOptionsInsert = typeof tag_trend_options.$inferInsert;
 
-export const z_insertTagTrendOptions = createInsertSchema(tag_trend_options, {
+export const z_TagTrendOptionsSelect = createSelectSchema(tag_trend_options);
+
+export const z_TagTrendOptionsInsert = createInsertSchema(tag_trend_options, {
   enabled: (s) => s.default(true),
   minimumIntervalMs: (s) => s.min(100), // guards the trends table against an interval fast enough to flood it
 });

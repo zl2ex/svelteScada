@@ -24,23 +24,20 @@ import {
 import z from "zod";
 import { OpcuaFolder } from "$lib/server/tag/opcuaFolder";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
-import { trends, z_insertTag, z_insertTagTrendOptions } from "$lib/server/sqlite/tables";
+import { trends } from "$lib/sqlite/tables";
+import { z_TagOptionsInsert } from "$lib/sqlite/tagOptions";
 import { db } from "$lib/server/sqlite/db";
 import { eq } from "drizzle-orm";
 import { err, ok, type Result } from "neverthrow";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
-import { baseTypeKeys, Z_BaseTypes } from "$lib/validation/zod";
+import { baseTypeKeys, z_BaseTypes } from "$lib/validation/baseTypes";
 import { attempt } from "$lib/util/attempt";
 import type { DriverVariable } from "$lib/server/drivers/driver";
 import { getPlatform, publish } from "svelte-realtime/server";
 import { toTrendValue, type TrendPoint } from "$lib/util/trend";
 import { publishTrend } from "../trend/trend";
 
-const z_tagOptions = z_insertTag.extend({
-  trend: z_insertTagTrendOptions,
-});
-
-export type TagOptionsInput = z.input<typeof z_tagOptions>;
+export type TagOptionsInput = z.input<typeof z_TagOptionsInsert>;
 
 export async function getAllDataTypeStrings() {
   const udtNames = udtManager.getAllUdts().map((udt) => {
@@ -51,7 +48,7 @@ export async function getAllDataTypeStrings() {
 
 // TypeScript mapping inferred from Zod
 export type BaseTypeMap = {
-  [K in keyof typeof Z_BaseTypes]: z.infer<(typeof Z_BaseTypes)[K]>;
+  [K in keyof typeof z_BaseTypes]: z.infer<(typeof z_BaseTypes)[K]>;
 };
 
 // just the base types
@@ -91,11 +88,11 @@ const primitiveKind = (schema: z.ZodType): "number" | "string" | "boolean" => {
 };
 
 export const baseTypeMap: {
-  [K in keyof typeof Z_BaseTypes]: PrimitiveKind<(typeof Z_BaseTypes)[K]>;
+  [K in keyof typeof z_BaseTypes]: PrimitiveKind<(typeof z_BaseTypes)[K]>;
 } = Object.fromEntries(
-  Object.entries(Z_BaseTypes).map(([key, schema]) => [key, primitiveKind(schema)]),
+  Object.entries(z_BaseTypes).map(([key, schema]) => [key, primitiveKind(schema)]),
 ) as {
-  [K in keyof typeof Z_BaseTypes]: PrimitiveKind<(typeof Z_BaseTypes)[K]>;
+  [K in keyof typeof z_BaseTypes]: PrimitiveKind<(typeof z_BaseTypes)[K]>;
 };
 
 export type TagValue = string | number | boolean | Array<string | number | boolean>;
@@ -114,7 +111,7 @@ export function getSchema<DataType extends string>(dataType: DataType) {
   const base = String(parsed.groups.base);
   const len = parsed.groups.len;
 
-  const baseSchema = Z_BaseTypes[base as keyof typeof Z_BaseTypes];
+  const baseSchema = z_BaseTypes[base as keyof typeof z_BaseTypes];
   if (!baseSchema)
     return err({
       reason: "UNKOWN_BASE_DATATYPE",
@@ -161,7 +158,7 @@ export type ChangeListener = (
 export type StatusCodeName = Exclude<keyof typeof StatusCodes, "prototype">;
 
 // the client-facing representation of a healthy tag
-export type ClientTagValue = Pick<Tag, "id" | "name" | "value" | "options"> & {
+export type ClientTagValue = Pick<Tag, "id" | "name" | "value" | "options" | "path"> & {
   statusString: StatusCodeName;
 };
 
@@ -175,6 +172,7 @@ export type FailedTag = NeverThrowError & {
 export class Tag {
   id: string;
   name: string;
+  path: string = "";
   opcuaServer: OPCUAServer;
   opcuaFolder: OpcuaFolder;
   options: TagOptionsInput;
@@ -234,7 +232,7 @@ export class Tag {
     onChange?: ChangeListener,
   ): Result<Tag, FailedTag> {
     // parse for any errors but also to get default values
-    const parsed = z_tagOptions.safeParse(opts);
+    const parsed = z_TagOptionsInsert.safeParse(opts);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
@@ -333,29 +331,6 @@ export class Tag {
       }
     }
 
-    // subscribe to value from driver if nodeId provided
-    if (options.nodeId) {
-      const driverSub = tag.subscribeToDriver();
-      if (driverSub.isErr()) {
-        logger.error(driverSub.error);
-        return err({
-          reason: "DRIVER_CONFIG_ERROR",
-          cause: driverSub.error,
-          options,
-        } as const satisfies FailedTag);
-      }
-      tag.driverVarible = driverSub.value;
-    }
-    // if no node id it is a purley memory tag on the server so load an inital value if possible
-    else {
-      // update tag value with initalValue or default
-      tag.#update(tag.value, "TagInternal", StatusCodes.Good).then((updated) => {
-        if (updated.isErr()) {
-          logger.error(updated.error);
-        }
-      });
-    }
-
     if (options.exposeOverOpcua) {
       const addressSpace = tag.opcuaServer.engine.addressSpace;
       if (!addressSpace) {
@@ -426,6 +401,29 @@ export class Tag {
       tag.exposeOpcuaVarible = exposed.data;
     }
 
+    // subscribe to value from driver if nodeId provided
+    if (options.nodeId) {
+      const driverSub = tag.subscribeToDriver();
+      if (driverSub.isErr()) {
+        logger.error(driverSub.error);
+        return err({
+          reason: "DRIVER_CONFIG_ERROR",
+          cause: driverSub.error,
+          options,
+        } as const satisfies FailedTag);
+      }
+      tag.driverVarible = driverSub.value;
+    }
+    // if no node id it is a purley memory tag on the server so load an inital value if possible
+    else {
+      // update tag value with initalValue or default
+      tag.#update(tag.value, "TagInternal", StatusCodes.Good).then((updated) => {
+        if (updated.isErr()) {
+          logger.error(updated.error);
+        }
+      });
+    }
+
     logger.debug(
       `[Tag] created new tag ${tag.id}  ${tag.name} = ${tag.value} : ${tag.statusCode.name}`,
     );
@@ -476,6 +474,7 @@ export class Tag {
       id: this.id,
       name: this.name,
       value: this.value,
+      path: this.path,
       statusString: this.statusCode.name as StatusCodeName,
       options: this.options,
     };
@@ -584,11 +583,12 @@ export class Tag {
       if (!this.exposeOpcuaVarible) {
         return err({
           reason: "OPCUA_NOT_INITIALISED",
-          cause: `[Tag] update() id: ${this.id} cannot update exposeOpcuaVariable as it is not initalised`,
+          cause: `[Tag] update() id: ${this.id} from ${source} cannot update exposeOpcuaVariable as it is not initalised`,
           options: this.options,
         } as const satisfies FailedTag);
       }
       const written = attempt(() =>
+        // @ts-ignore - undefined and null check done above
         this.exposeOpcuaVarible.setValueFromSource(
           {
             dataType: this.opcuaDataType,
@@ -611,7 +611,7 @@ export class Tag {
     this.value = newValue;
     this.statusCode = statusCode;
 
-    logger.trace(`[Tag] update() ${this.id} = ${value} : ${this.statusCode.name}`);
+    logger.trace(`[Tag] update() ${this.id} = ${value} : ${this.statusCode.name} from ${source}`);
 
     this.#trend(newValue, statusCode);
 
@@ -658,7 +658,7 @@ export class Tag {
     );
     if (written.error) {
       logger.error(
-        `[Tag] #trend() ${this.id} failed to write trend: ${errorToString(written.error)}`,
+        `[Tag] #trend() ${this.id} ${this.name} ${this.path} failed to write trend: ${errorToString(written.error)}`,
       );
       return;
     }

@@ -4,6 +4,7 @@
     FolderIcon,
     FolderPlus,
     LoaderIcon,
+    PencilIcon,
     Scissors,
     Settings2Icon,
     TagIcon,
@@ -19,27 +20,28 @@
     Popover,
   } from "@skeletonlabs/skeleton-svelte";
 
-  import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable.js";
+  import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
   import { attempt } from "$lib/util/attempt";
   import { newId } from "$lib/util/newId";
   import { err, ok } from "neverthrow";
-  import { z_shared_insertClosureTableNode, z_shared_insertTag } from "$lib/validation/zod";
+  import { z_TagFolderNodeInsert } from "$lib/sqlite/tables/index";
+  import { z_TagOptionsInsert } from "$lib/sqlite/tagOptions";
   import { browser } from "$app/env";
 
   import { tagPatches, applyTagPatches } from "$live/tags";
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
-  import type { BaseTypeStrings, TagOptionsInput } from "$lib/server/tag/tag.js";
+  import type { BaseTypeStrings, TagOptionsInput } from "$lib/server/tag/tag";
   import { onMount } from "svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
-  import { getDataTypeStrings } from "$lib/remote/tag.remote.js";
+  import { getDataTypeStrings } from "$lib/remote/tag.remote";
   import {
     errorToString,
     neverThrowErrorToString,
     type NeverThrowError,
-  } from "$lib/util/neverThrow.js";
-  import { PanelLayout } from "$lib/client/util/panelLayout.svelte.js";
-  import { undoManager } from "$lib/client/history/undoManager.js";
+  } from "$lib/util/neverThrow";
+  import { PanelLayout } from "$lib/client/util/localStorage/panelLayout.svelte";
+  import { undoManager } from "$lib/client/history/undoManager";
 
   let { data, children } = $props();
 
@@ -536,8 +538,8 @@
     let folders: ClosureTableNode[] = [];
 
     for (const data of json.data) {
-      let tagResult = z_shared_insertTag.safeParse(data);
-      let folderResult = z_shared_insertClosureTableNode.safeParse(data);
+      let tagResult = z_TagOptionsInsert.safeParse(data);
+      let folderResult = z_TagFolderNodeInsert.safeParse(data);
       if (!tagResult.success && !folderResult.success) {
         return err({
           reason: "PASTE_INVALID_TAG_OR_FOLDER",
@@ -939,7 +941,7 @@
 <div
   id="left-panel"
   style={panelLayout.width.left ? `width: ${panelLayout.width.left}px` : ""}
-  class="text-xs"
+  class="overflow-y-scroll text-xs"
 >
   <svelte:boundary>
     <Menu
@@ -970,6 +972,34 @@
       <Portal>
         <Menu.Positioner>
           <Menu.Content class="min-w-auto">
+            <Menu.Item
+              value="Rename"
+              //disabled={contextMenuFolders.length !== 1}
+            >
+              <Menu.ItemText class="w-full">
+                <button
+                  class="flex items-center gap-2 w-full"
+                  //disabled={contextMenuFolders.length !== 1}
+                  onclick={() => {
+                    // excusively one folder or one tag
+                    const onlyOneFolder =
+                      contextMenuFolders.length === 1 && contextMenuTags.length === 0
+                        ? true
+                        : false;
+                    const onlyOneTag =
+                      contextMenuTags.length === 1 && contextMenuFolders.length === 0
+                        ? true
+                        : false;
+                    if (onlyOneFolder) renamingFolderId = contextMenuFolders[0].id;
+                    if (onlyOneTag) renamingTagId = contextMenuTags[0].id;
+                  }}
+                >
+                  <PencilIcon class="size-4" />
+                  <span>Rename</span>
+                  <span class="text-xs text-neutral-500 ml-auto">F2</span>
+                </button>
+              </Menu.ItemText>
+            </Menu.Item>
             <Menu.Item
               value="newTag"
               //disabled={contextMenuFolders.length !== 1}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { undoManager } from "$lib/client/history/undoManager.js";
+  import { undoManager } from "$lib/client/history/undoManager";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
   import type { DeviceConfigInput, DriverName, OptionFieldKind } from "$lib/server/drivers/driver";

@@ -1,6 +1,6 @@
 import { type ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
 import { guard, live, LiveError } from "svelte-realtime/server";
-import { folderManager } from "../hooks.server";
+import { folderManager, tagManager } from "../hooks.server";
 import { logger } from "$lib/server/pino/logger";
 import type {
   PatchOp,
@@ -81,6 +81,8 @@ export const applyTagFolderPatches = live(
           console.error(result.error);
           return wireErr(result.error);
         }
+        // a moved folder changes the full path of every tag under it
+        tagManager.rebuildPaths();
       }
 
       if (opcuaFolder.node.name !== value.name) {
@@ -89,6 +91,8 @@ export const applyTagFolderPatches = live(
           console.error(result.error);
           return wireErr(result.error);
         }
+        // a renamed folder changes the full path of every tag under it
+        tagManager.rebuildPaths();
       }
     }
 

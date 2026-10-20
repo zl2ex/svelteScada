@@ -6,6 +6,9 @@ import { sql } from "drizzle-orm";
  */
 export const endianNames = ["BigEndian", "LittleEndian"] as const;
 
+/** Parity values `serialport` accepts; anything else is silently coerced. */
+export const parityNames = ["none", "even", "odd", "mark", "space"] as const;
+
 /**
  * A quoted, comma separated list for a CHECK constraint, which cannot take
  * bound parameters. Only ever called with the literals declared above.

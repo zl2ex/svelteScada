@@ -9,12 +9,15 @@ import {
   device_modbus_tcp_options,
   device_opcua_client_options,
   endianNames,
-  z_insertDevice,
-  z_deviceModbusRtuOptions,
-  z_deviceModbusTcpOptions,
-  z_deviceOpcuaClientOptions,
+  z_DeviceInsert,
+  z_DeviceModbusRtuOptionsInsert,
+  z_DeviceModbusTcpOptionsInsert,
+  z_DeviceOpcuaClientOptionsInsert,
+  type DeviceModbusRtuOptionsConfig,
+  type DeviceModbusTcpOptionsConfig,
+  type DeviceOpcuaClientOptionsConfig,
   type DriverName,
-} from "../sqlite/tables";
+} from "$lib/sqlite/tables";
 import { ModbusRTUDriver } from "./modbus/modbusRtu";
 import { ModbusTCPDriver } from "./modbus/modbusTcp";
 import { OpcuaClientDriver } from "./opcua/opcuaClient";
@@ -29,13 +32,6 @@ export type DriverCreateError = NeverThrowError;
  * transaction without caring which.
  */
 export type Db = Pick<typeof db, "insert" | "delete" | "update" | "select">;
-
-/** Every column present, because these come out of a parse that applied defaults. */
-type OptionsOf<T extends z.ZodType> = z.output<T>;
-
-export type ModbusTCPOptions = OptionsOf<typeof z_deviceModbusTcpOptions>;
-export type ModbusRTUOptions = OptionsOf<typeof z_deviceModbusRtuOptions>;
-export type OpcuaClientOptions = OptionsOf<typeof z_deviceOpcuaClientOptions>;
 
 export type OptionFieldKind = "text" | "number" | "boolean" | "select";
 
@@ -53,10 +49,12 @@ export type OptionField<V> = {
 
 /**
  * Keyed by option name, so the mapped type demands a field for every option:
- * a driver that grows an option without a field here stops compiling.
+ * a driver that grows an option without a field here stops compiling. The
+ * `deviceId` foreign key is owned by the device, not the user, so it is not an
+ * editable option.
  */
 export type OptionFieldsOf<O> = {
-  readonly [K in keyof O & string]: OptionField<O[K]>;
+  readonly [K in Exclude<keyof O & string, "deviceId">]: OptionField<O[K]>;
 };
 
 export interface DriverRegistration<N extends DriverName, O> {
@@ -84,9 +82,9 @@ export interface DriverRegistration<N extends DriverName, O> {
  * options here stops `driverRegistry` compiling.
  */
 interface DriverOptionsByName {
-  ModbusTCPDriver: ModbusTCPOptions;
-  ModbusRTUDriver: ModbusRTUOptions;
-  opcuaClientDriver: OpcuaClientOptions;
+  ModbusTCPDriver: DeviceModbusTcpOptionsConfig;
+  ModbusRTUDriver: DeviceModbusRtuOptionsConfig;
+  opcuaClientDriver: DeviceOpcuaClientOptionsConfig;
 }
 
 /**
@@ -118,8 +116,8 @@ const modbusCommonFields = {
     choices: endianNames,
   },
   swapWords: { label: "Swap Words", kind: "boolean" },
-} satisfies Pick<OptionFieldsOf<ModbusTCPOptions>, ModbusCommonOption> &
-  Pick<OptionFieldsOf<ModbusRTUOptions>, ModbusCommonOption>;
+} satisfies Pick<OptionFieldsOf<DeviceModbusTcpOptionsConfig>, ModbusCommonOption> &
+  Pick<OptionFieldsOf<DeviceModbusRtuOptionsConfig>, ModbusCommonOption>;
 
 export const driverRegistry = {
   ModbusTCPDriver: {
@@ -127,16 +125,16 @@ export const driverRegistry = {
     displayName: "Modbus TCP/IP Driver",
     logo: "/images/Modbus_Logo.svg",
     optionsTable: device_modbus_tcp_options,
-    optionsSchema: z_deviceModbusTcpOptions,
+    optionsSchema: z_DeviceModbusTcpOptionsInsert,
     optionFields: {
       ip: { label: "IP Address", kind: "text" },
       port: { label: "Port", kind: "number" },
       reconnectInervalMs: { label: "Reconnect Interval (ms)", kind: "number" },
       ...modbusCommonFields,
     },
-    defaultOptions: z_deviceModbusTcpOptions.parse({}),
-    create: (options: ModbusTCPOptions) => ModbusTCPDriver.create(options),
-    writeOptions(tx: Db, deviceId: string, options: ModbusTCPOptions) {
+    defaultOptions: z_DeviceModbusTcpOptionsInsert.parse({}),
+    create: (options: DeviceModbusTcpOptionsConfig) => ModbusTCPDriver.create(options),
+    writeOptions(tx: Db, deviceId: string, options: DeviceModbusTcpOptionsConfig) {
       const row = { ...options, deviceId };
       tx.insert(device_modbus_tcp_options)
         .values(row)
@@ -157,7 +155,7 @@ export const driverRegistry = {
     displayName: "Modbus RTU Driver",
     logo: "/images/Modbus_Logo.svg",
     optionsTable: device_modbus_rtu_options,
-    optionsSchema: z_deviceModbusRtuOptions,
+    optionsSchema: z_DeviceModbusRtuOptionsInsert,
     optionFields: {
       serialPort: { label: "Serial Port", kind: "text" },
       baudRate: { label: "Baud Rate", kind: "number" },
@@ -168,9 +166,9 @@ export const driverRegistry = {
       },
       ...modbusCommonFields,
     },
-    defaultOptions: z_deviceModbusRtuOptions.parse({}),
-    create: (options: ModbusRTUOptions) => ModbusRTUDriver.create(options),
-    writeOptions(tx: Db, deviceId: string, options: ModbusRTUOptions) {
+    defaultOptions: z_DeviceModbusRtuOptionsInsert.parse({}),
+    create: (options: DeviceModbusRtuOptionsConfig) => ModbusRTUDriver.create(options),
+    writeOptions(tx: Db, deviceId: string, options: DeviceModbusRtuOptionsConfig) {
       const row = { ...options, deviceId };
       tx.insert(device_modbus_rtu_options)
         .values(row)
@@ -191,16 +189,16 @@ export const driverRegistry = {
     displayName: "OPC UA Driver",
     logo: "/images/OPCUA_Logo.svg",
     optionsTable: device_opcua_client_options,
-    optionsSchema: z_deviceOpcuaClientOptions,
+    optionsSchema: z_DeviceOpcuaClientOptionsInsert,
     optionFields: {
       endpointUrl: { label: "Endpoint URL", kind: "text" },
       samplingIntervalMs: { label: "Sampling Interval (ms)", kind: "number" },
       queueSize: { label: "Queue Size", kind: "number" },
       deadbandValue: { label: "Deadband", kind: "number" },
     },
-    defaultOptions: z_deviceOpcuaClientOptions.parse({}),
-    create: (options: OpcuaClientOptions) => OpcuaClientDriver.create(options),
-    writeOptions(tx: Db, deviceId: string, options: OpcuaClientOptions) {
+    defaultOptions: z_DeviceOpcuaClientOptionsInsert.parse({}),
+    create: (options: DeviceOpcuaClientOptionsConfig) => OpcuaClientDriver.create(options),
+    writeOptions(tx: Db, deviceId: string, options: DeviceOpcuaClientOptionsConfig) {
       const row = { ...options, deviceId };
       tx.insert(device_opcua_client_options)
         .values(row)
@@ -236,15 +234,15 @@ export type DriverOptionsOf<N extends DriverName> = DriverOptionsByName[N];
  * cannot produce, so `NamesAgree` below is what keeps the list honest.
  */
 export const z_DeviceConfig = z.discriminatedUnion("driverName", [
-  z_insertDevice.extend({
+  z_DeviceInsert.extend({
     driverName: z.literal(driverRegistry.ModbusTCPDriver.id),
     options: driverRegistry.ModbusTCPDriver.optionsSchema,
   }),
-  z_insertDevice.extend({
+  z_DeviceInsert.extend({
     driverName: z.literal(driverRegistry.ModbusRTUDriver.id),
     options: driverRegistry.ModbusRTUDriver.optionsSchema,
   }),
-  z_insertDevice.extend({
+  z_DeviceInsert.extend({
     driverName: z.literal(driverRegistry.opcuaClientDriver.id),
     options: driverRegistry.opcuaClientDriver.optionsSchema,
   }),

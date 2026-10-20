@@ -1,6 +1,6 @@
 // See https://kit.svelte.dev/docs/types#app
 
-import type { UserSelect } from "$lib/server/sqlite/tables";
+import type { UserSelect } from "$lib/sqlite/tables";
 
 // for information about these interfaces
 declare global {

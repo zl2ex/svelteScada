@@ -22,14 +22,17 @@ import {
 } from "node-opcua-client";
 
 import { logger } from "../../pino/logger";
-import type { z } from "zod";
 import { err, ok, type Result } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import type { BaseTypeMap } from "$lib/server/tag/tag";
 import type { BaseTypeStrings } from "$lib/server/tag/tag";
-import { Z_BaseTypes } from "$lib/validation/zod";
-import { z_deviceOpcuaClientOptions } from "$lib/server/sqlite/tables";
+import { z_BaseTypes } from "$lib/validation/baseTypes";
+import {
+  z_DeviceOpcuaClientOptionsInsert,
+  type DeviceOpcuaClientOptionsConfig,
+  type DeviceOpcuaClientOptionsInsert,
+} from "$lib/sqlite/tables";
 import {
   BaseDriver,
   type DriverValue,
@@ -96,11 +99,6 @@ function createClient() {
   );
 }
 
-/** What a caller may hand to `create()`: every field optional and defaulted. */
-export type OpcuaClientDriverOptions = z.input<typeof z_deviceOpcuaClientOptions>;
-/** What the driver runs on: defaulted, so nothing is optional. */
-export type OpcuaClientDriverConfig = z.output<typeof z_deviceOpcuaClientOptions>;
-
 export type OpcuaClientDriverError = NeverThrowError & {
   reason:
     | "OPTIONS_PARSE_ERROR"
@@ -121,7 +119,10 @@ export type OpcuaClientDriverError = NeverThrowError & {
     | "DISCONNECT_FAILED";
 };
 
-export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcuaClientDriver"> {
+export class OpcuaClientDriver extends BaseDriver<
+  DeviceOpcuaClientOptionsConfig,
+  "opcuaClientDriver"
+> {
   /**
    * Every node this driver has been asked to watch, keyed by `Sub.key`. This map
    * outlives the session it was built against: a reconnect rebuilds the session
@@ -144,14 +145,14 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
   #terminatedSubscriptions = new WeakSet<ClientSubscription>();
 
   /** Takes a client `create()` already built, so construction cannot fail. */
-  private constructor(options: OpcuaClientDriverConfig, client: OPCUAClient) {
+  private constructor(options: DeviceOpcuaClientOptionsConfig, client: OPCUAClient) {
     super("opcuaClientDriver", options);
     this.#client = client;
     this.#listen(client);
   }
 
-  static create(options: OpcuaClientDriverOptions) {
-    const parsed = z_deviceOpcuaClientOptions.safeParse(options);
+  static create(options: DeviceOpcuaClientOptionsInsert) {
+    const parsed = z_DeviceOpcuaClientOptionsInsert.safeParse(options);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
@@ -632,7 +633,7 @@ export class OpcuaClientDriver extends BaseDriver<OpcuaClientDriverConfig, "opcu
         dataType,
         refs: 0,
         last: {
-          value: Z_BaseTypes[dataType].parse(undefined),
+          value: z_BaseTypes[dataType].parse(undefined),
           status: StatusCodes.BadWaitingForInitialData,
         },
         listeners: new Set(),
@@ -924,7 +925,7 @@ function decodeValue(dataType: BaseTypeStrings, variant: Variant): DriverValue {
       ? int64ToNumber(raw as [number, number])
       : raw;
 
-  const parsed = Z_BaseTypes[dataType].safeParse(value);
+  const parsed = z_BaseTypes[dataType].safeParse(value);
   if (!parsed.success) {
     throw Error(
       `[opcuaClientDriver] ${DataType[variant.dataType]} ${JSON.stringify(raw)} is not a valid ${dataType}: ${parsed.error.message}`,

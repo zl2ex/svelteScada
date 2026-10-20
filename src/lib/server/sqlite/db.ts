@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
-import * as schema from "./tables/index";
-import { relationsConfig } from "./tables/relations";
+import * as schema from "$lib/sqlite/tables/index";
+import { relationsConfig } from "$lib/sqlite/tables/relations";
 import { resolve } from "path";
 import { runMigrations } from "./migrate";
 import { DB_URL } from "$env/static/private";
@@ -25,18 +25,12 @@ export const sqlite = opened.data;
 
 const journalMode = attempt(() => sqlite.pragma("journal_mode = WAL"));
 if (journalMode.error) {
-  logger.warn(
-    `[db] could not enable WAL journal mode: ${errorToString(
-      journalMode.error,
-    )}`,
-  );
+  logger.warn(`[db] could not enable WAL journal mode: ${errorToString(journalMode.error)}`);
 }
 
 const foreignKeys = attempt(() => sqlite.pragma("foreign_keys = ON"));
 if (foreignKeys.error) {
-  logger.warn(
-    `[db] could not enable foreign keys: ${errorToString(foreignKeys.error)}`,
-  );
+  logger.warn(`[db] could not enable foreign keys: ${errorToString(foreignKeys.error)}`);
 }
 
 const connected = attempt(() =>
@@ -49,9 +43,7 @@ const connected = attempt(() =>
 if (connected.error) {
   const failure = {
     reason: "DB_DRIZZLE_INIT_FAILED",
-    cause: `[db] drizzle could not be created: ${errorToString(
-      connected.error,
-    )}`,
+    cause: `[db] drizzle could not be created: ${errorToString(connected.error)}`,
   } as const satisfies NeverThrowError;
   logger.fatal(`${failure.reason} : ${failure.cause}`);
   throw new Error(`${failure.reason} : ${failure.cause}`);

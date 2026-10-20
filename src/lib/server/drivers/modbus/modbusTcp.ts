@@ -1,42 +1,34 @@
 import net from "net";
 import Modbus from "jsmodbus";
 import { err, ok } from "neverthrow";
-import { z } from "zod";
 import { logger } from "$lib/server/pino/logger";
-import { z_deviceModbusTcpOptions } from "$lib/server/sqlite/tables";
+import {
+  z_DeviceModbusTcpOptionsInsert,
+  type DeviceModbusTcpOptionsConfig,
+  type DeviceModbusTcpOptionsInsert,
+} from "$lib/sqlite/tables";
 import { attempt } from "$lib/util/attempt";
 import { errorToString } from "$lib/util/neverThrow";
-import {
-  BaseModbusDriver,
-  type ModbusClientLike,
-  type ModbusDriverError,
-} from "./modbusBase";
+import { BaseModbusDriver, type ModbusClientLike, type ModbusDriverError } from "./modbusBase";
 
 /* -------------------------------------------------------------------------- */
 /*  Driver                                                                    */
 /* -------------------------------------------------------------------------- */
 
-/**
- * What a caller may hand to `create()`: every field is optional and gets
- * defaulted.
- */
-export type ModbusTCPDriverOptions = z.input<typeof z_deviceModbusTcpOptions>;
-/** What the driver actually runs on: defaulted, so nothing is optional. */
-export type ModbusTCPDriverConfig = z.output<typeof z_deviceModbusTcpOptions>;
-export type ModbusTCPDriverError = ModbusDriverError<ModbusTCPDriverOptions>;
+export type ModbusTCPDriverError = ModbusDriverError<DeviceModbusTcpOptionsInsert>;
 
 /**
  * Modbus TCP. All protocol behaviour lives in {@link BaseModbusDriver}; this
  * class only owns the TCP socket and the jsmodbus client bound to it.
  */
 export class ModbusTCPDriver extends BaseModbusDriver<
-  ModbusTCPDriverConfig,
+  DeviceModbusTcpOptionsConfig,
   "ModbusTCPDriver"
 > {
   #socket = new net.Socket();
   #client: ModbusClientLike;
 
-  private constructor(config: ModbusTCPDriverConfig) {
+  private constructor(config: DeviceModbusTcpOptionsConfig) {
     super("ModbusTCPDriver", config);
 
     this.#client = new Modbus.client.TCP(
@@ -49,8 +41,8 @@ export class ModbusTCPDriver extends BaseModbusDriver<
     this.#socket.on("close", () => this.onTransportDown());
   }
 
-  static create(opts: ModbusTCPDriverOptions) {
-    const parsed = z_deviceModbusTcpOptions.safeParse(opts);
+  static create(opts: DeviceModbusTcpOptionsInsert) {
+    const parsed = z_DeviceModbusTcpOptionsInsert.safeParse(opts);
     if (!parsed.success) {
       return err({
         reason: "OPTIONS_PARSE_ERROR",
@@ -58,9 +50,7 @@ export class ModbusTCPDriver extends BaseModbusDriver<
         options: opts,
       } as const satisfies ModbusTCPDriverError);
     }
-    const created = attempt(
-      () => new ModbusTCPDriver(parsed.data as ModbusTCPDriverConfig),
-    );
+    const created = attempt(() => new ModbusTCPDriver(parsed.data as DeviceModbusTcpOptionsConfig));
     if (created.error) {
       return err({
         reason: "DRIVER_CREATE_FAILED",
@@ -87,9 +77,7 @@ export class ModbusTCPDriver extends BaseModbusDriver<
 
   protected openTransport() {
     if (this.connected || this.#socket.connecting) return ok(undefined);
-    const connecting = attempt(() =>
-      this.#socket.connect(this.options.port, this.options.ip),
-    );
+    const connecting = attempt(() => this.#socket.connect(this.options.port, this.options.ip));
     if (connecting.error) {
       this.setConnected(false);
       return err({

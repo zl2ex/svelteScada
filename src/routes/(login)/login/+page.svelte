@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index.js";
+  import RemoteForm from "$lib/client/componets/remoteFormElements/RemoteForm/index";
   import { login } from "$lib/remote/user.remote";
 
   const redirect = page.url.searchParams.get("redirect");

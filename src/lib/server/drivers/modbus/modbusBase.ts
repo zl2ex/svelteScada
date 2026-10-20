@@ -1,8 +1,8 @@
 import { StatusCodes, type StatusCode } from "node-opcua";
 import { err, ok, type Result } from "neverthrow";
-import { z } from "zod";
 import { logger } from "$lib/server/pino/logger";
 import type { BaseTypeMap } from "$lib/server/tag/tag";
+import { endianNames, parityNames } from "$lib/sqlite/tables";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import {
@@ -22,12 +22,10 @@ export type ModbusRegisterType = "hr" | "ir" | "co" | "di";
 export type ModbusDataType = keyof BaseTypeMap;
 export type ModbusValue = BaseTypeMap[ModbusDataType];
 
-export const Z_Endian = z.literal(["BigEndian", "LittleEndian"]);
-export type Endian = z.infer<typeof Z_Endian>;
+export type Endian = (typeof endianNames)[number];
 
 /** Parity values `serialport` accepts; anything else is silently coerced. */
-export const Z_Parity = z.literal(["none", "even", "odd", "mark", "space"]);
-export type Parity = z.infer<typeof Z_Parity>;
+export type Parity = (typeof parityNames)[number];
 
 /**
  * The options every Modbus transport needs. Concrete option schemas are a

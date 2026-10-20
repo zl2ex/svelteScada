@@ -1,5 +1,5 @@
 import { sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import z from "zod";
 
 export const users = sqliteTable("users", {
@@ -14,10 +14,10 @@ export const users = sqliteTable("users", {
 export type UserSelect = typeof users.$inferSelect;
 export type UserInsert = typeof users.$inferInsert;
 
-export const z_insertUser = createInsertSchema(users, {
+export const z_UserSelect = createSelectSchema(users);
+
+export const z_UserInsert = createInsertSchema(users, {
   email: z.email(),
 });
 
-export const z_loginUser = createInsertSchema(users, {
-  email: z.email(),
-}).omit({ name: true, id: true });
+export const z_UserLogin = z_UserInsert.omit({ name: true, id: true });

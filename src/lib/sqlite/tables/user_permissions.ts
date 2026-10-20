@@ -1,5 +1,5 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { users } from "./users";
 
 export const user_permissions = sqliteTable("user_permissions", {
@@ -14,10 +14,12 @@ export const user_permissions = sqliteTable("user_permissions", {
   edit: integer("edit", { mode: "boolean" }).default(false),
 });
 
-export type UserPermissionsSelect = typeof user_permissions.$inferSelect;
-export type UserPermissionsInsert = typeof user_permissions.$inferInsert;
+export type UserPermissionSelect = typeof user_permissions.$inferSelect;
+export type UserPermissionInsert = typeof user_permissions.$inferInsert;
 
-export const z_insertUserPermissions = createInsertSchema(user_permissions, {
+export const z_UserPermissionSelect = createSelectSchema(user_permissions);
+
+export const z_UserPermissionInsert = createInsertSchema(user_permissions, {
   read: (s) => s.default(false),
   write: (s) => s.default(false),
   edit: (s) => s.default(false),

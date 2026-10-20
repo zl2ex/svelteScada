@@ -1,7 +1,7 @@
 import { OPCUAServer } from "node-opcua";
 import type { AddressSpace, UAVariable } from "node-opcua";
 import { db } from "$lib/server/sqlite/db";
-import { tables } from "$lib/server/sqlite/tables";
+import { tables } from "$lib/sqlite/tables";
 import { err, ok } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
@@ -122,9 +122,7 @@ export class OpcuaServerDriver {
     if (found.data !== varible) return ok(true);
 
     // Find its parent
-    const parents = attempt(() =>
-      varible.findReferences("HasComponent", false),
-    );
+    const parents = attempt(() => varible.findReferences("HasComponent", false));
     if (parents.error) {
       return err({
         reason: "OPCUA_VARIABLE_DELETE_FAILED",

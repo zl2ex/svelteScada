@@ -1,5 +1,3 @@
-import { fa } from "zod/v4/locales";
-
 export type NeverThrowError = {
   reason: string;
   cause: string | NeverThrowError;
