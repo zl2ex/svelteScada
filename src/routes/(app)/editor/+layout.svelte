@@ -18,6 +18,7 @@
     createTreeViewCollection,
     useTreeView,
     Popover,
+    Tabs,
   } from "@skeletonlabs/skeleton-svelte";
 
   import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
@@ -941,206 +942,219 @@
 <div
   id="left-panel"
   style={panelLayout.width.left ? `width: ${panelLayout.width.left}px` : ""}
-  class="overflow-y-scroll text-xs"
+  class="text-xs"
 >
   <svelte:boundary>
-    <Menu
-      onOpenChange={(e) => {
-        if (e.open) {
-          const { folders, tags } = getSelectedItems();
-          contextMenuFolders = folders;
-          contextMenuTags = tags;
-        }
-      }}
-    >
-      <Menu.ContextTrigger class="w-full pb-12">
-        <TreeView.Provider value={treeView}>
-          <TreeView.Tree
-            class="w-full"
-            onkeyup={handleTreeKeyup}
-            onpaste={(e) => {
-              e.stopPropagation();
-              handlePaste(e, undefined);
-            }}
-          >
-            {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders } ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
-              {@render treeNode(node, [index])}
-            {/each}
-          </TreeView.Tree>
-        </TreeView.Provider>
-      </Menu.ContextTrigger>
-      <Portal>
-        <Menu.Positioner>
-          <Menu.Content class="min-w-auto">
-            <Menu.Item
-              value="Rename"
-              //disabled={contextMenuFolders.length !== 1}
-            >
-              <Menu.ItemText class="w-full">
-                <button
-                  class="flex items-center gap-2 w-full"
+    <Tabs defaultValue="tags">
+      <Tabs.List>
+        <Tabs.Trigger class="flex-1" value="tags">Tags</Tabs.Trigger>
+        <Tabs.Trigger class="flex-1" value="udts">Udts</Tabs.Trigger>
+        <Tabs.Trigger class="flex-1" value="elements">Elements</Tabs.Trigger>
+        <Tabs.Indicator />
+      </Tabs.List>
+      <Tabs.Content value="tags">
+        <Menu
+          class="overflow-y-scroll"
+          onOpenChange={(e) => {
+            if (e.open) {
+              const { folders, tags } = getSelectedItems();
+              contextMenuFolders = folders;
+              contextMenuTags = tags;
+            }
+          }}
+        >
+          <Menu.ContextTrigger class="w-full pb-12">
+            <TreeView.Provider value={treeView}>
+              <TreeView.Tree
+                class="w-full"
+                onkeyup={handleTreeKeyup}
+                onpaste={(e) => {
+                  e.stopPropagation();
+                  handlePaste(e, undefined);
+                }}
+              >
+                {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders } ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
+                  {@render treeNode(node, [index])}
+                {/each}
+              </TreeView.Tree>
+            </TreeView.Provider>
+          </Menu.ContextTrigger>
+          <Portal>
+            <Menu.Positioner>
+              <Menu.Content class="min-w-auto">
+                <Menu.Item
+                  value="Rename"
                   //disabled={contextMenuFolders.length !== 1}
-                  onclick={() => {
-                    // excusively one folder or one tag
-                    const onlyOneFolder =
-                      contextMenuFolders.length === 1 && contextMenuTags.length === 0
-                        ? true
-                        : false;
-                    const onlyOneTag =
-                      contextMenuTags.length === 1 && contextMenuFolders.length === 0
-                        ? true
-                        : false;
-                    if (onlyOneFolder) renamingFolderId = contextMenuFolders[0].id;
-                    if (onlyOneTag) renamingTagId = contextMenuTags[0].id;
-                  }}
                 >
-                  <PencilIcon class="size-4" />
-                  <span>Rename</span>
-                  <span class="text-xs text-neutral-500 ml-auto">F2</span>
-                </button>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Item
-              value="newTag"
-              //disabled={contextMenuFolders.length !== 1}
-            >
-              <Menu.ItemText class="w-full">
-                <button
-                  class="flex items-center gap-2 w-full"
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      //disabled={contextMenuFolders.length !== 1}
+                      onclick={() => {
+                        // excusively one folder or one tag
+                        const onlyOneFolder =
+                          contextMenuFolders.length === 1 && contextMenuTags.length === 0
+                            ? true
+                            : false;
+                        const onlyOneTag =
+                          contextMenuTags.length === 1 && contextMenuFolders.length === 0
+                            ? true
+                            : false;
+                        if (onlyOneFolder) renamingFolderId = contextMenuFolders[0].id;
+                        if (onlyOneTag) renamingTagId = contextMenuTags[0].id;
+                      }}
+                    >
+                      <PencilIcon class="size-4" />
+                      <span>Rename</span>
+                      <span class="text-xs text-neutral-500 ml-auto">F2</span>
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item
+                  value="newTag"
                   //disabled={contextMenuFolders.length !== 1}
-                  onclick={() =>
-                    addTag(
-                      contextMenuFolders[0] ?? {
-                        id: "root",
-                        name: "root",
-                        parentId: null,
-                      },
-                    )}
                 >
-                  <TagPlus class="size-4" />
-                  <span>New Tag</span>
-                  <span class="text-xs text-neutral-500 ml-auto">Alt+T</span>
-                </button>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Item
-              value="newFolder"
-              //disabled={contextMenuFolders.length !== 1}
-            >
-              <Menu.ItemText class="w-full">
-                <button
-                  class="flex items-center gap-2 w-full"
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      //disabled={contextMenuFolders.length !== 1}
+                      onclick={() =>
+                        addTag(
+                          contextMenuFolders[0] ?? {
+                            id: "root",
+                            name: "root",
+                            parentId: null,
+                          },
+                        )}
+                    >
+                      <TagPlus class="size-4" />
+                      <span>New Tag</span>
+                      <span class="text-xs text-neutral-500 ml-auto">Alt+T</span>
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item
+                  value="newFolder"
                   //disabled={contextMenuFolders.length !== 1}
-                  onclick={() =>
-                    addFolder(
-                      contextMenuFolders[0] ?? {
-                        id: "root",
-                        name: "root",
-                        parentId: null,
-                      },
-                    )}
                 >
-                  <FolderPlus class="size-4" />
-                  <span>New Folder</span>
-                  <span class="text-xs text-neutral-500 ml-auto">Alt+F</span>
-                </button>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Separator />
-            <Menu.Item
-              value="cut"
-              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-            >
-              <Menu.ItemText class="w-full">
-                <button
-                  class="flex items-center gap-2 w-full"
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      //disabled={contextMenuFolders.length !== 1}
+                      onclick={() =>
+                        addFolder(
+                          contextMenuFolders[0] ?? {
+                            id: "root",
+                            name: "root",
+                            parentId: null,
+                          },
+                        )}
+                    >
+                      <FolderPlus class="size-4" />
+                      <span>New Folder</span>
+                      <span class="text-xs text-neutral-500 ml-auto">Alt+F</span>
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Separator />
+                <Menu.Item
+                  value="cut"
                   disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-                  onclick={async () => {
-                    if (contextMenuFolders.length > 0) await foldersCut(contextMenuFolders);
-                    else if (contextMenuTags.length > 0) await tagsCut(contextMenuTags);
-                  }}
                 >
-                  <Scissors class="size-4" />
-                  <span>Cut</span>
-                  <span class="text-xs text-neutral-500 ml-auto">Ctrl+X</span>
-                </button>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Item
-              value="copy"
-              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-            >
-              <Menu.ItemText class="w-full">
-                <button
-                  class="flex items-center gap-2 w-full"
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+                      onclick={async () => {
+                        if (contextMenuFolders.length > 0) await foldersCut(contextMenuFolders);
+                        else if (contextMenuTags.length > 0) await tagsCut(contextMenuTags);
+                      }}
+                    >
+                      <Scissors class="size-4" />
+                      <span>Cut</span>
+                      <span class="text-xs text-neutral-500 ml-auto">Ctrl+X</span>
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item
+                  value="copy"
                   disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-                  onclick={async () => {
-                    let json = JSON.stringify([...contextMenuTags, ...contextMenuFolders]);
-                    const copied = await copyToClipboard(json);
-                    if (copied.isErr()) {
-                      console.error(`copy() ${neverThrowErrorToString(copied.error)}`);
-                    }
-                  }}
                 >
-                  <Copy class="size-4" />
-                  <span>Copy</span>
-                  <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
-                </button>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Item
-              value="paste"
-              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-            >
-              <Menu.ItemText class="w-full">
-                <button
-                  class="flex items-center gap-2 w-full"
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+                      onclick={async () => {
+                        let json = JSON.stringify([...contextMenuTags, ...contextMenuFolders]);
+                        const copied = await copyToClipboard(json);
+                        if (copied.isErr()) {
+                          console.error(`copy() ${neverThrowErrorToString(copied.error)}`);
+                        }
+                      }}
+                    >
+                      <Copy class="size-4" />
+                      <span>Copy</span>
+                      <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item
+                  value="paste"
                   disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-                  onclick={async () => {
-                    const text = await readClipboard();
-                    if (text.isErr()) {
-                      console.error(`paste() ${neverThrowErrorToString(text.error)}`);
-                      return;
-                    }
-                    const result = handlePasteText(text.value, contextMenuFolders[0]);
-                    if (result.isErr()) {
-                      console.error(`paste() ${neverThrowErrorToString(result.error)}`);
-                    }
-                  }}
                 >
-                  <Copy class="size-4" />
-                  <span>Paste</span>
-                  <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
-                </button>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Separator />
-            <Menu.Item
-              value="delete"
-              disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-            >
-              <Menu.ItemText class="w-full">
-                <button
-                  class="flex items-center gap-2 w-full"
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+                      onclick={async () => {
+                        const text = await readClipboard();
+                        if (text.isErr()) {
+                          console.error(`paste() ${neverThrowErrorToString(text.error)}`);
+                          return;
+                        }
+                        const result = handlePasteText(text.value, contextMenuFolders[0]);
+                        if (result.isErr()) {
+                          console.error(`paste() ${neverThrowErrorToString(result.error)}`);
+                        }
+                      }}
+                    >
+                      <Copy class="size-4" />
+                      <span>Paste</span>
+                      <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+                <Menu.Separator />
+                <Menu.Item
+                  value="delete"
                   disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-                  onclick={() => {
-                    undoManager.beginTransaction();
-                    tagsDelete(contextMenuTags);
-                    foldersDelete(contextMenuFolders);
-                    undoManager.endTransaction();
-                  }}
                 >
-                  <Trash2 class="size-4" />
-                  Delete
-                  <span class="text-xs text-neutral-500 ml-auto">Del</span>
-                </button>
-              </Menu.ItemText>
-            </Menu.Item>
-          </Menu.Content>
-        </Menu.Positioner>
-      </Portal>
-    </Menu>
-
+                  <Menu.ItemText class="w-full">
+                    <button
+                      class="flex items-center gap-2 w-full"
+                      disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+                      onclick={() => {
+                        undoManager.beginTransaction();
+                        tagsDelete(contextMenuTags);
+                        foldersDelete(contextMenuFolders);
+                        undoManager.endTransaction();
+                      }}
+                    >
+                      <Trash2 class="size-4" />
+                      Delete
+                      <span class="text-xs text-neutral-500 ml-auto">Del</span>
+                    </button>
+                  </Menu.ItemText>
+                </Menu.Item>
+              </Menu.Content>
+            </Menu.Positioner>
+          </Portal>
+        </Menu>
+      </Tabs.Content>
+      <Tabs.Content value="udts">User Defined data types</Tabs.Content>
+      <Tabs.Content value="elements">Editor Page Elements tree</Tabs.Content>
+      <Tabs.Content value="pages">Editor Pages tree</Tabs.Content>
+    </Tabs>
     {#snippet pending()}
       <LoaderIcon class="size-4 animate-spin" />
     {/snippet}

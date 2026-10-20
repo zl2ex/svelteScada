@@ -6,19 +6,6 @@ import {
   Variant,
   StatusCodes,
   VariantArrayType,
-  type DateTime,
-  type Guid,
-  type Double,
-  type SByte,
-  type Byte,
-  type Int16,
-  type UInt16,
-  type Int32,
-  type UInt32,
-  type Int64,
-  type UInt64,
-  type Float,
-  type ByteString,
   StatusCode,
 } from "node-opcua";
 import z from "zod";
@@ -27,14 +14,12 @@ import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { trends } from "$lib/sqlite/tables";
 import { z_TagOptionsInsert } from "$lib/sqlite/tagOptions";
 import { db } from "$lib/server/sqlite/db";
-import { eq } from "drizzle-orm";
 import { err, ok, type Result } from "neverthrow";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { baseTypeKeys, z_BaseTypes } from "$lib/validation/baseTypes";
 import { attempt } from "$lib/util/attempt";
 import type { DriverVariable } from "$lib/server/drivers/driver";
-import { getPlatform, publish } from "svelte-realtime/server";
-import { toTrendValue, type TrendPoint } from "$lib/util/trend";
+import { toTrendValue } from "$lib/util/trend";
 import { publishTrend } from "../trend/trend";
 
 export type TagOptionsInput = z.input<typeof z_TagOptionsInsert>;

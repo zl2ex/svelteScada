@@ -3,7 +3,8 @@
 @import "@skeletonlabs/skeleton-svelte";
 
 /* Import your chosen theme (e.g., cerberus, seafoam, etc.) */
-@import "@skeletonlabs/skeleton/themes/cerberus";
+/*@import "@skeletonlabs/skeleton/themes/cerberus";*/
+@import "./scada.css";
 
 @plugin "@tailwindcss/forms";
 
