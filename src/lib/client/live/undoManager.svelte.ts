@@ -62,6 +62,22 @@ export class UnifiedUndoManager {
     this.#contexts.delete(name);
   }
 
+  clearHistory(context?: string) {
+    if (!context) {
+      this.#undoTimeline.length = 0;
+      this.#redoTimeline.length = 0;
+      this.#transactionBuffer.clear();
+      return;
+    }
+    this.#undoTimeline = this.#undoTimeline.filter(
+      (entry) => !entry.contexts.includes(context),
+    );
+    this.#redoTimeline = this.#redoTimeline.filter(
+      (entry) => !entry.contexts.includes(context),
+    );
+    this.#transactionBuffer.delete(context);
+  }
+
   // ── active document ──────────────────────────────────
 
   setActiveDocument(name: string | null) {

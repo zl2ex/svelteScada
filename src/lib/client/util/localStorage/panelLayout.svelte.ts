@@ -43,7 +43,7 @@ export class PanelLayout {
     this.width = parsed.data;
 
     const listened = attempt(() => {
-      document.addEventListener("mousemove", (ev) => {
+      document.addEventListener("pointermove", (ev) => {
         if (this.dragging.left) {
           let xPos = ev.clientX;
           if (xPos < 0) xPos = 0;
@@ -58,7 +58,7 @@ export class PanelLayout {
         }
       });
 
-      document.addEventListener("mouseup", (ev) => {
+      document.addEventListener("pointerup", (ev) => {
         if (this.dragging.left) this.dragging.left = false;
         if (this.dragging.right) this.dragging.right = false;
         this.setWidth();
@@ -78,10 +78,7 @@ export class PanelLayout {
     if (!browser) return ok(undefined);
 
     const saved = attempt(() =>
-      localStorage.setItem(
-        PANEL_LAYOUT_KEY,
-        JSON.stringify(layout ?? this.width),
-      ),
+      localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(layout ?? this.width)),
     );
     if (saved.error) {
       return err({

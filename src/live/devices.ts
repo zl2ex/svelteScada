@@ -1,16 +1,8 @@
 import { guard, getPlatform, live, LiveError } from "svelte-realtime/server";
 import { type Result } from "neverthrow";
 import { logger } from "$lib/server/pino/logger";
-import type {
-  PatchOp,
-  PatchPayload,
-} from "$lib/client/live/patchCollection.svelte";
-import {
-  wireErr,
-  wireOk,
-  type NeverThrowError,
-  type WireResult,
-} from "$lib/util/neverThrow";
+import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.svelte";
+import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 import { deviceManager } from "../hooks.server";
 import {
   type DeviceConfigInput,
@@ -40,10 +32,7 @@ export const deviceStatus = live.stream(
     ctx,
     id: string,
   ): Promise<
-    WireResult<
-      DeviceStatus,
-      FailedDevice | { reason: "DEVICE_NOT_FOUND"; cause: string }
-    >
+    WireResult<DeviceStatus, NeverThrowError | { reason: "DEVICE_NOT_FOUND"; cause: string }>
   > => {
     const device = deviceManager.getDevice(id);
     if (!device) {
@@ -53,7 +42,8 @@ export const deviceStatus = live.stream(
       } as const satisfies NeverThrowError);
     }
     if (device.isErr()) return wireErr(device.error);
-    return wireOk(device.value.status);
+    if (device.value.status.isErr()) return wireErr(device.value.status.error);
+    return wireOk(device.value.status.value);
   },
   { merge: "set" },
 );
@@ -62,10 +52,10 @@ export const deviceStatus = live.stream(
 // status really changed, so the only work here is fanning the value out.
 export function publishDeviceStatus(
   id: string,
-  status: Result<DeviceStatus, FailedDevice>,
+  status: Result<DeviceStatus, NeverThrowError>,
   ctx?: { publish: (topic: string, event: string, data: unknown) => void },
 ) {
-  let wireStatus: WireResult<DeviceStatus, FailedDevice>;
+  let wireStatus: WireResult<DeviceStatus, NeverThrowError>;
 
   if (status.isErr()) wireStatus = wireErr(status.error);
   else wireStatus = wireOk(status.value);
@@ -91,10 +81,7 @@ export function publishDeviceStatus(
 // mid-way through an array.
 
 export const applyDevicePatches = live(
-  async (
-    ctx,
-    patch: PatchOp,
-  ): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
+  async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(

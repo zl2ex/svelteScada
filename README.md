@@ -1,13 +1,11 @@
 ## Todo
 
-add trending support to the tag class, log on change in the Tag.update() function if trending is enabled, ~~done - `Tag.#trend()` writes a sample on each update once `trendOptions.interval` has elapsed~~
-create a new one to one relationship in /sqlite/tables/relations.ts between tags and tag_trend_options, add settings for trend support in the tag class and in the ui Popover in /editor/+layout.svelte. ~~done - `tags.trendOptions` / `tag_trend_options.tag`, `Tag.setTrendOptions()` and the Trending row in the tag popover~~
-there is a new trends table in the /sqlite/tables/trends.ts - this is for logging trend data to. ~~done~~
-read the samples back - the `/trending` page is still a WIP stub
+Change the UI of the Bindings to align one to one with Element Attributes, so that for example width has a standard <input> with a bindings button to the right.
+with no binding the user just enters the value for the attribute into the <input>.
+if the user clicks on the binding button open a <Popover> with the binding script to edit, if the binding script exists disable the <input> but show the result of the binding script and show the binding button with color-primary.
+the only thing i want to check is if it is better to keep a seperate binding and attributes row in the database or type the attribures row like {value, binding:? } so if the binding exists it overrides the value in the render stage.
 
-
-
-
+add back button for going back through focused items
 
 ## Developing
 
@@ -59,9 +57,7 @@ After the `import type { Readable } from 'svelte/store';` push (around line 2490
 
 ```js
 declarations.push(`  import type { Readable } from 'svelte/store';`);
-declarations.push(
-  ..._buildTypeImportLines(exports.join("\n"), _collectImportMap(source), rel),
-);
+declarations.push(..._buildTypeImportLines(exports.join("\n"), _collectImportMap(source), rel));
 ```
 
 ### 2. Add the three helper functions
@@ -106,9 +102,7 @@ function _buildTypeImportLines(exportsText, importMap, rel) {
   }
   const lines = [];
   for (const [spec, names] of bySpec) {
-    lines.push(
-      `  import type { ${[...names].sort().join(", ")} } from '${spec}';`,
-    );
+    lines.push(`  import type { ${[...names].sort().join(", ")} } from '${spec}';`);
   }
   return lines;
 }

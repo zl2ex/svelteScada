@@ -1,6 +1,5 @@
 <script lang="ts">
-  import TrendChart from "$lib/client/componets/TrendChart.svelte";
-  import { getAllTags } from "$lib/remote/tag.remote";
+  import TrendChart from "$lib/client/componets/scada/TrendChart.svelte";
 </script>
 
 <TrendChart />

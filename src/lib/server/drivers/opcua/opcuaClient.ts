@@ -208,7 +208,7 @@ export class OpcuaClientDriver extends BaseDriver<
       this.#publishStatusAll(StatusCodes.BadNotConnected);
       this.setConnectionError({
         reason: "CONNECT_FAILED",
-        cause: `[opcuaClientDriver] connection_failed for ${this.options.endpointUrl} after ${CONNECT_RETRY_BUDGET.maxRetry} retries: ${errorToString(err)}`,
+        cause: `[opcuaClientDriver] connection_failed for ${this.options.endpointUrl} :  ${errorToString(err)}`,
       } as const satisfies OpcuaClientDriverError);
       logger.error(err, `[opcuaClientDriver] connection_failed`);
     });

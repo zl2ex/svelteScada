@@ -52,13 +52,13 @@ export type {
 
 export { availableDrivers, driverRegistry, z_DeviceConfig };
 
-export type DeviceStatus = "Error" | "Connected" | "Reconnecting" | "Disabled";
+export type DeviceStatus = "Connected" | "Reconnecting" | "Disabled";
 
 export type FailedDevice = NeverThrowError & {
   options: DeviceConfigInput;
 };
 
-type DeviceStatusListener = (status: DeviceStatus) => void;
+type DeviceStatusListener = (status: Result<DeviceStatus, NeverThrowError>) => void;
 
 export class Device {
   id: string;
@@ -171,7 +171,7 @@ export class Device {
     this.#refreshStatus();
   }
 
-  get status(): DeviceStatus {
+  get status() {
     return this.#computeStatus();
   }
 
@@ -189,14 +189,14 @@ export class Device {
     } as const satisfies FailedDevice;
   }
 
-  #computeStatus(): DeviceStatus {
+  #computeStatus(): Result<DeviceStatus, NeverThrowError> {
     if (this.options.enabled) {
       // a driver that gave up is an Error, not a Reconnecting - the transport
       // is not retrying and will not come back without a new connect()
-      if (this.#driver.connectionState.error) return "Error";
-      return this.#driver.connected ? "Connected" : "Reconnecting";
+      if (this.#driver.connectionState.error) return err(this.#driver.connectionState.error);
+      return this.#driver.connected ? ok("Connected") : ok("Reconnecting");
     } else {
-      return "Disabled";
+      return ok("Disabled");
     }
   }
 
@@ -279,14 +279,11 @@ export class DeviceManager {
     }
     const created = device.value;
     created.onStatusChange((status) => {
-      if (status === "Error") {
-        const failure = created.connectionFailure();
-        if (failure) {
-          publishDeviceStatus(created.id, err(failure));
-          return;
-        }
+      if (status.isErr()) {
+        publishDeviceStatus(created.id, err(status.error));
+        return;
       }
-      publishDeviceStatus(created.id, ok(status));
+      publishDeviceStatus(created.id, ok(status.value));
     });
   }
 

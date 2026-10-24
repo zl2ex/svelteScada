@@ -1,17 +1,10 @@
 <script lang="ts">
-  import { writeTagValue, getTagValue } from "$live/tags";
   import type { HTMLInputAttributes } from "svelte/elements";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
-  import { RpcError } from "svelte-realtime/client";
   import { type BaseTypeMap, type TagValue } from "$lib/server/tag/tag";
-  import { UseStreamResult } from "$lib/client/live/streamResult.svelte";
+  import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
   import { toast } from "$lib/client/toast.svelte";
-  import {
-    errorToString,
-    neverThrowErrorToString,
-    type NeverThrowError,
-  } from "$lib/util/neverThrow";
-  import { attempt } from "$lib/util/attempt";
+  import { neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
   import { err, ok } from "neverthrow";
   import NeverThrowErrorDisplay from "$lib/client/componets/NeverThrowErrorDisplay.svelte";
 
@@ -34,56 +27,31 @@
 
   let lookup = $derived.by(() => id ?? path ?? "");
 
-  const stream = new UseStreamResult(() => getTagValue(lookup));
+  const tagValueMap = getTagValueMapContext();
+  let entry = $derived(tagValueMap.tag(lookup));
 
   let isFocus = $state(false);
 
   async function write(value: TagValue) {
-    if (stream.status !== "connected") {
+    if (!entry || entry.status !== "connected") {
       return err({
         reason: "STATUS_NOT_CONNECTED",
-        cause: `status ${stream.status} not connected`,
+        cause: `status ${entry?.status ?? "missing"} not connected`,
       } as const satisfies NeverThrowError);
     }
-    if (stream.value.isErr) {
-      return err(stream.value.error);
+    if (entry.value.isErr) {
+      return err(entry.value.error);
     }
-    const id = stream.value.value.id ?? lookup;
-    const result = await attempt(() => writeTagValue({ id, value }));
-    if ("error" in result) {
+    const result = await tagValueMap.writeTag(lookup, value);
+    if (result.isErr) {
       console.error(result.error);
-      if (result.error instanceof RpcError) {
-        toast({
-          kind: "error",
-          title: "Tag Write Error",
-          description: result.error.message,
-          duration: 3000,
-        });
-        return err({
-          reason: "RPC_ERROR",
-          cause: result.error.message,
-        } as const satisfies NeverThrowError);
-      }
-      return err({
-        reason: "UNKOWN_ERROR",
-        cause: errorToString(result.error),
-      } as const satisfies NeverThrowError);
+      return err(result.error);
     }
-    if (result.data.isErr) {
-      console.error(result.data.error);
-      toast({
-        kind: "error",
-        title: "Tag Write Error",
-        description: neverThrowErrorToString(result.data.error),
-        duration: 3000,
-      });
-      return err(result.data.error);
-    }
-    return ok(result.data);
+    return ok(result.value);
   }
 
   function classWithError(base: string): string {
-    return stream.value.value && stream.value.value.statusString !== "Good"
+    return entry?.value?.isOk && entry.value.value.statusString !== "Good"
       ? `${base} outline -outline-offset-1 outline-error-400-600 ${clazz ?? ""}`
       : `${base} ${clazz ?? ""}`;
   }
@@ -91,6 +59,7 @@
   const BaseTypeStep: Record<keyof BaseTypeMap, string> = {
     Boolean: "1",
     Double: "any",
+    Float: "any",
     Int16: "1",
     UInt16: "1",
     Int32: "1",
@@ -106,68 +75,69 @@
     console.error(err);
   }}
 >
-  {#if stream.status === "loading"}
-    <!--loading-->
-  {:else if stream.status === "reconnecting"}
+  {#if !entry || entry.status === "loading"}
+    <p class="truncate">{label ?? lookup}</p>
+  {:else if entry.status === "reconnecting"}
     <p>reconnecting</p>
-  {:else if stream.status === "error"}
+  {:else if entry.status === "error"}
     <!-- transient transport failure (timeout / disconnect / auth) -->
     <Tooltip positioning={{ placement: "top" }}>
       <Portal>
         <Tooltip.Positioner>
           <Tooltip.Content class="card p-2 preset-filled-error-400-600 text-xs">
-            <p>{stream.error.message}</p>
+            <p>{entry.error.message}</p>
           </Tooltip.Content>
         </Tooltip.Positioner>
       </Portal>
       <Tooltip.Trigger tabindex={-1} class="shrink min-w-0">
         <p class="truncate">{label ?? lookup}</p>
         <p class="text-error-400-600 truncate">
-          {stream.error.code}
+          {entry.error.code}
         </p>
       </Tooltip.Trigger>
     </Tooltip>
-  {:else if stream.status === "connected"}
-    {#if stream.value.isErr}
+  {:else if entry.status === "connected"}
+    {#if entry.value.isErr}
       <Tooltip positioning={{ placement: "top" }}>
         <Portal>
           <Tooltip.Positioner>
             <Tooltip.Content class="card p-2 preset-filled-error-400-600 text-xs">
-              <NeverThrowErrorDisplay error={stream.value.error} />
+              <NeverThrowErrorDisplay error={entry.value.error} />
             </Tooltip.Content>
           </Tooltip.Positioner>
         </Portal>
         <Tooltip.Trigger tabindex={-1} class="shrink min-w-0">
           <p class="truncate">
             {label ??
-              ("options" in stream.value.error ? stream.value.error.options.name : undefined) ??
+              ("options" in entry.value.error ? entry.value.error.options.name : undefined) ??
               lookup}
           </p>
           <p class="text-error-400-600 truncate">
-            {stream.value.error.reason}
+            {entry.value.error.reason}
           </p>
         </Tooltip.Trigger>
       </Tooltip>
     {:else}
+      {@const tag = entry.value.value}
       <!-- Result<Ok> - healthy tag: render the input -->
       <Tooltip positioning={{ placement: "top" }}>
-        {#if stream.value.value.statusString !== "Good"}
+        {#if tag.statusString !== "Good"}
           <Portal>
             <Tooltip.Positioner>
               <Tooltip.Content class="card p-2 preset-filled-error-400-600 text-xs">
-                <p>{stream.value.value.statusString}</p>
+                <p>{tag.statusString}</p>
               </Tooltip.Content>
             </Tooltip.Positioner>
           </Portal>
         {/if}
         <Tooltip.Trigger tabindex={-1}>
-          <label for="input" class="label">{label ?? stream.value.value.name ?? lookup}</label>
-          {#if typeof stream.value.value.value === "boolean"}
+          <label for="input" class="label">{label ?? tag.name ?? lookup}</label>
+          {#if typeof tag.value === "boolean"}
             <input
               type="checkbox"
               name="input"
               class={classWithError("checkbox")}
-              checked={stream.value.value.value}
+              checked={tag.value}
               oninput={async (ev) => {
                 if (!ev.target) return;
                 //@ts-ignore
@@ -175,26 +145,26 @@
                 // revert if write failed
                 if (result.isErr()) {
                   //@ts-ignore
-                  ev.target.checked = Boolean(stream.value.value.value);
+                  ev.target.checked = Boolean(tag.value);
                 }
               }}
-              disabled={!stream.value.value.options.writeable}
+              disabled={!tag.options.writeable}
               {...rest}
             />
-          {:else if typeof stream.value.value.value === "number"}
+          {:else if typeof tag.value === "number"}
             <input
               type="number"
               name="input"
               class={classWithError("input")}
-              step={BaseTypeStep[stream.value.value.options.dataType]}
-              value={isFocus ? undefined : stream.value.value.value}
+              step={BaseTypeStep[tag.options.dataType]}
+              value={isFocus ? undefined : tag.value}
               onkeyup={(ev) => {
                 if (ev.currentTarget) {
                   if (ev.key === "Enter") {
                     ev.currentTarget.blur();
                   }
                   if (ev.key === "Escape") {
-                    ev.currentTarget.value = String(stream.value.value.value);
+                    ev.currentTarget.value = String(tag.value);
                     ev.currentTarget.blur();
                   }
                 }
@@ -203,14 +173,14 @@
                 if (ev.currentTarget.value) {
                   write(Number(ev.currentTarget.value));
                 } else {
-                  ev.currentTarget.value = String(stream.value.value.value);
+                  ev.currentTarget.value = String(tag.value);
                 }
                 isFocus = false;
               }}
               onfocusin={() => {
                 isFocus = true;
               }}
-              disabled={!stream.value.value.options.writeable}
+              disabled={!tag.options.writeable}
               {...rest}
             />
           {:else}
@@ -218,14 +188,14 @@
               type="text"
               name="input"
               class={classWithError("input")}
-              value={isFocus ? undefined : stream.value.value.value}
+              value={isFocus ? undefined : tag.value}
               onkeyup={(ev) => {
                 if (ev.currentTarget) {
                   if (ev.key === "Enter") {
                     ev.currentTarget.blur();
                   }
                   if (ev.key === "Escape") {
-                    ev.currentTarget.value = String(stream.value.value.value);
+                    ev.currentTarget.value = String(tag.value);
                     ev.currentTarget.blur();
                   }
                 }
@@ -234,14 +204,14 @@
                 if (ev.currentTarget.value) {
                   write(String(ev.currentTarget.value));
                 } else {
-                  ev.currentTarget.value = String(stream.value.value.value);
+                  ev.currentTarget.value = String(tag.value);
                 }
                 isFocus = false;
               }}
               onfocusin={() => {
                 isFocus = true;
               }}
-              disabled={!stream.value.value.options.writeable}
+              disabled={!tag.options.writeable}
               {...rest}
             />
           {/if}

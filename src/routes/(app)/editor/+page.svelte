@@ -1,19 +1,20 @@
 <script lang="ts">
-  import TagInput from "$lib/client/componets/scada/TagInput.svelte";
+  import { FilePlus2 } from "@lucide/svelte";
+  import PageCanvasEditor from "$lib/client/componets/editor/PageCanvasEditor.svelte";
+
+  let { data } = $props();
 </script>
 
-<div id="editor">
-  <svelte:boundary>
-    <TagInput id="8ecb06c5-2a87-44fb-97d6-33520beb7751"></TagInput>
-    {#snippet pending()}
-      <p>loading...</p>
-    {/snippet}
-    {#snippet failed(error, reset)}
-      <p>{error}</p>
-      <button onclick={reset} class="btn preset-filled">reset</button>
-    {/snippet}
-  </svelte:boundary>
-</div>
-
-<style>
-</style>
+{#if data.activePageId && data.page}
+  {#key data.activePageId}
+    <PageCanvasEditor pageId={data.activePageId} page={data.page} elements={data.elements} />
+  {/key}
+{:else}
+  <div class="flex h-full items-center justify-center p-6">
+    <div class="card p-6 max-w-md text-center text-sm">
+      <FilePlus2 class="size-10 mx-auto mb-3 opacity-50" />
+      <h2 class="font-semibold mb-1">No page open</h2>
+      <p class="opacity-60">Open the Pages tab on the left to create or select a page.</p>
+    </div>
+  </div>
+{/if}

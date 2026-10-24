@@ -6,7 +6,10 @@
   import { getToaster, toast } from "$lib/client/toast.svelte";
   import { logout } from "$lib/remote/user.remote";
   import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
   import { configure } from "svelte-realtime/client";
+  import { createTagValueMap } from "$lib/client/live/tagMap.svelte";
+  import { setTagValueMapContext } from "$lib/client/live/tagMapContext";
   import { attempt } from "$lib/util/attempt";
   import { err, ok } from "neverthrow";
   import {
@@ -16,6 +19,11 @@
   } from "$lib/util/neverThrow";
 
   const { children, data } = $props();
+
+  const tagValueMap = createTagValueMap(data);
+  setTagValueMapContext(tagValueMap);
+
+  onMount(() => () => tagValueMap.dispose());
 
   async function logoutAndGotoLogin() {
     const loggedOut = await attempt(() => logout());

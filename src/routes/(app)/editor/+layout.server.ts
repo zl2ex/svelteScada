@@ -2,19 +2,22 @@ import {
   tagFoldersClosureTable,
   type ClosureTableNode,
 } from "$lib/server/sqlite/util/tagClosureTable";
-import { type TagOptionsInput } from "$lib/server/tag/tag";
-import { tagManager } from "../../../hooks.server";
+import { projectManager } from "$lib/server/project/projectManager";
+import { pageManager } from "$lib/server/page/pageManager";
+import { userComponentManager } from "$lib/server/page/userComponentManager";
+import type { PageRecord } from "$lib/page/pageTypes";
 
 export async function load() {
   const folderResult = tagFoldersClosureTable.getAll();
   if (folderResult.isErr()) throw folderResult.error;
   const folderRows = folderResult.value;
 
-  const allTags = tagManager.getAllTags();
-  const tagRows = allTags.map((t) => {
-    if (t.isErr()) return t.error.options;
-    return t.value.options;
-  });
+  const projects = projectManager.getAll();
+  if (projects.isErr()) throw projects.error;
+  const pages = pageManager.getAll();
+  if (pages.isErr()) throw pages.error;
+  const userComponents = userComponentManager.getDefinitions();
+  if (userComponents.isErr()) throw userComponents.error;
 
   return {
     tagFolders: folderRows.reduce(
@@ -25,12 +28,16 @@ export async function load() {
       {} as Record<string, ClosureTableNode>,
     ),
 
-    tags: tagRows.reduce(
-      (map, tag) => {
-        map[tag.id] = tag;
+    projects: projects.value,
+
+    pages: pages.value.reduce(
+      (map, page) => {
+        map[page.id] = page;
         return map;
       },
-      {} as Record<string, TagOptionsInput>,
+      {} as Record<string, PageRecord>,
     ),
+
+    userComponents: userComponents.value,
   };
 }

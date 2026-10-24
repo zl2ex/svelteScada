@@ -177,9 +177,16 @@ export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: an
 export const writeTagValue = live(
   async (
     ctx,
-    { id, value }: { id: string; value: TagValue },
+    { id, path, value }: { id?: string; path?: string; value: TagValue },
   ): Promise<WireResult<{ success: true }, NeverThrowError>> => {
-    const tag = tagManager.getTagById(id);
+    if ((!id && !path) || (id && path)) {
+      return wireErr({
+        reason: "INVALID_TAG_LOOKUP",
+        cause: "writeTagValue() requires exactly one of id or path",
+      } as const satisfies NeverThrowError);
+    }
+
+    const tag = id ? tagManager.getTagById(id) : tagManager.getTagByPath(path!);
     if (tag.isErr()) {
       return wireErr(tag.error);
     }

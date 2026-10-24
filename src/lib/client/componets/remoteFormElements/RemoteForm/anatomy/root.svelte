@@ -11,7 +11,11 @@
   setFeildContext(feild);
 </script>
 
-<svelte:boundary>
+<svelte:boundary
+  onerror={(error) => {
+    console.error(error);
+  }}
+>
   <div {...rest}>
     {@render children?.()}
   </div>
