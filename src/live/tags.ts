@@ -120,20 +120,11 @@ export const getTagValue = live.stream(
   ): Promise<
     WireResult<ClientTagValue, FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }>
   > => {
-    const id = tagManager.getTagById(lookup);
-    const path = tagManager.getTagByPath(lookup);
-    if (id.isErr() && path.isErr()) return wireErr(id.error);
-    let tag;
-    if (id.isOk()) tag = id.value;
-    if (path.isOk()) tag = path.value;
-    if (!tag) {
-      return wireErr({
-        reason: "TAG_NOT_FOUND",
-        cause: `no tag found at path or id ${lookup}`,
-      } as const satisfies { reason: "TAG_NOT_FOUND"; cause: string });
-    }
+    const tag = tagManager.getTagByIdOrPath(lookup);
+
     if (tag.isErr()) return wireErr(tag.error);
-    return wireOk(tag.value.getClientValueTag());
+    if (tag.value.isErr()) return wireErr(tag.value.error);
+    return wireOk(tag.value.value.getClientValueTag());
   },
   { merge: "set" },
 );
@@ -177,16 +168,16 @@ export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: an
 export const writeTagValue = live(
   async (
     ctx,
-    { id, path, value }: { id?: string; path?: string; value: TagValue },
+    { lookup, value }: { lookup: string | undefined; value: TagValue },
   ): Promise<WireResult<{ success: true }, NeverThrowError>> => {
-    if ((!id && !path) || (id && path)) {
+    if (!lookup) {
       return wireErr({
         reason: "INVALID_TAG_LOOKUP",
-        cause: "writeTagValue() requires exactly one of id or path",
+        cause: "writeTagValue() lookup undefined ",
       } as const satisfies NeverThrowError);
     }
 
-    const tag = id ? tagManager.getTagById(id) : tagManager.getTagByPath(path!);
+    const tag = tagManager.getTagByIdOrPath(lookup);
     if (tag.isErr()) {
       return wireErr(tag.error);
     }

@@ -7,7 +7,7 @@ import {
   type Payload,
   type UseStreamResult,
 } from "$lib/client/live/streamResult.svelte";
-import type { ClientTagValue, TagValue } from "$lib/server/tag/tag";
+import type { TagValue } from "$lib/server/tag/tag";
 import { attempt } from "$lib/util/attempt";
 import {
   errorToString,
@@ -98,21 +98,28 @@ export class TagValueMap {
     value: TagValue,
   ): Promise<WireResult<{ success: true }, NeverThrowError>> {
     const id = this.#lookupToId.get(lookup);
-    const written = await attempt(() =>
-      writeTagValue(id ? { id, value } : { path: lookup, value }),
-    );
+    const written = await attempt(() => writeTagValue({ lookup, value }));
     if (written.error) {
       toast({
         kind: "error",
-        title: "TAG_WRITE_ERROR",
+        title: "TAG_WRITE_RPC_ERROR",
         description: errorToString(written.error),
         duration: 3000,
       });
 
       return wireErr({
-        reason: "TAG_WRITE_ERROR",
+        reason: "TAG_WRITE_RPC_ERROR",
         cause: errorToString(written.error),
       } as const satisfies NeverThrowError);
+    }
+
+    if (written.data.isErr) {
+      toast({
+        kind: "error",
+        title: "TAG_WRITE_ERROR",
+        description: neverThrowErrorToString(written.data.error),
+        duration: 3000,
+      });
     }
     return written.data;
   }

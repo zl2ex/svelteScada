@@ -11,7 +11,7 @@
   let newEventName = $state("");
 
   let selected = $derived(
-    editor.selectedElementId ? editor.elements[editor.selectedElementId] : null,
+    editor.selectedElementId ? editor.elementsCollection?.state[editor.selectedElementId] : null,
   );
 
   $effect(() => {
@@ -25,7 +25,7 @@
 
   function saveBindings(next: ElementBindings) {
     if (!selected) return;
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       bindings: Object.keys(next).length > 0 ? next : null,
       updatedAt: Date.now(),
     });

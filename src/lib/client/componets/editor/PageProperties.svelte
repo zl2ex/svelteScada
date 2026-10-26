@@ -19,13 +19,13 @@
 
   function saveName() {
     if (!activePage) return;
-    editor.pages.update(activePage.id, { name, updatedAt: Date.now() });
+    editor.pagesCollection.update(activePage.id, { name, updatedAt: Date.now() });
   }
 
   function saveContainer(value: ContainerType) {
     if (!activePage) return;
     containerType = value;
-    editor.pages.update(activePage.id, {
+    editor.pagesCollection.update(activePage.id, {
       containerType: value,
       updatedAt: Date.now(),
     });

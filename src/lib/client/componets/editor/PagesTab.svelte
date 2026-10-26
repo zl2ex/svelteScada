@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { page as routePage } from "$app/state";
   import { untrack } from "svelte";
   import type { SvelteHTMLElements } from "svelte/elements";
   import {
@@ -26,6 +27,8 @@
   import { sortedChildren } from "$lib/page/elementTypes";
   import type { PageRecord } from "$lib/page/pageTypes";
   import { focusOnMount } from "$lib/client/util/use";
+  import { toast } from "$lib/client/toast.svelte";
+  import { neverThrowErrorToString } from "$lib/util/neverThrow";
 
   const editor = getEditorContext();
   type ProjectSelect = (typeof editor.projects)[number];
@@ -36,11 +39,11 @@
   let lastExpandedPageId: string | null = null;
 
   const contextMenuPage = $derived(
-    contextMenuPageId ? editor.pages.state[contextMenuPageId] : undefined,
+    contextMenuPageId ? editor.pagesCollection.state[contextMenuPageId] : undefined,
   );
 
   const contextMenuElement = $derived(
-    contextMenuElementId ? editor.elements[contextMenuElementId] : undefined,
+    contextMenuElementId ? editor.elementsCollection?.state[contextMenuElementId] : undefined,
   );
 
   type RootNode = {
@@ -129,14 +132,14 @@
     if (node.kind === "page") {
       if (node.page.id !== editor.activePageId) return [];
 
-      return sortedChildren(editor.elements, null).map((element) =>
+      return sortedChildren(editor.elementsCollection?.state ?? {}, null).map((element) =>
         elementNode(element, node.page.id),
       );
     }
 
     if (node.kind === "element") {
-      return sortedChildren(editor.elements, node.element.id).map((element) =>
-        elementNode(element, node.pageId),
+      return sortedChildren(editor.elementsCollection?.state ?? {}, node.element.id).map(
+        (element) => elementNode(element, node.pageId),
       );
     }
 
@@ -166,7 +169,9 @@
 
       if (node.kind === "project" || node.kind === "page") {
         editor.selectedElementId = null;
-        if (node.kind === "page" && node.page.id !== editor.activePageId) open(node.page.id);
+        if (node.kind === "page" && node.page.id !== editor.activePageId) {
+          void open(node.page.id);
+        }
         return;
       }
 
@@ -188,7 +193,7 @@
   $effect(() => {
     const activeId = editor.activePageId;
     if (!activeId || activeId === lastExpandedPageId) return;
-    const active = editor.pages.state[activeId];
+    const active = editor.pagesCollection.state[activeId];
     if (!active) return;
 
     untrack(() => {
@@ -231,21 +236,31 @@
     treeView().setExpandedValue(expanded);
   }
 
-  function open(id: string) {
-    editor.openPage(id);
-    goto(`/editor?page=${id}`, { replaceState: true, keepFocus: true });
+  async function open(id: string) {
+    const result = await editor.openPage(id);
+    if (result.isErr()) {
+      toast({
+        kind: "error",
+        title: "Open Page Error",
+        description: neverThrowErrorToString(result.error),
+        duration: 3000,
+      });
+      return;
+    }
+    if (routePage.url.pathname !== "/editor") {
+      await goto("/editor", { keepFocus: true });
+    }
   }
 
-  function addPage(projectId: string) {
+  async function addPage(projectId: string) {
     const id = editor.addPage(projectId);
-    open(id);
+    await open(id);
     renamingId = id;
   }
 
   function removePage(id: string) {
-    const next = editor.deletePage(id);
+    editor.deletePage(id);
     contextMenuPageId = null;
-    goto(next ? `/editor?page=${next}` : "/editor", { replaceState: true });
   }
 
   function handleTreeContextMenu(event: MouseEvent) {
@@ -258,13 +273,9 @@
     const pageRow = target.closest<HTMLElement>("[data-page-id]");
     const pageId = pageRow?.dataset.pageId;
 
-    // if (!pageId) {
-    //   event.preventDefault();
-    //   event.stopPropagation();
-    //   return;
-    // }
     if (elementId) {
       contextMenuElementId = elementId;
+      editor.selectedElementId = elementId;
       contextMenuPageId = null;
       return;
     }
@@ -292,11 +303,11 @@
     const index = siblings.findIndex((item: PageRecord) => item.id === page.id);
     const target = siblings[index + direction];
     if (!target) return;
-    editor.pages.update(page.id, {
+    editor.pagesCollection.update(page.id, {
       sortIndex: target.sortIndex,
       updatedAt: Date.now(),
     });
-    editor.pages.update(target.id, {
+    editor.pagesCollection.update(target.id, {
       sortIndex: page.sortIndex,
       updatedAt: Date.now(),
     });
@@ -312,7 +323,7 @@
           renamingId = contextMenuElement.id;
           break;
         case "delete":
-          editor.elementCollection?.remove(contextMenuElement.id);
+          editor.elementsCollection?.remove(contextMenuElement.id);
           break;
       }
     }
@@ -382,7 +393,7 @@
       onclick={(event) => event.stopPropagation()}
       onblur={(event) => {
         const newName = formatRename(event.currentTarget.value);
-        editor.elementCollection?.update(element.id, { name: newName });
+        editor.elementsCollection?.update(element.id, { name: newName });
       }}
       onkeydown={(event) => {
         if (event.key === "Enter") {
@@ -418,7 +429,7 @@
               title="New root page"
               onclick={(event) => {
                 event.stopPropagation();
-                addPage(node.project.id);
+                void addPage(node.project.id);
               }}
             >
               <FilePlus2Icon class="size-4" />
@@ -493,7 +504,7 @@
     </p>
   {/if}
   <Menu onSelect={(details) => handleMenuSelect(details.value)}>
-    <Menu.ContextTrigger class="flex-1 overflow-y-auto">
+    <Menu.ContextTrigger class="flex flex-1 overflow-y-auto ">
       <TreeView.Provider value={treeView}>
         <TreeView.Tree
           class="w-full"

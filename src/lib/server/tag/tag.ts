@@ -558,7 +558,7 @@ export class Tag {
 
         return err({
           reason: "DRIVER_WRITE_FAILED",
-          cause: write.error.reason,
+          cause: write.error,
           options: this.options,
         } as const satisfies FailedTag);
       }

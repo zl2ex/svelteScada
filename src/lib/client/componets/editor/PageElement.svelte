@@ -91,10 +91,7 @@
     if (isContainerElement(element)) {
       Object.assign(style, containerTypeStyle(element.containerType));
     }
-    if (selected) {
-      style["outline"] = "2px solid var(--color-primary-500)";
-      style["outline-offset"] = "-2px";
-    }
+
     return elementStyleToString(style);
   });
 
@@ -190,16 +187,16 @@
     role="presentation"
     onclick={select}
     onkeydown={selectOnEnter}
-    style={resolvedStyle}
+    class:edit-disable-pointer={mode === "edit"}
+    class:outline-2={selected}
+    class:outline-primary-500={selected}
+    class:-outline-offset-2={selected}
     use:eventScripts={eventAction}
   >
     {#if element.baseComponent === "TagInput"}
-      <TagInput
-        id={String(resolvedAttributes.id ?? element.id)}
-        label={String(resolvedAttributes.label ?? "")}
-      />
+      <TagInput {...resolvedAttributes} style={resolvedStyle} />
     {:else if element.baseComponent === "DeviceStatus"}
-      <DeviceStatus id={String(resolvedAttributes.id ?? element.id)} />
+      <DeviceStatus id="" {...resolvedAttributes} style={resolvedStyle} />
     {:else}
       <span class="text-xs opacity-50">Unknown component: {element.baseComponent}</span>
     {/if}
@@ -210,6 +207,10 @@
       class="contents"
       role="presentation"
       onclickcapture={selectUserComponent}
+      class:edit-disable-pointer={mode === "edit"}
+      class:outline-2={selected}
+      class:outline-primary-500={selected}
+      class:-outline-offset-2={selected}
       use:eventScripts={eventAction}
     >
       {#each sortedChildren(definition.elements, null) as child (child.id)}
@@ -233,6 +234,10 @@
     role="presentation"
     onclick={select}
     onkeydown={selectOnEnter}
+    class:edit-disable-pointer={mode === "edit"}
+    class:outline-2={selected}
+    class:outline-primary-500={selected}
+    class:-outline-offset-2={selected}
     use:eventScripts={eventAction}
   >
     {#each children as child (child.id)}
@@ -255,6 +260,10 @@
     role="presentation"
     onclick={select}
     onkeydown={selectOnEnter}
+    class:edit-disable-pointer={mode === "edit"}
+    class:outline-2={selected}
+    class:outline-primary-500={selected}
+    class:-outline-offset-2={selected}
     use:eventScripts={eventAction}
   >
     {text}
@@ -272,3 +281,9 @@
 {:else}
   <pre>{JSON.stringify(element, null, 2)}</pre>
 {/if}
+
+<style>
+  .edit-disable-pointer :global(:is(input, textarea, select, button, a[href])) {
+    pointer-events: none;
+  }
+</style>

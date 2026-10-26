@@ -20,10 +20,7 @@
     type ElementBindingRowData,
   } from "$lib/client/editor/elementBindingRows";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import {
-    evaluateExpression,
-    type BindingContext,
-  } from "$lib/client/editor/elementExpressions";
+  import { evaluateExpression, type BindingContext } from "$lib/client/editor/elementExpressions";
   import ElementBindingRow from "./ElementBindingRow.svelte";
   import ElementBindingSection from "./ElementBindingSection.svelte";
   import ElementEventsEditor from "./ElementEventsEditor.svelte";
@@ -36,7 +33,7 @@
   let containerType = $state<ContainerType>("none");
 
   let selected = $derived(
-    editor.selectedElementId ? editor.elements[editor.selectedElementId] : null,
+    editor.selectedElementId ? editor.elementsCollection?.state[editor.selectedElementId] : null,
   );
   let selectedIsContainer = $derived(isContainerElement(selected));
   let showStyle = $derived(!!selected && selected.kind !== "user-component");
@@ -116,12 +113,12 @@
 
   function saveName() {
     if (!selected) return;
-    editor.elementCollection?.update(selected.id, { name, updatedAt: Date.now() });
+    editor.elementsCollection?.update(selected.id, { name, updatedAt: Date.now() });
   }
 
   function saveText(value: string) {
     if (!selected) return;
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       text: value === "" ? null : value,
       updatedAt: Date.now(),
     });
@@ -131,7 +128,7 @@
     if (!selected) return;
     const previous = getTopLevelAttributes(selected)[key];
     const value = raw === "" ? null : coerceAttributeValue(previous, raw);
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       attributes: setTopLevelAttribute(selected, key, value),
       updatedAt: Date.now(),
     });
@@ -139,7 +136,7 @@
 
   function saveStyleValue(property: string, raw: string) {
     if (!selected) return;
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       attributes: setStyleProperty(selected, property, raw === "" ? null : raw),
       updatedAt: Date.now(),
     });
@@ -147,7 +144,7 @@
 
   function saveBinding(scope: BindingScope, key: string, expression: string) {
     if (!selected) return;
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       bindings: setBinding(selected, scope, key, expression),
       updatedAt: Date.now(),
     });
@@ -162,7 +159,7 @@
       toast({ kind: "error", title: "Attribute already exists", description: key });
       return false;
     }
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       attributes: setTopLevelAttribute(selected, key, value),
       updatedAt: Date.now(),
     });
@@ -178,7 +175,7 @@
       toast({ kind: "error", title: "Style property already exists", description: key });
       return false;
     }
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       attributes: setStyleProperty(selected, key, value),
       updatedAt: Date.now(),
     });
@@ -188,7 +185,7 @@
   function removeAttributeRow(row: ElementBindingRowData) {
     if (!selected) return;
     const next = removeTopLevelAttributeRow(selected, attributeScope, row.key);
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       ...next,
       updatedAt: Date.now(),
     });
@@ -197,7 +194,7 @@
   function removeStyle(row: ElementBindingRowData) {
     if (!selected) return;
     const next = removeStyleRow(selected, row.key);
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       ...next,
       updatedAt: Date.now(),
     });
@@ -206,7 +203,7 @@
   function saveContainer(value: ContainerType) {
     if (!selected) return;
     containerType = value;
-    editor.elementCollection?.update(selected.id, {
+    editor.elementsCollection?.update(selected.id, {
       containerType: value,
       updatedAt: Date.now(),
     });

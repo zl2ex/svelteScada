@@ -1,22 +1,12 @@
 <script lang="ts">
-  import { CircleUserIcon, MenuIcon, SearchIcon, XIcon } from "@lucide/svelte";
-  import { AppBar, Popover, Portal, Toast } from "@skeletonlabs/skeleton-svelte";
+  import { Toast } from "@skeletonlabs/skeleton-svelte";
   import { browser } from "$app/environment";
-  import { themeManager } from "$lib/client/theme.svelte";
-  import { getToaster, toast } from "$lib/client/toast.svelte";
-  import { logout } from "$lib/remote/user.remote";
-  import { goto } from "$app/navigation";
+  import { getToaster } from "$lib/client/toast.svelte";
+
   import { onMount } from "svelte";
   import { configure } from "svelte-realtime/client";
   import { createTagValueMap } from "$lib/client/live/tagMap.svelte";
   import { setTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import { attempt } from "$lib/util/attempt";
-  import { err, ok } from "neverthrow";
-  import {
-    errorToString,
-    neverThrowErrorToString,
-    type NeverThrowError,
-  } from "$lib/util/neverThrow";
 
   const { children, data } = $props();
 
@@ -24,48 +14,6 @@
   setTagValueMapContext(tagValueMap);
 
   onMount(() => () => tagValueMap.dispose());
-
-  async function logoutAndGotoLogin() {
-    const loggedOut = await attempt(() => logout());
-    if (loggedOut.error) {
-      const cause = errorToString(loggedOut.error);
-      toast({
-        kind: "error",
-        title: "Logout Error",
-        description: cause,
-        duration: 3000,
-      });
-      return err({
-        reason: "LOGOUT_FAILED",
-        cause,
-      } as const satisfies NeverThrowError);
-    }
-
-    const navigated = await attempt(() => goto("/login"));
-    if (navigated.error) {
-      const cause = errorToString(navigated.error);
-      toast({
-        kind: "error",
-        title: "Navigation Error",
-        description: cause,
-        duration: 3000,
-      });
-      return err({
-        reason: "LOGOUT_NAVIGATION_FAILED",
-        cause,
-      } as const satisfies NeverThrowError);
-    }
-
-    return ok(null);
-  }
-
-  function setTheme(theme: (typeof themeManager.themes)[number]) {
-    const result = attempt(() => themeManager.setTheme(theme));
-    if (result.error) {
-      const cause = errorToString(result.error);
-      console.error(cause);
-    }
-  }
 
   // Offline queue — realtime-svelte
   configure({
@@ -77,89 +25,9 @@
       onReplayError: (call, err) => console.warn("Replay failed", call, err),
     },
   });
-  /*
-  const socket = io();
-  socket.on("connect", () => {
-    console.log("[+layout.svelte] socketIO Connected");
-  });
-
-  ClientTag.initSocketIo(socket);*/
 </script>
 
-<div id="app" class="flex flex-col h-svh">
-  <header>
-    <AppBar class="bg-surface-50-950 border-b-surface-200-800 border-b-1">
-      <AppBar.Toolbar class="grid-cols-[auto_1fr_auto]">
-        <AppBar.Lead>
-          <button type="button" class="btn-icon btn-icon-lg hover:preset-tonal">
-            <MenuIcon />
-          </button>
-        </AppBar.Lead>
-        <AppBar.Headline></AppBar.Headline>
-        <AppBar.Trail>
-          <button type="button" class="btn-icon hover:preset-tonal">
-            <SearchIcon class="size-8" />
-          </button>
-
-          <Popover>
-            <Popover.Trigger class="btn-icon hover:preset-tonal">
-              <CircleUserIcon class="size-8" />
-            </Popover.Trigger>
-            <Portal>
-              <Popover.Positioner>
-                <Popover.Content class="card p-4 bg-surface-100-900 shadow-xl">
-                  <header class="flex justify-between">
-                    <Popover.Title class="text-lg font-bold">{data.user?.name}</Popover.Title>
-                    <Popover.CloseTrigger class="btn-icon hover:preset-tonal self-start">
-                      <XIcon class="size-4" />
-                    </Popover.CloseTrigger>
-                  </header>
-
-                  <Popover.Description></Popover.Description>
-                  <div class="">
-                    <div>
-                      <button
-                        onclick={async () => {
-                          const result = await logoutAndGotoLogin();
-                          if (result.isErr()) {
-                            console.error(`logout() ${neverThrowErrorToString(result.error)}`);
-                          }
-                        }}
-                        class="btn preset-filled"
-                      >
-                        logout
-                      </button>
-
-                      <a class="anchor block" href="/editor">editor</a>
-                      <a class="anchor block" href="/trending">trending</a>
-                      <nav class="btn-group preset-outlined-surface-300-700">
-                        {#each themeManager.themes as theme}
-                          <button
-                            type="button"
-                            class="btn capitalize"
-                            class:preset-filled={theme == themeManager.theme}
-                            data-theme-picker
-                            onclick={() => setTheme(theme)}
-                          >
-                            {theme}
-                          </button>
-                        {/each}
-                      </nav>
-                    </div>
-                  </div>
-                </Popover.Content>
-              </Popover.Positioner>
-            </Portal>
-          </Popover>
-        </AppBar.Trail>
-      </AppBar.Toolbar>
-    </AppBar>
-  </header>
-
-  <main class="flex grow shrink-0 h-0">
-    {@render children()}
-  </main>
-</div>
+{@render children?.()}
 
 {#if browser}
   {@const toaster = getToaster()}

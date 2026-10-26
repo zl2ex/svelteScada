@@ -61,13 +61,14 @@ export class TagManager {
   // -------------------------
 
   getTagByPath(path: string) {
-    for (const tag of this.#tags.values()) {
-      if (this.#pathOf(tag) === path) return ok(tag);
+    const tag = this.#tags.values().find((tag) => this.#pathOf(tag) === path);
+    if (!tag) {
+      return err({
+        reason: "TAG_NOT_FOUND",
+        cause: `no tag at path ${path}`,
+      } as const satisfies NeverThrowError);
     }
-    return err({
-      reason: "TAG_NOT_FOUND",
-      cause: `no tag at path ${path}`,
-    } as const satisfies NeverThrowError);
+    return ok(tag);
   }
 
   getTagById(id: string) {
@@ -76,6 +77,19 @@ export class TagManager {
       return err({
         reason: "TAG_NOT_FOUND",
         cause: `no tag at id ${id}`,
+      } as const satisfies NeverThrowError);
+    }
+    return ok(tag);
+  }
+
+  getTagByIdOrPath(lookup: string) {
+    const tag =
+      this.#tags.get(lookup) ?? this.#tags.values().find((tag) => this.#pathOf(tag) === lookup);
+
+    if (!tag) {
+      return err({
+        reason: "TAG_NOT_FOUND",
+        cause: `no tag at path or id ${lookup}`,
       } as const satisfies NeverThrowError);
     }
     return ok(tag);

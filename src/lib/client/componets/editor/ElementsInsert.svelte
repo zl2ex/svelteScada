@@ -45,7 +45,7 @@
   }
 
   function siblings(element: ElementRecord) {
-    return sortedChildren(editor.elements, element.parentId);
+    return sortedChildren(editor.elementsCollection?.state ?? {}, element.parentId);
   }
 
   function move(element: ElementRecord, direction: -1 | 1) {
@@ -53,11 +53,11 @@
     const index = items.findIndex((item) => item.id === element.id);
     const target = items[index + direction];
     if (!target) return;
-    editor.elementCollection?.update(element.id, {
+    editor.elementsCollection?.update(element.id, {
       sortIndex: target.sortIndex,
       updatedAt: Date.now(),
     });
-    editor.elementCollection?.update(target.id, {
+    editor.elementsCollection?.update(target.id, {
       sortIndex: element.sortIndex,
       updatedAt: Date.now(),
     });
@@ -71,9 +71,11 @@
   }
 
   function canOutdent(element: ElementRecord) {
-    const parent = element.parentId ? editor.elements[element.parentId] : null;
+    const parent = element.parentId ? editor.elementsCollection?.state[element.parentId] : null;
     if (!parent) return false;
-    const nextParent = parent.parentId ? (editor.elements[parent.parentId] ?? null) : null;
+    const nextParent = parent.parentId
+      ? (editor.elementsCollection?.state[parent.parentId] ?? null)
+      : null;
     return !elementParentError(element, nextParent);
   }
 
@@ -82,19 +84,21 @@
     const index = items.findIndex((item) => item.id === element.id);
     const previous = items[index - 1];
     if (!previous || elementParentError(element, previous)) return;
-    editor.elementCollection?.update(element.id, {
+    editor.elementsCollection?.update(element.id, {
       parentId: previous.id,
       updatedAt: Date.now(),
     });
   }
 
   function outdent(element: ElementRecord) {
-    const parent = element.parentId ? editor.elements[element.parentId] : null;
+    const parent = element.parentId ? editor.elementsCollection?.state[element.parentId] : null;
     if (!parent) return;
     const nextParentId = parent.parentId;
-    const nextParent = nextParentId ? (editor.elements[nextParentId] ?? null) : null;
+    const nextParent = nextParentId
+      ? (editor.elementsCollection?.state[nextParentId] ?? null)
+      : null;
     if (elementParentError(element, nextParent)) return;
-    editor.elementCollection?.update(element.id, {
+    editor.elementsCollection?.update(element.id, {
       parentId: nextParentId,
       updatedAt: Date.now(),
     });
@@ -192,8 +196,8 @@
     {/if}
   </div>
 
-  {#if editor.selectedElementId && editor.elements[editor.selectedElementId]}
-    {@const selected = editor.elements[editor.selectedElementId]}
+  {#if editor.selectedElementId && editor.elementsCollection?.state[editor.selectedElementId]}
+    {@const selected = editor.elementsCollection?.state[editor.selectedElementId]}
     <div class="grid grid-cols-2 gap-1 p-2 border-t border-surface-200-800">
       <button class="btn btn-sm preset-tonal" onclick={() => move(selected, -1)}>Up</button>
       <button class="btn btn-sm preset-tonal" onclick={() => move(selected, 1)}>Down</button>

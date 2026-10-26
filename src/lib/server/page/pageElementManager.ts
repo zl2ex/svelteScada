@@ -75,6 +75,28 @@ export class ElementManager {
     return ok(map);
   }
 
+  listForProject(projectId: string) {
+    const pageRows = attempt(() =>
+      db.select({ id: pages.id }).from(pages).where(eq(pages.projectId, projectId)).all(),
+    );
+    if (pageRows.error) return dbError(pageRows.error, "listForProject() page lookup failed");
+
+    const pageIds = new Set(pageRows.data.map((page) => page.id));
+    const elementsByPage: Record<string, Record<string, ElementRecord>> = {};
+    for (const pageId of pageIds) elementsByPage[pageId] = {};
+
+    const rows = elementClosureTable.getAll();
+    if (rows.isErr()) return err(rows.error);
+
+    for (const row of rows.value) {
+      if (row.pageId && pageIds.has(row.pageId)) {
+        elementsByPage[row.pageId][row.id] = toElementRecord(row);
+      }
+    }
+
+    return ok(elementsByPage);
+  }
+
   get(owner: ElementOwner, id: string) {
     const result = elementClosureTable.get(id, elementOwnerScope(owner));
     if (result.isErr()) {

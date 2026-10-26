@@ -759,7 +759,7 @@ export abstract class BaseModbusDriver<
     }
     if (!this.connected && !this.#shouldReconnect) {
       return err({
-        reason: "WRITE_DISABLED",
+        reason: "WRITE_DEVICE_DISABLED",
         cause: "device not enabled",
         opcuaStatus: StatusCodes.BadConditionDisabled,
       } as const satisfies DriverWriteError);

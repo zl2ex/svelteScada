@@ -31,8 +31,9 @@
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import type { BaseTypeStrings, TagOptionsInput } from "$lib/server/tag/tag";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
+  import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getDataTypeStrings } from "$lib/remote/tag.remote";
   import {
     errorToString,
@@ -49,6 +50,8 @@
     tagFolders: Record<string, ClosureTableNode>;
     tags: Record<string, TagOptionsInput>;
   } = $props();
+
+  const editor = getEditorContext();
 
   let tagFolderPatchesCollection = $state(
     new PatchCollection<ClosureTableNode, NeverThrowError>({
@@ -159,6 +162,16 @@
     collection,
     selectionMode: "multiple",
     defaultExpandedValue: loadExpandedFromStorage(),
+    onSelectionChange: (details) => {
+      const next = [...details.selectedValue];
+      if (
+        next.length === editor.tagSelectionIds.length &&
+        next.every((id, index) => id === editor.tagSelectionIds[index])
+      ) {
+        return;
+      }
+      editor.tagSelectionIds = next;
+    },
     onExpandedChange: (details) => {
       const result = attempt(() =>
         localStorage.setItem(TREE_EXPANDED_KEY, JSON.stringify(details.expandedValue)),
@@ -169,7 +182,43 @@
     },
   });
 
+  $effect(() => {
+    const value = editor.tagSelectionIds;
+    untrack(() => {
+      const current = treeView().selectedValue;
+      if (current.length === value.length && current.every((id, index) => id === value[index])) {
+        return;
+      }
+      expandSelected(value);
+      treeView().setSelectedValue([...value]);
+    });
+  });
+
   // --- Helpers ------------------------------------------
+
+  function expandSelected(ids: string[]) {
+    const allFolders = {
+      ...tagFolderPatchesCollection.state,
+      ...stagingFolders,
+    };
+    const allTags = {
+      ...tagPatchesCollection.state,
+      ...stagingTags,
+    };
+    const expanded = new Set(treeView().expandedValue);
+
+    for (const id of ids) {
+      let folderId = allTags[id]?.folderId ?? allFolders[id]?.parentId ?? null;
+      while (folderId) {
+        expanded.add(folderId);
+        folderId = allFolders[folderId]?.parentId ?? null;
+      }
+    }
+
+    const current = treeView().expandedValue;
+    if ([...expanded].every((id) => current.includes(id))) return;
+    treeView().setExpandedValue([...expanded]);
+  }
 
   function isClosureTableNode(node: object): node is ClosureTableNode {
     return (

@@ -1,27 +1,18 @@
 <script lang="ts">
   import type { HTMLInputAttributes } from "svelte/elements";
   import { Portal, Tooltip } from "@skeletonlabs/skeleton-svelte";
-  import { type BaseTypeMap, type TagValue } from "$lib/server/tag/tag";
+  import { type TagValue } from "$lib/server/tag/tag";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import { toast } from "$lib/client/toast.svelte";
-  import { neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
+  import { type NeverThrowError } from "$lib/util/neverThrow";
   import { err, ok } from "neverthrow";
   import NeverThrowErrorDisplay from "$lib/client/componets/NeverThrowErrorDisplay.svelte";
 
-  interface IdProps extends HTMLInputAttributes {
-    id: string;
+  interface Props extends HTMLInputAttributes {
+    id?: string;
     path?: string;
     label?: string;
     class?: string;
   }
-  interface PathProps extends HTMLInputAttributes {
-    id?: string;
-    path: string;
-    label?: string;
-    class?: string;
-  }
-
-  type Props = IdProps | PathProps;
 
   let { id, path, label, class: clazz, ...rest }: Props = $props();
 
@@ -55,19 +46,6 @@
       ? `${base} outline -outline-offset-1 outline-error-400-600 ${clazz ?? ""}`
       : `${base} ${clazz ?? ""}`;
   }
-
-  const BaseTypeStep: Record<keyof BaseTypeMap, string> = {
-    Boolean: "1",
-    Double: "any",
-    Float: "any",
-    Int16: "1",
-    UInt16: "1",
-    Int32: "1",
-    UInt32: "1",
-    Int64: "1",
-    UInt64: "1",
-    String: "any",
-  };
 </script>
 
 <svelte:boundary
@@ -156,7 +134,6 @@
               type="number"
               name="input"
               class={classWithError("input")}
-              step={BaseTypeStep[tag.options.dataType]}
               value={isFocus ? undefined : tag.value}
               onkeyup={(ev) => {
                 if (ev.currentTarget) {
