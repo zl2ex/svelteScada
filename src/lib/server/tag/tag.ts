@@ -375,7 +375,7 @@ export class Tag {
         });
       });
 
-      if (exposed.error) {
+      if (exposed.isErr) {
         return err({
           reason: "EXPOSE_OPCUA_VARIABLE_FAILED",
           cause: errorToString(exposed.error),
@@ -420,7 +420,7 @@ export class Tag {
   #stringToTagValue(value: string): TagValue {
     // Handle arrays stored in json format
     const parsed = attempt(() => JSON.parse(value));
-    if (!parsed.error && parsed.data) {
+    if (!parsed.isErr && parsed.data) {
       return parsed.data;
     }
     // Handle booleans
@@ -584,7 +584,7 @@ export class Tag {
           statusCode,
         ),
       );
-      if (written.error) {
+      if (written.isErr) {
         return err({
           reason: "OPCUA_WRITE_FAILED",
           cause: errorToString(written.error),
@@ -601,7 +601,7 @@ export class Tag {
     this.#trend(newValue, statusCode);
 
     const changed = attempt(() => this.onChange?.(newValue, source, statusCode));
-    if (changed.error) {
+    if (changed.isErr) {
       logger.error(`[Tag] update() onChange() threw with error ${changed.error}`);
     }
 
@@ -641,7 +641,7 @@ export class Tag {
         })
         .run(),
     );
-    if (written.error) {
+    if (written.isErr) {
       logger.error(
         `[Tag] #trend() ${this.id} ${this.name} ${this.path} failed to write trend: ${errorToString(written.error)}`,
       );
@@ -660,7 +660,7 @@ export class Tag {
 
     // driver cleanup
     const unsub = attempt(() => this.driverUnsubscribe?.());
-    if (unsub.error) {
+    if (unsub.isErr) {
       return err({
         reason: "TAG_DISPOSE_FAILED",
         cause: errorToString(unsub.error),
@@ -669,7 +669,7 @@ export class Tag {
     }
 
     const released = attempt(() => this.driverVarible?.release());
-    if (released.error) {
+    if (released.isErr) {
       return err({
         reason: "TAG_DISPOSE_FAILED",
         cause: errorToString(released.error),
@@ -690,7 +690,7 @@ export class Tag {
       const deleted = attempt(() =>
         gatewayOpcua.deleteOpcuaVariable(addressSpace, this.exposeOpcuaVarible!),
       );
-      if (deleted.error) {
+      if (deleted.isErr) {
         return err({
           reason: "TAG_DISPOSE_FAILED",
           cause: errorToString(deleted.error),

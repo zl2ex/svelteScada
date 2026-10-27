@@ -143,14 +143,14 @@
   function loadExpandedFromStorage(): string[] {
     if (!browser) return [];
     const stored = attempt(() => localStorage.getItem(TREE_EXPANDED_KEY));
-    if (stored.error) {
+    if (stored.isErr) {
       console.error(`loadExpandedFromStorage() ${errorToString(stored.error)}`);
       return [];
     }
     if (!stored.data) return [];
     const raw = stored.data;
     const parsed = attempt(() => JSON.parse(raw));
-    if (parsed.error) {
+    if (parsed.isErr) {
       console.error(`loadExpandedFromStorage() ${errorToString(parsed.error)}`);
       return [];
     }
@@ -176,7 +176,7 @@
       const result = attempt(() =>
         localStorage.setItem(TREE_EXPANDED_KEY, JSON.stringify(details.expandedValue)),
       );
-      if (result.error) {
+      if (result.isErr) {
         console.error(`onExpandedChange() ${errorToString(result.error)}`);
       }
     },
@@ -265,7 +265,7 @@
 
   async function copyToClipboard(text: string) {
     const result = await attempt(() => navigator.clipboard.writeText(text));
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "CLIPBOARD_WRITE_FAILED",
         cause: errorToString(result.error),
@@ -577,7 +577,7 @@
 
   async function readClipboard() {
     const result = await attempt(() => navigator.clipboard.readText());
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "CLIPBOARD_READ_FAILED",
         cause: errorToString(result.error),
@@ -588,7 +588,7 @@
 
   function handlePasteText(text: string, parentNode: ClosureTableNode | undefined) {
     const json = attempt(() => JSON.parse(text));
-    if (json.error) {
+    if (json.isErr) {
       return err({
         reason: "PASTE_INVALID_JSON",
         cause: errorToString(json.error),
@@ -705,8 +705,7 @@
   async function handleMenuSelect(value: string) {
     switch (value) {
       case "Rename": {
-        const onlyOneFolder =
-          contextMenuFolders.length === 1 && contextMenuTags.length === 0;
+        const onlyOneFolder = contextMenuFolders.length === 1 && contextMenuTags.length === 0;
         const onlyOneTag = contextMenuTags.length === 1 && contextMenuFolders.length === 0;
         if (onlyOneFolder) renamingFolderId = contextMenuFolders[0].id;
         if (onlyOneTag) renamingTagId = contextMenuTags[0].id;
@@ -751,6 +750,7 @@
           console.error(`paste() ${neverThrowErrorToString(text.error)}`);
           return;
         }
+        if (!text.value) return;
         const result = handlePasteText(text.value, contextMenuFolders[0]);
         if (result.isErr()) {
           console.error(`paste() ${neverThrowErrorToString(result.error)}`);
@@ -1030,7 +1030,7 @@
                         return;
                       }
                       const parsed = attempt(() => JSON.parse(raw));
-                      if (parsed.error) {
+                      if (parsed.isErr) {
                         e.currentTarget.value = JSON.stringify(node.parameters ?? null, null, 2);
                         return;
                       }
@@ -1043,8 +1043,7 @@
                         e.currentTarget.value = JSON.stringify(node.parameters ?? null, null, 2);
                         e.currentTarget.blur();
                       }
-                    }}
-                  ></textarea>
+                    }}></textarea>
                 </div>
 
                 <div class="flex items-center gap-2">
@@ -1069,10 +1068,7 @@
   </TreeView.NodeProvider>
 {/snippet}
 
-<Menu
-  class="overflow-y-scroll"
-  onSelect={(details) => void handleMenuSelect(details.value)}
->
+<Menu class="overflow-y-scroll" onSelect={(details) => void handleMenuSelect(details.value)}>
   <Menu.ContextTrigger class="w-full pb-12">
     <TreeView.Provider value={treeView}>
       <TreeView.Tree

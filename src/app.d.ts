@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 // See https://kit.svelte.dev/docs/types#app
 
 import type { UserSelect } from "$lib/sqlite/tables";

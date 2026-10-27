@@ -2,10 +2,13 @@ import { goto } from "$app/navigation";
 import { toast } from "$lib/client/toast.svelte";
 import type { TagMapEntry, TagMapStatus } from "$lib/client/live/tagMap.svelte";
 import type { ElementAttributes, ElementRecord } from "$lib/page/elementTypes";
-import type { TagValue } from "$lib/server/tag/tag";
+import type { ClientTagValue, TagValue } from "$lib/server/tag/tag";
 import { errorToString, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 
+export type GotoFn = typeof goto;
+export type ToastFn = typeof toast;
 export type TagRead = (lookup: string) => TagMapEntry | undefined;
+export type TagValueRead = (lookup: string) => ClientTagValue | undefined;
 export type TagStatusRead = (lookup: string) => TagMapStatus;
 export type TagWrite = (
   lookup: string,
@@ -14,6 +17,7 @@ export type TagWrite = (
 
 export type BindingContext = {
   tag: TagRead;
+  tagValue: TagValueRead;
   tagStatus: TagStatusRead;
   props: ElementAttributes;
   element: ElementRecord;
@@ -26,6 +30,7 @@ export type EventContext = BindingContext & {
 
 type CompiledExpression = (
   tag: TagRead,
+  tagValue: TagValueRead,
   tagStatus: TagStatusRead,
   props: ElementAttributes,
   element: ElementRecord,
@@ -34,6 +39,7 @@ type CompiledExpression = (
 type CompiledEvent = (
   event: Event,
   tag: TagRead,
+  tagValue: TagValueRead,
   tagStatus: TagStatusRead,
   writeTag: TagWrite,
   gotoFn: typeof goto,
@@ -56,6 +62,7 @@ function compileExpression(expression: string): CompiledExpression | null {
   try {
     const compiled = new Function(
       "tag",
+      "tagValue",
       "tagStatus",
       "props",
       "element",
@@ -78,6 +85,7 @@ function compileEvent(script: string): CompiledEvent | null {
     const compiled = new AsyncFunction(
       "event",
       "tag",
+      "tagValue",
       "tagStatus",
       "writeTag",
       "goto",
@@ -100,7 +108,13 @@ export function evaluateExpression(expression: string, context: BindingContext) 
   const compiled = compileExpression(expression);
   if (!compiled) return undefined;
   try {
-    return compiled(context.tag, context.tagStatus, context.props, context.element);
+    return compiled(
+      context.tag,
+      context.tagValue,
+      context.tagStatus,
+      context.props,
+      context.element,
+    );
   } catch (error) {
     console.error(`[element binding] "${expression}" threw`, error);
     return undefined;
@@ -116,6 +130,7 @@ export async function runEventScript(script: string, context: EventContext) {
     await compiled(
       context.event,
       context.tag,
+      context.tagValue,
       context.tagStatus,
       context.writeTag,
       goto,

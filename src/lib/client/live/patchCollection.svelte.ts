@@ -78,7 +78,7 @@ export class PatchCollection<
         maxHistory: options.maxHistory ?? 50,
       }),
     );
-    if (created.error) {
+    if (created.isErr) {
       this.syncError = {
         reason: "TRAVELS_CREATE_FAILED",
         cause: errorToString(created.error),
@@ -120,7 +120,7 @@ export class PatchCollection<
         const merged = attempt(() =>
           apply(state, payload.patches, { mutable: true }),
         );
-        if (merged.error) {
+        if (merged.isErr) {
           this.syncError = {
             reason: "PATCH_MERGE_FAILED",
             cause: errorToString(merged.error),
@@ -140,7 +140,7 @@ export class PatchCollection<
   // rejection escape unhandled.
   #dispatchOps(ops: Ops, inverseOps: Ops) {
     attempt(() => this.#sendOps(ops, inverseOps)).then((sent) => {
-      if (sent.error) {
+      if (sent.isErr) {
         this.syncError = {
           reason: "PATCH_SEND_FAILED",
           cause: errorToString(sent.error),
@@ -153,7 +153,7 @@ export class PatchCollection<
     const reverted = attempt(() =>
       apply(this.state, inverseOps.slice(index, index + 1), { mutable: true }),
     );
-    if (reverted.error) {
+    if (reverted.isErr) {
       this.syncError = {
         reason: "PATCH_REVERT_FAILED",
         cause: errorToString(reverted.error),
@@ -166,7 +166,7 @@ export class PatchCollection<
     for (let i = 0; i < ops.length; i++) {
       const sent = await attempt(() => this.#applyPatch(ops[i]));
 
-      if (sent.error) {
+      if (sent.isErr) {
         hadError = true;
         this.#revertOps(inverseOps, i);
         this.syncError = {
@@ -219,7 +219,7 @@ export class PatchCollection<
     const tracked = attempt(() =>
       this.#travels.setState(fn as any, label ? { label } : undefined),
     );
-    if (tracked.error) {
+    if (tracked.isErr) {
       this.syncError = {
         reason: "TRAVELS_SET_STATE_FAILED",
         cause: errorToString(tracked.error),
@@ -290,7 +290,7 @@ export class PatchCollection<
 
   undo() {
     const undone = attempt(() => this.#travels.back());
-    if (undone.error) {
+    if (undone.isErr) {
       this.syncError = {
         reason: "TRAVELS_BACK_FAILED",
         cause: errorToString(undone.error),
@@ -300,7 +300,7 @@ export class PatchCollection<
 
   redo() {
     const redone = attempt(() => this.#travels.forward());
-    if (redone.error) {
+    if (redone.isErr) {
       this.syncError = {
         reason: "TRAVELS_FORWARD_FAILED",
         cause: errorToString(redone.error),

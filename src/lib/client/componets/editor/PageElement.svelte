@@ -21,6 +21,7 @@
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
   import PageElement from "./PageElement.svelte";
+  import PageElementEditWrapper from "./PageElementEditWrapper.svelte";
 
   type Props = {
     element: ElementRecord;
@@ -44,6 +45,7 @@
 
   let bindingContext = $derived<BindingContext>({
     tag: (lookup) => tagValueMap.tag(lookup),
+    tagValue: (lookup) => tagValueMap.tagValue(lookup),
     tagStatus: (lookup) => tagValueMap.tagStatus(lookup),
     props: propValues,
     element,
@@ -182,17 +184,7 @@
     SVG element {element.tag} must be inside an svg container.
   </p>
 {:else if element.kind === "base-component"}
-  <div
-    class="inline-block"
-    role="presentation"
-    onclick={select}
-    onkeydown={selectOnEnter}
-    class:edit-disable-pointer={mode === "edit"}
-    class:outline-2={selected}
-    class:outline-primary-500={selected}
-    class:-outline-offset-2={selected}
-    use:eventScripts={eventAction}
-  >
+  <div use:eventScripts={eventAction}>
     {#if element.baseComponent === "TagInput"}
       <TagInput {...resolvedAttributes} style={resolvedStyle} />
     {:else if element.baseComponent === "DeviceStatus"}
@@ -203,25 +195,18 @@
   </div>
 {:else if element.kind === "user-component"}
   {#if definition}
-    <div
-      class="contents"
-      role="presentation"
-      onclickcapture={selectUserComponent}
-      class:edit-disable-pointer={mode === "edit"}
-      class:outline-2={selected}
-      class:outline-primary-500={selected}
-      class:-outline-offset-2={selected}
-      use:eventScripts={eventAction}
-    >
+    <div use:eventScripts={eventAction}>
       {#each sortedChildren(definition.elements, null) as child (child.id)}
-        <PageElement
-          element={child}
-          elements={definition.elements}
-          propValues={resolvedProps}
-          {insideSvg}
-          depth={depth + 1}
-          mode={activeMode}
-        />
+        <PageElementEditWrapper element={child}>
+          <PageElement
+            element={child}
+            elements={definition.elements}
+            propValues={resolvedProps}
+            {insideSvg}
+            depth={depth + 1}
+            mode={activeMode}
+          />
+        </PageElementEditWrapper>
       {/each}
     </div>
   {:else}
@@ -229,26 +214,22 @@
   {/if}
 {:else if element.kind === "svg" && element.tag === "svg"}
   <svg
+    class="overflow-visible"
     {...resolvedAttributes}
     style={resolvedStyle}
-    role="presentation"
-    onclick={select}
-    onkeydown={selectOnEnter}
-    class:edit-disable-pointer={mode === "edit"}
-    class:outline-2={selected}
-    class:outline-primary-500={selected}
-    class:-outline-offset-2={selected}
     use:eventScripts={eventAction}
   >
     {#each children as child (child.id)}
-      <PageElement
-        element={child}
-        {elements}
-        {propValues}
-        insideSvg={true}
-        depth={depth + 1}
-        mode={activeMode}
-      />
+      <PageElementEditWrapper element={child} insideSvg={true}>
+        <PageElement
+          element={child}
+          {elements}
+          {propValues}
+          insideSvg={true}
+          depth={depth + 1}
+          mode={activeMode}
+        />
+      </PageElementEditWrapper>
     {/each}
   </svg>
 {:else if element.tag}
@@ -257,29 +238,24 @@
     {...resolvedAttributes}
     xmlns={element.kind === "svg" ? svgNamespace : undefined}
     style={resolvedStyle}
-    role="presentation"
-    onclick={select}
-    onkeydown={selectOnEnter}
-    class:edit-disable-pointer={mode === "edit"}
-    class:outline-2={selected}
-    class:outline-primary-500={selected}
-    class:-outline-offset-2={selected}
     use:eventScripts={eventAction}
   >
     {text}
     {#each children as child (child.id)}
-      <PageElement
-        element={child}
-        {elements}
-        {propValues}
-        {insideSvg}
-        depth={depth + 1}
-        mode={activeMode}
-      />
+      <PageElementEditWrapper element={child}>
+        <PageElement
+          element={child}
+          {elements}
+          {propValues}
+          {insideSvg}
+          depth={depth + 1}
+          mode={activeMode}
+        />
+      </PageElementEditWrapper>
     {/each}
   </svelte:element>
 {:else}
-  <pre>{JSON.stringify(element, null, 2)}</pre>
+  <pre class="text-error-400-600">{JSON.stringify(element, null, 2)}</pre>
 {/if}
 
 <style>

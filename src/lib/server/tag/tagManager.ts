@@ -154,7 +154,7 @@ export class TagManager {
     if (writeToDb) {
       const dbWrite = attempt(() => db.insert(tables.tags).values(opts).run());
 
-      if (dbWrite.error) {
+      if (dbWrite.isErr) {
         return err({
           reason: "DB_ERROR",
           cause: errorToString(dbWrite.error),
@@ -164,7 +164,7 @@ export class TagManager {
       opts.trend.tagId = opts.id; // make sure the id's match
       const dbTrend = attempt(() => db.insert(tables.tag_trend_options).values(opts.trend).run());
 
-      if (dbTrend.error) {
+      if (dbTrend.isErr) {
         return err({
           reason: "DB_ERROR",
           cause: errorToString(dbTrend.error),
@@ -201,7 +201,7 @@ export class TagManager {
       db.update(tables.tags).set(tagUpdates).where(eq(tables.tags.id, id)).run(),
     );
 
-    if (dbResult.error) {
+    if (dbResult.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(dbResult.error),
@@ -216,7 +216,7 @@ export class TagManager {
         .run(),
     );
 
-    if (dbTrend.error) {
+    if (dbTrend.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(dbTrend.error),
@@ -343,7 +343,7 @@ export class TagManager {
       } as const satisfies NeverThrowError);
 
     const dbResult = attempt(() => db.delete(tables.tags).where(eq(tables.tags.id, id)).run());
-    if (dbResult.error) {
+    if (dbResult.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(dbResult.error),
@@ -414,7 +414,7 @@ export class TagManager {
         },
       }),
     );
-    if (tagOptions.error) {
+    if (tagOptions.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(tagOptions.error),

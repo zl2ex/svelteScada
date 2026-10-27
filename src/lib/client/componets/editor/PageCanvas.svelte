@@ -5,6 +5,7 @@
   import type { ContainerType, ElementRecord } from "$lib/page/elementTypes";
   import { containerTypeStyle, elementStyleToString, sortedChildren } from "$lib/page/elementTypes";
   import PageElement from "./PageElement.svelte";
+  import PageElementEditWrapper from "./PageElementEditWrapper.svelte";
 
   type Props = {
     elements: Record<string, ElementRecord>;
@@ -45,7 +46,9 @@
       </div>
     {/if}
     {#each roots as element (element.id)}
-      <PageElement {element} {elements} {mode} />
+      <PageElementEditWrapper {element}>
+        <PageElement {element} {elements} {mode} />
+      </PageElementEditWrapper>
     {/each}
   </div>
 </div>

@@ -30,7 +30,7 @@ export function getTrendSeries(tagId: string, from: number, to: number) {
       .orderBy(asc(trends.timestamp))
       .all(),
   );
-  if (rows.error) {
+  if (rows.isErr) {
     return err({
       reason: "TREND_QUERY_FAILED",
       cause: errorToString(rows.error),
@@ -40,7 +40,7 @@ export function getTrendSeries(tagId: string, from: number, to: number) {
   const points: TrendPoint[] = [];
   for (const row of rows.data) {
     const parsed = attempt(() => JSON.parse(row.value) as unknown);
-    if (parsed.error) continue;
+    if (parsed.isErr) continue;
     const value = toTrendValue(parsed.data);
     if (value === null) continue;
     points.push({ timestamp: row.timestamp, value, statusCode: row.statusCode });
@@ -101,7 +101,7 @@ export function getRecentTrendPoints(tagId: string, limit: number) {
       .limit(limit)
       .all(),
   );
-  if (rows.error) {
+  if (rows.isErr) {
     return err({
       reason: "TREND_QUERY_FAILED",
       cause: errorToString(rows.error),
@@ -111,7 +111,7 @@ export function getRecentTrendPoints(tagId: string, limit: number) {
   const points: TrendPoint[] = [];
   for (const row of rows.data) {
     const parsed = attempt(() => JSON.parse(row.value) as unknown);
-    if (parsed.error) continue;
+    if (parsed.isErr) continue;
     const value = toTrendValue(parsed.data);
     if (value === null) continue;
     points.push({ timestamp: row.timestamp, value, statusCode: row.statusCode });

@@ -78,7 +78,7 @@ export class ModbusRTUDriver extends BaseModbusDriver<
       } as const satisfies ModbusRTUDriverError);
     }
     const created = attempt(() => new ModbusRTUDriver(parsed.data as DeviceModbusRtuOptionsConfig));
-    if (created.error) {
+    if (created.isErr) {
       return err({
         reason: "DRIVER_CREATE_FAILED",
         cause: `[ModbusRTUDriver] create() ${errorToString(created.error)}`,
@@ -123,7 +123,7 @@ export class ModbusRTUDriver extends BaseModbusDriver<
         if (e) this.onTransportDown(e.message);
       }),
     );
-    if (opened.error) {
+    if (opened.isErr) {
       this.setConnected(false);
       return err({
         reason: "SERIAL_PORT_OPEN_FAILED",

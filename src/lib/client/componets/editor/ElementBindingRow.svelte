@@ -1,6 +1,7 @@
 <script lang="ts">
   import { BracesIcon, Trash2Icon, Unlink2Icon } from "@lucide/svelte";
   import { Popover, Portal } from "@skeletonlabs/skeleton-svelte";
+  import ScriptEditor from "./ScriptEditor.svelte";
 
   let {
     label,
@@ -27,10 +28,14 @@
   } = $props();
 
   let draftBinding = $state("");
+  let lastBinding: string | null = null;
   let isBound = $derived(binding.trim().length > 0);
   let displayedValue = $derived(isBound ? result : value);
 
   $effect(() => {
+    if (binding === lastBinding) return;
+
+    lastBinding = binding;
     draftBinding = binding;
   });
 
@@ -54,8 +59,7 @@
         placeholder={isBound ? "No result" : ""}
         onblur={(event) => {
           if (!isBound) onValueCommit(event.currentTarget.value);
-        }}
-      ></textarea>
+        }}></textarea>
     {:else}
       <input
         class="input h-7 flex-1 min-w-0 py-0 px-2"
@@ -79,7 +83,7 @@
 
       <Portal>
         <Popover.Positioner>
-          <Popover.Content class="bg-surface-100-900 rounded-lg p-2 w-80">
+          <Popover.Content class="bg-surface-100-900 rounded-lg p-2">
             <div class="flex flex-col gap-2 p-1">
               <div class="flex items-center justify-between gap-2">
                 <span class="font-semibold truncate">{label} binding</span>
@@ -102,12 +106,12 @@
                 .
               </p>
 
-              <textarea
-                class="input py-1 px-2 font-mono text-[11px]"
-                rows="5"
-                bind:value={draftBinding}
-                placeholder="tag('/folder/tag')"
-              ></textarea>
+              <ScriptEditor
+                value={draftBinding}
+                height="300px"
+                ariaLabel={`${label} binding expression`}
+                onchange={(next) => (draftBinding = next)}
+              />
 
               <div class="flex justify-end gap-2">
                 <Popover.CloseTrigger class="btn btn-sm preset-tonal">Cancel</Popover.CloseTrigger>

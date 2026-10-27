@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "rootDir": "../src"
+  },
+  "include": ["../src/lib/client/editor/script/scriptApi.ts"]
+}

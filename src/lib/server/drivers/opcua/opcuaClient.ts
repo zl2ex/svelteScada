@@ -160,7 +160,7 @@ export class OpcuaClientDriver extends BaseDriver<
       } as const satisfies OpcuaClientDriverError);
     }
     const client = createClient();
-    if (client.error) {
+    if (client.isErr) {
       return err({
         reason: "CLIENT_CREATE_FAILED",
         cause: `[opcuaClientDriver] create() failed to create client for ${parsed.data.endpointUrl}: ${errorToString(client.error)}`,
@@ -271,7 +271,7 @@ export class OpcuaClientDriver extends BaseDriver<
    */
   #createClient() {
     const client = createClient();
-    if (client.error) {
+    if (client.isErr) {
       return err({
         reason: "CLIENT_CREATE_FAILED",
         cause: `[opcuaClientDriver] failed to create client for ${this.options.endpointUrl}: ${errorToString(client.error)}`,
@@ -315,7 +315,7 @@ export class OpcuaClientDriver extends BaseDriver<
     if (this.#superseded(generation)) return;
 
     const session = await attempt(() => client.createSession());
-    if (session.error) {
+    if (session.isErr) {
       this.#setupFailed(generation, session.error, "failed to create session");
       return;
     }
@@ -337,7 +337,7 @@ export class OpcuaClientDriver extends BaseDriver<
         priority: 10,
       }),
     );
-    if (subscription.error) {
+    if (subscription.isErr) {
       this.#setupFailed(generation, subscription.error, "failed to create subscription");
       return;
     }
@@ -408,14 +408,14 @@ export class OpcuaClientDriver extends BaseDriver<
     if (subscription) {
       this.#terminatedSubscriptions.add(subscription);
       const terminated = await attempt(() => subscription.terminate());
-      if (terminated.error) {
+      if (terminated.isErr) {
         logger.debug(
           `[opcuaClientDriver] discard() could not terminate a stale subscription: ${errorToString(terminated.error)}`,
         );
       }
     }
     const closed = await attempt(() => session.close());
-    if (closed.error) {
+    if (closed.isErr) {
       logger.debug(
         `[opcuaClientDriver] discard() could not close a stale session: ${errorToString(closed.error)}`,
       );
@@ -465,7 +465,7 @@ export class OpcuaClientDriver extends BaseDriver<
     }
     // Standard NodeId for the Objects folder is "ns=0;i=85"
     const browseResult = await attempt(() => this.#session!.browse(nodeId));
-    if (browseResult.error) {
+    if (browseResult.isErr) {
       return err({
         reason: "BROWSE_FAILED",
         cause: `[opcuaClientDriver] browse() failed to browse ${nodeId.toString()}: ${errorToString(browseResult.error)}`,
@@ -489,7 +489,7 @@ export class OpcuaClientDriver extends BaseDriver<
     visitedNodes.add(nodeId.toString());
 */
     const browseResult = await attempt(() => this.browse(nodeId));
-    if (browseResult.error) {
+    if (browseResult.isErr) {
       return err({
         reason: "BROWSE_RECURSE_FAILED",
         cause: `[opcuaClientDriver] browseRecursive() failed on ${nodeId.toString()}: ${errorToString(browseResult.error)}`,
@@ -510,7 +510,7 @@ export class OpcuaClientDriver extends BaseDriver<
       // Recurse down into Objects (1) and Folders (2)
       if (type === "folder" || type === "object") {
         const recursed = await attempt(() => this.browseRecursive(reference.nodeId.toString()));
-        if (recursed.error) {
+        if (recursed.isErr) {
           return err({
             reason: "BROWSE_RECURSE_FAILED",
             cause: `[opcuaClientDriver] browseRecursive() failed on ${reference.nodeId.toString()}: ${errorToString(recursed.error)}`,
@@ -537,7 +537,7 @@ export class OpcuaClientDriver extends BaseDriver<
     const client = this.#client;
     if (client) {
       const disconnected = await attempt(() => client.disconnect());
-      if (disconnected.error) {
+      if (disconnected.isErr) {
         return err({
           reason: "DISCONNECT_FAILED",
           cause: `[opcuaClientDriver] disconnect() failed to disconnect the client: ${errorToString(disconnected.error)}`,
@@ -566,7 +566,7 @@ export class OpcuaClientDriver extends BaseDriver<
     if (subscription) {
       this.#terminatedSubscriptions.add(subscription);
       const terminated = await attempt(() => subscription.terminate());
-      if (terminated.error) {
+      if (terminated.isErr) {
         return err({
           reason: "DISCONNECT_FAILED",
           cause: `[opcuaClientDriver] disconnect() failed to terminate the subscription: ${errorToString(terminated.error)}`,
@@ -577,7 +577,7 @@ export class OpcuaClientDriver extends BaseDriver<
     this.#session = undefined;
     if (session) {
       const closed = await attempt(() => session.close());
-      if (closed.error) {
+      if (closed.isErr) {
         return err({
           reason: "DISCONNECT_FAILED",
           cause: `[opcuaClientDriver] disconnect() failed to close the session: ${errorToString(closed.error)}`,
@@ -616,7 +616,7 @@ export class OpcuaClientDriver extends BaseDriver<
       } as const satisfies OpcuaClientDriverError);
     }
     const parsed = attempt(() => coerceNodeId(path));
-    if (parsed.error) {
+    if (parsed.isErr) {
       return err({
         reason: "SUBSCRIBE_NODE_ID_INVALID",
         cause: `[opcuaClientDriver] subscribe() cannot parse "${path}" as a nodeId: ${errorToString(parsed.error)}`,
@@ -726,7 +726,7 @@ export class OpcuaClientDriver extends BaseDriver<
         TimestampsToReturn.Both,
       ),
     );
-    if (monitored.error) {
+    if (monitored.isErr) {
       // a node the server does not have says nothing about the transport, so the
       // other subs stay armed and only this one goes bad
       logger.warn(
@@ -787,7 +787,7 @@ export class OpcuaClientDriver extends BaseDriver<
       return;
     }
     const decoded = attempt(() => decodeValue(sub.dataType, dataValue.value));
-    if (decoded.error) {
+    if (decoded.isErr) {
       logger.error(decoded.error, `[opcuaClientDriver] decode failed for ${sub.key}`);
       this.#publishStatus(sub, StatusCodes.BadTypeMismatch);
       return;
@@ -840,7 +840,7 @@ export class OpcuaClientDriver extends BaseDriver<
         value: { value: { dataType: OPCUA_DATA_TYPE[sub.dataType], value } },
       }),
     );
-    if (written.error) {
+    if (written.isErr) {
       return err({
         reason: "WRITE_FAILED",
         cause: `[opcuaClientDriver] write to ${sub.key} threw: ${errorToString(written.error)}`,

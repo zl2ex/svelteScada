@@ -8,7 +8,7 @@ import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 export class ProjectManager {
   getAll() {
     const result = attempt(() => db.select().from(projects).all());
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `getAll() failed: ${errorToString(result.error)}`,
@@ -21,7 +21,7 @@ export class ProjectManager {
     const result = attempt(() =>
       db.select().from(projects).where(eq(projects.id, id)).get(),
     );
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `getById() failed: ${errorToString(result.error)}`,
@@ -40,7 +40,7 @@ export class ProjectManager {
     const result = attempt(() =>
       db.select().from(projects).where(eq(projects.name, name)).get(),
     );
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `getByName() failed: ${errorToString(result.error)}`,

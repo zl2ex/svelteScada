@@ -14,7 +14,7 @@ export class ThemeManager {
 
     // On load, restore saved preference for light or dark theme
     const stored = attempt(() => localStorage.getItem("theme"));
-    if (stored.error) {
+    if (stored.isErr) {
       return err({
         reason: "THEME_LOAD_FAILED",
         cause: errorToString(stored.error),
@@ -35,7 +35,7 @@ export class ThemeManager {
         document.documentElement.setAttribute("color-scheme", newTheme);
       }
     });
-    if (applied.error) {
+    if (applied.isErr) {
       return err({
         reason: "THEME_APPLY_FAILED",
         cause: errorToString(applied.error),
@@ -43,7 +43,7 @@ export class ThemeManager {
     }
 
     const saved = attempt(() => localStorage.setItem("theme", newTheme));
-    if (saved.error) {
+    if (saved.isErr) {
       return err({
         reason: "THEME_SAVE_FAILED",
         cause: errorToString(saved.error),

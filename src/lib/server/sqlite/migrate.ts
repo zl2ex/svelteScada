@@ -12,7 +12,7 @@ export async function runMigrations() {
   const migrated = await attempt(() =>
     migrate(db, { migrationsFolder: "./src/lib/server/sqlite/drizzle" }),
   );
-  if (migrated.error) {
+  if (migrated.isErr) {
     return err({
       reason: "MIGRATE_FAILED",
       cause: `[drizzle] runMigrations() ${errorToString(migrated.error)}`,

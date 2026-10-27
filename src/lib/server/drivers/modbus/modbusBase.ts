@@ -717,7 +717,7 @@ export abstract class BaseModbusDriver<
         }
       }),
     );
-    if (read.error) {
+    if (read.isErr) {
       return err(classifyModbusError(read.error));
     }
     return ok(read.data);
@@ -732,14 +732,16 @@ export abstract class BaseModbusDriver<
     const decoded = shortResponse
       ? undefined
       : raw.kind === "bits"
-        ? { data: raw.bits[offset], error: undefined }
+        ? { isOk: true as const, isErr: false as const, data: raw.bits[offset] }
         : attempt(() => decodeWords(sub, raw.bytes.slice(from, to)));
 
-    if (!decoded || decoded.error) {
-      logger.error(
-        decoded?.error ?? "short response",
-        `[${this.driverName}] decode failed for ${sub.key}`,
-      );
+    if (!decoded) {
+      logger.error({ reason: "short response" }, `[${this.driverName}] decode failed for ${sub.key}`);
+      this.#publishStatus(sub, StatusCodes.BadDecodingError);
+      return;
+    }
+    if (decoded.isErr) {
+      logger.error(decoded.error, `[${this.driverName}] decode failed for ${sub.key}`);
       this.#publishStatus(sub, StatusCodes.BadDecodingError);
       return;
     }
@@ -806,7 +808,7 @@ export abstract class BaseModbusDriver<
         }
       }),
     );
-    if (written.error) {
+    if (written.isErr) {
       const f = classifyModbusError(written.error);
       logger.error(`[${this.driverName}] write ${sub.key} failed: ${f.cause}`);
       return err({

@@ -40,14 +40,24 @@
   import { err, ok } from "neverthrow";
   import { goto } from "$app/navigation";
   import { themeManager } from "$lib/client/theme.svelte.js";
+  import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
+  import type * as ScriptMonaco from "$lib/client/editor/script/monaco";
 
   let { data, children } = $props();
+
+  const tagValueMap = getTagValueMapContext();
+  let scriptMonaco = $state.raw<typeof ScriptMonaco>();
+
+  $effect(() => {
+    const paths = [...tagValueMap.tagPaths];
+    scriptMonaco?.updateScriptTagPaths(paths);
+  });
 
   const panelLayout = new PanelLayout();
 
   async function logoutAndGotoLogin() {
     const loggedOut = await attempt(() => logout());
-    if (loggedOut.error) {
+    if (loggedOut.isErr) {
       const cause = errorToString(loggedOut.error);
       toast({
         kind: "error",
@@ -62,7 +72,7 @@
     }
 
     const navigated = await attempt(() => goto("/login"));
-    if (navigated.error) {
+    if (navigated.isErr) {
       const cause = errorToString(navigated.error);
       toast({
         kind: "error",
@@ -81,7 +91,7 @@
 
   function setTheme(theme: (typeof themeManager.themes)[number]) {
     const result = attempt(() => themeManager.setTheme(theme));
-    if (result.error) {
+    if (result.isErr) {
       const cause = errorToString(result.error);
       console.error(cause);
     }
@@ -152,6 +162,11 @@
   undoManager.register("pages", pagePatchesCollection);
 
   onMount(() => {
+    void import("$lib/client/editor/script/monaco").then((module) => {
+      module.configureMonaco();
+      scriptMonaco = module;
+    });
+
     const loaded = panelLayout.loadFromLocalStorage();
     if (loaded.isErr()) {
       console.error(neverThrowErrorToString(loaded.error));

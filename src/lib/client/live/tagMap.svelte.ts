@@ -1,13 +1,13 @@
 import { browser } from "$app/environment";
 import { getTagValue, tagPatches, writeTagValue } from "$live/tags";
-import { SvelteMap } from "svelte/reactivity";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import { RpcError, type StreamStore } from "svelte-realtime/client";
 import {
   type ConnectionStatus,
   type Payload,
   type UseStreamResult,
 } from "$lib/client/live/streamResult.svelte";
-import type { TagValue } from "$lib/server/tag/tag";
+import type { ClientTagValue, TagValue } from "$lib/server/tag/tag";
 import { attempt } from "$lib/util/attempt";
 import {
   errorToString,
@@ -50,6 +50,7 @@ export function createTagValueMap(options: {
 
 export class TagValueMap {
   readonly entries = new SvelteMap<string, TagMapEntry>();
+  readonly tagPaths = new SvelteSet<string>();
 
   #lookupToId = new Map<string, string>();
   #pathById = new Map<string, string>();
@@ -93,13 +94,20 @@ export class TagValueMap {
     return this.get(lookup)?.status ?? "missing";
   }
 
+  tagValue(lookup: string): ClientTagValue | undefined {
+    const entry = this.get(lookup);
+    if (!entry) return undefined;
+    if (entry.status !== "connected" && entry.status !== "reconnecting") return undefined;
+    return entry.value.isOk ? entry.value.value : undefined;
+  }
+
   async writeTag(
     lookup: string,
     value: TagValue,
   ): Promise<WireResult<{ success: true }, NeverThrowError>> {
     const id = this.#lookupToId.get(lookup);
     const written = await attempt(() => writeTagValue({ lookup, value }));
-    if (written.error) {
+    if (written.isErr) {
       toast({
         kind: "error",
         title: "TAG_WRITE_RPC_ERROR",
@@ -131,6 +139,7 @@ export class TagValueMap {
     for (const unsubscribe of this.#subscriptions.values()) unsubscribe();
     this.#subscriptions.clear();
     this.entries.clear();
+    this.tagPaths.clear();
     this.#lookupToId.clear();
     this.#pathById.clear();
   }
@@ -196,7 +205,10 @@ export class TagValueMap {
     this.entries.delete(id);
 
     const path = this.#pathById.get(id);
-    if (path) this.#lookupToId.delete(path);
+    if (path) {
+      this.#lookupToId.delete(path);
+      this.tagPaths.delete(path);
+    }
     this.#pathById.delete(id);
     this.#lookupToId.delete(id);
   }
@@ -204,8 +216,12 @@ export class TagValueMap {
   #setPath(id: string, path: string) {
     if (!path) return;
     const previous = this.#pathById.get(id);
-    if (previous && previous !== path) this.#lookupToId.delete(previous);
+    if (previous && previous !== path) {
+      this.#lookupToId.delete(previous);
+      this.tagPaths.delete(previous);
+    }
     this.#pathById.set(id, path);
+    this.tagPaths.add(path);
     this.#lookupToId.set(path, id);
     this.#lookupToId.set(id, id);
   }

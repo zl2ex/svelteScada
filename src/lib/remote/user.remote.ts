@@ -25,7 +25,7 @@ export const register = form(z_UserInsert, async (newUser, issue) => {
       },
     }),
   );
-  if (found.error) {
+  if (found.isErr) {
     const failure = err({
       reason: "USER_LOOKUP_FAILED",
       cause: `[user.remote.ts] register() user lookup failed: ${errorToString(found.error)}`,
@@ -36,7 +36,7 @@ export const register = form(z_UserInsert, async (newUser, issue) => {
   if (found.data) return invalid(issue.email("user already exists with that email"));
 
   const salt = await attempt(() => bcrypt.genSalt(10));
-  if (salt.error) {
+  if (salt.isErr) {
     const failure = err({
       reason: "BCRYPT_SALT_FAILED",
       cause: `[user.remote.ts] register() bcrypt.genSalt() failed: ${errorToString(salt.error)}`,
@@ -45,7 +45,7 @@ export const register = form(z_UserInsert, async (newUser, issue) => {
   }
 
   const hashedPassword = await attempt(() => bcrypt.hash(newUser.password, salt.data));
-  if (hashedPassword.error) {
+  if (hashedPassword.isErr) {
     const failure = err({
       reason: "BCRYPT_HASH_FAILED",
       cause: `[user.remote.ts] register() bcrypt.hash() failed: ${errorToString(
@@ -57,7 +57,7 @@ export const register = form(z_UserInsert, async (newUser, issue) => {
   newUser.password = hashedPassword.data;
 
   const inserted = await attempt(() => db.insert(tables.users).values(newUser).returning());
-  if (inserted.error) {
+  if (inserted.isErr) {
     const failure = err({
       reason: "USER_INSERT_FAILED",
       cause: `[user.remote.ts] register() failed to insert user: ${errorToString(inserted.error)}`,
@@ -69,7 +69,7 @@ export const register = form(z_UserInsert, async (newUser, issue) => {
   const permission = attempt(() =>
     db.insert(tables.user_permissions).values({ userId: insertedUser.id }).run(),
   );
-  if (permission.error) {
+  if (permission.isErr) {
     const failure = err({
       reason: "USER_PERMISSION_INSERT_FAILED",
       cause: `[user.remote.ts] register() failed to insert user permission: ${errorToString(
@@ -92,7 +92,7 @@ export const login = form(z_UserLogin, async (loginUser, issue) => {
       },
     }),
   );
-  if (found.error) {
+  if (found.isErr) {
     const failure = err({
       reason: "USER_LOOKUP_FAILED",
       cause: `[user.remote.ts] login() user lookup failed: ${errorToString(found.error)}`,
@@ -104,7 +104,7 @@ export const login = form(z_UserLogin, async (loginUser, issue) => {
   if (!user) return invalid(issue("invalid credentails"));
 
   const passwordCorrect = await attempt(() => bcrypt.compare(loginUser.password, user.password));
-  if (passwordCorrect.error) {
+  if (passwordCorrect.isErr) {
     const failure = err({
       reason: "BCRYPT_COMPARE_FAILED",
       cause: `[user.remote.ts] login() bcrypt.compare() failed: ${errorToString(
@@ -122,7 +122,7 @@ export const login = form(z_UserLogin, async (loginUser, issue) => {
       expiresIn: JWT_EXPERATION_TIME,
     } as jwt.SignOptions),
   );
-  if (token.error) {
+  if (token.isErr) {
     const failure = err({
       reason: "JWT_SIGN_FAILED",
       cause: `[user.remote.ts] login() jwt.sign() failed: ${errorToString(token.error)}`,

@@ -297,7 +297,7 @@ export class DeviceManager {
         },
       }),
     );
-    if (found.error) {
+    if (found.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `[DeviceManager] loadAllFromDb() failed to read devices: ${errorToString(found.error)}`,
@@ -358,7 +358,7 @@ export class DeviceManager {
 
     const dbWrite = attempt(() => db.transaction((tx) => writeDeviceConfig(tx, config)));
 
-    if (dbWrite.error) {
+    if (dbWrite.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `[DeviceManager] addDevice() failed to write device ${options.name} to database: ${errorToString(
@@ -392,7 +392,7 @@ export class DeviceManager {
 
     // the option rows go with it: each table cascades on devices.id
     const dbDelete = attempt(() => db.delete(devices).where(eq(devices.id, id)).run());
-    if (dbDelete.error) {
+    if (dbDelete.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `[DeviceManager] removeDevice() failed to delete device ${id} from database: ${errorToString(
@@ -453,7 +453,7 @@ export class DeviceManager {
       }),
     );
 
-    if (dbWrite.error) {
+    if (dbWrite.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `[DeviceManager] changeDriver() failed to switch ${id} to ${driverName}: ${errorToString(
@@ -500,7 +500,7 @@ export class DeviceManager {
 
     const dbWrite = attempt(() => db.transaction((tx) => writeDeviceConfig(tx, config)));
 
-    if (dbWrite.error) {
+    if (dbWrite.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `[DeviceManager] updateDevice() failed to write device ${id} ${options.name} to database: ${errorToString(

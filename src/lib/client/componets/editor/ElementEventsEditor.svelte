@@ -2,6 +2,7 @@
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import type { ElementBindings } from "$lib/page/elementTypes";
   import { toast } from "$lib/client/toast.svelte";
+  import ScriptEditor from "./ScriptEditor.svelte";
 
   const editor = getEditorContext();
   const eventNamePattern = /^[a-z][a-z0-9:_-]*$/i;
@@ -96,13 +97,13 @@
             Remove
           </button>
         </div>
-        <textarea
-          class="input py-1 px-2 font-mono text-[11px]"
-          rows="3"
-          bind:value={item.script}
+        <ScriptEditor
+          value={item.script}
+          height="300px"
+          ariaLabel={`${item.name} event script`}
+          onchange={(next) => (item.script = next)}
           onblur={() => saveEvents(events)}
-          placeholder="await writeTag('/folder/tag', 1)"
-        ></textarea>
+        />
       </div>
     {/each}
 

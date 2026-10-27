@@ -26,7 +26,7 @@ export class PanelLayout {
       }
       return stored;
     });
-    if (stored.error) {
+    if (stored.isErr) {
       return err({
         reason: "PANEL_LAYOUT_LOAD_FAILED",
         cause: errorToString(stored.error),
@@ -34,7 +34,7 @@ export class PanelLayout {
     }
 
     const parsed = attempt(() => JSON.parse(stored.data) as PanelLayoutStorage);
-    if (parsed.error) {
+    if (parsed.isErr) {
       return err({
         reason: "PANEL_LAYOUT_PARSE_FAILED",
         cause: errorToString(parsed.error),
@@ -64,7 +64,7 @@ export class PanelLayout {
         this.setWidth();
       });
     });
-    if (listened.error) {
+    if (listened.isErr) {
       return err({
         reason: "PANEL_LAYOUT_LISTENER_FAILED",
         cause: errorToString(listened.error),
@@ -80,7 +80,7 @@ export class PanelLayout {
     const saved = attempt(() =>
       localStorage.setItem(PANEL_LAYOUT_KEY, JSON.stringify(layout ?? this.width)),
     );
-    if (saved.error) {
+    if (saved.isErr) {
       return err({
         reason: "PANEL_LAYOUT_SAVE_FAILED",
         cause: errorToString(saved.error),

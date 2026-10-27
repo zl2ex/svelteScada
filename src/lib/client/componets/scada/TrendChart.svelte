@@ -458,7 +458,7 @@
       let firstError: string | null = null;
       let downsampled = false;
       for (const result of results) {
-        if (result.error) {
+        if (result.isErr) {
           console.error(`getTrendHistory failed: ${errorToString(result.error)}`);
           firstError ??= errorToString(result.error);
           continue;
@@ -623,14 +623,14 @@
       // it at the top level
       const plugin = await attempt(() => import("chartjs-plugin-zoom"));
       if (destroyed) return;
-      if (plugin.error) {
+      if (plugin.isErr) {
         console.error(`TrendChart onMount() ${errorToString(plugin.error)}`);
         return;
       }
       Chart.register(plugin.data.default);
 
       const computed = attempt(() => getComputedStyle(element));
-      if (computed.error) {
+      if (computed.isErr) {
         console.error(`TrendChart onMount() ${errorToString(computed.error)}`);
         return;
       }
@@ -726,10 +726,10 @@
           }),
       );
       if (destroyed) {
-        if (!result.error) result.data.destroy();
+        if (result.isOk) result.data.destroy();
         return;
       }
-      if (result.error) {
+      if (result.isErr) {
         console.error(`TrendChart onMount() ${errorToString(result.error)}`);
         return;
       }

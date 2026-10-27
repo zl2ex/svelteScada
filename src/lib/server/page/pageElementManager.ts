@@ -53,7 +53,7 @@ export class ElementManager {
             .where(eq(user_components.id, owner.userComponentId))
             .get(),
     );
-    if (result.error) return dbError(result.error, "getProjectId() failed");
+    if (result.isErr) return dbError(result.error, "getProjectId() failed");
     if (!result.data) {
       return err({
         reason: "OWNER_NOT_FOUND",
@@ -79,7 +79,7 @@ export class ElementManager {
     const pageRows = attempt(() =>
       db.select({ id: pages.id }).from(pages).where(eq(pages.projectId, projectId)).all(),
     );
-    if (pageRows.error) return dbError(pageRows.error, "listForProject() page lookup failed");
+    if (pageRows.isErr) return dbError(pageRows.error, "listForProject() page lookup failed");
 
     const pageIds = new Set(pageRows.data.map((page) => page.id));
     const elementsByPage: Record<string, Record<string, ElementRecord>> = {};
@@ -159,7 +159,7 @@ export class ElementManager {
     const existing = attempt(() =>
       db.select({ id: elements.id }).from(elements).where(eq(elements.id, parsed.data.id)).get(),
     );
-    if (existing.error) return dbError(existing.error, "create() id lookup failed");
+    if (existing.isErr) return dbError(existing.error, "create() id lookup failed");
     if (existing.data) {
       return err({
         reason: "ELEMENT_ALREADY_EXISTS",
@@ -277,11 +277,11 @@ export class ElementManager {
         .returning()
         .get(),
     );
-    if (updated.error || !updated.data) {
+    if (updated.isErr || !updated.data) {
       if (parentChanged) {
         elementClosureTable.move(id, existing.value.parentId ?? undefined);
       }
-      if (updated.error) return dbError(updated.error, "replace() update failed");
+      if (updated.isErr) return dbError(updated.error, "replace() update failed");
       return err({
         reason: "ELEMENT_NOT_FOUND",
         cause: `element ${id} does not belong to the requested owner`,
@@ -397,7 +397,7 @@ export class ElementManager {
     const component = attempt(() =>
       db.select().from(user_components).where(eq(user_components.id, referencedComponentId)).get(),
     );
-    if (component.error) {
+    if (component.isErr) {
       return dbError(component.error, "validateReference() lookup failed");
     }
     if (!component.data) {
@@ -439,7 +439,7 @@ export class ElementManager {
         )
         .all(),
     );
-    if (rows.error) return dbError(rows.error, "validateReference() graph failed");
+    if (rows.isErr) return dbError(rows.error, "validateReference() graph failed");
 
     const graph = new Map<string, Set<string>>();
     for (const row of rows.data) {

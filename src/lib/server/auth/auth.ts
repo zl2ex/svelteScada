@@ -9,7 +9,7 @@ import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export async function authenticateUser(token: string) {
   const verified = attempt(() => jwt.verify(token, PRIVATE_KEY));
-  if (verified.error) {
+  if (verified.isErr) {
     return err({
       reason: "TOKEN_VERIFY_FAILED",
       cause: errorToString(verified.error),
@@ -27,7 +27,7 @@ export async function authenticateUser(token: string) {
       },
     }),
   );
-  if (user.error) {
+  if (user.isErr) {
     logger.error(user.error);
     return err({
       reason: "USER_LOOKUP_FAILED",

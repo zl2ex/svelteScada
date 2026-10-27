@@ -86,7 +86,7 @@ export class ClosureTable<
       }),
     );
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(result.error),
@@ -120,7 +120,7 @@ export class ClosureTable<
         .sort((a, b) => a.depth - b.depth);
     });
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(result.error),
@@ -154,7 +154,7 @@ export class ClosureTable<
         .sort((a, b) => a.depth - b.depth);
     });
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(result.error),
@@ -226,7 +226,7 @@ export class ClosureTable<
       }),
     );
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(result.error),
@@ -246,7 +246,7 @@ export class ClosureTable<
       }),
     );
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(result.error),
@@ -294,7 +294,7 @@ export class ClosureTable<
       })) as ClosureTableNodeWithPath<TItem>[];
     });
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(result.error),
@@ -338,7 +338,7 @@ export class ClosureTable<
       }),
     );
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(result.error),

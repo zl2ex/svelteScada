@@ -11,7 +11,7 @@ import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 export class UserComponentManager {
   getAll() {
     const result = attempt(() => db.select().from(user_components).all());
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `getAll() failed: ${errorToString(result.error)}`,
@@ -24,7 +24,7 @@ export class UserComponentManager {
     const result = attempt(() =>
       db.select().from(user_components).where(eq(user_components.projectId, projectId)).all(),
     );
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `getAllForProject() failed: ${errorToString(result.error)}`,
@@ -37,7 +37,7 @@ export class UserComponentManager {
     const result = attempt(() =>
       db.select().from(user_components).where(eq(user_components.id, id)).get(),
     );
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `get() failed: ${errorToString(result.error)}`,
@@ -99,7 +99,7 @@ export class UserComponentManager {
         )
         .all(),
     );
-    if (rows.error) {
+    if (rows.isErr) {
       return err({
         reason: "DB_ERROR",
         cause: `hasCycle() failed: ${errorToString(rows.error)}`,

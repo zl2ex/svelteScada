@@ -30,7 +30,7 @@ export function loadLastSessionTagIds(): Result<string[], NeverThrowError> {
   if (!browser) return ok([]);
 
   const stored = attempt(() => localStorage.getItem(LAST_SESSION_TAGS_KEY));
-  if (stored.error) {
+  if (stored.isErr) {
     return err({
       reason: "TREND_VIEW_LOAD_LAST_FAILED",
       cause: errorToString(stored.error),
@@ -41,7 +41,7 @@ export function loadLastSessionTagIds(): Result<string[], NeverThrowError> {
   if (!raw) return ok([]);
 
   const parsed = attempt(() => JSON.parse(raw) as unknown);
-  if (parsed.error) {
+  if (parsed.isErr) {
     return err({
       reason: "TREND_VIEW_PARSE_LAST_FAILED",
       cause: errorToString(parsed.error),
@@ -68,7 +68,7 @@ export function saveLastSessionTagIds(
   const saved = attempt(() =>
     localStorage.setItem(LAST_SESSION_TAGS_KEY, JSON.stringify(toStore)),
   );
-  if (saved.error) {
+  if (saved.isErr) {
     return err({
       reason: "TREND_VIEW_SAVE_LAST_FAILED",
       cause: errorToString(saved.error),
@@ -85,7 +85,7 @@ export function loadSavedViews(): Result<
   if (!browser) return ok([]);
 
   const stored = attempt(() => localStorage.getItem(SAVED_VIEWS_KEY));
-  if (stored.error) {
+  if (stored.isErr) {
     return err({
       reason: "TREND_VIEW_LOAD_SAVED_FAILED",
       cause: errorToString(stored.error),
@@ -96,7 +96,7 @@ export function loadSavedViews(): Result<
   if (!raw) return ok([]);
 
   const parsed = attempt(() => JSON.parse(raw) as unknown);
-  if (parsed.error) {
+  if (parsed.isErr) {
     return err({
       reason: "TREND_VIEW_PARSE_SAVED_FAILED",
       cause: errorToString(parsed.error),
@@ -122,7 +122,7 @@ function persistSavedViews(
   const saved = attempt(() =>
     localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(views)),
   );
-  if (saved.error) {
+  if (saved.isErr) {
     return err({
       reason: "TREND_VIEW_SAVE_SAVED_FAILED",
       cause: errorToString(saved.error),

@@ -46,6 +46,7 @@
     if (!element) return null;
     return {
       tag: (lookup: string) => tagValueMap.tag(lookup),
+      tagValue: (lookup: string) => tagValueMap.tagValue(lookup),
       tagStatus: (lookup: string) => tagValueMap.tagStatus(lookup),
       props: {},
       element,

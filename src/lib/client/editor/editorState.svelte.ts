@@ -155,7 +155,7 @@ export class EditorState {
     const loaded = await attempt(() => getProjectElements(projectId));
     this.projectLoading = false;
 
-    if (loaded.error) {
+    if (loaded.isErr) {
       const cause = errorToString(loaded.error);
       this.projectError = cause;
       return err({
@@ -501,9 +501,9 @@ export class EditorState {
   #loadOpenPages() {
     if (!browser) return;
     const raw = attempt(() => localStorage.getItem(OPEN_PAGES_KEY));
-    if (raw.error || !raw.data) return;
+    if (raw.isErr || !raw.data) return;
     const parsed = attempt(() => JSON.parse(raw.data!));
-    if (parsed.error || !Array.isArray(parsed.data)) return;
+    if (parsed.isErr || !Array.isArray(parsed.data)) return;
     this.openPageIds = parsed.data.filter(
       (id): id is string => typeof id === "string" && Boolean(this.pagesCollection.state[id]),
     );

@@ -30,10 +30,8 @@ export function getToaster() {
 
   if (_toaster) return ok(_toaster);
 
-  const created = attempt(() =>
-    createToaster({ placement: "bottom-end", max: 5 }),
-  );
-  if (created.error) {
+  const created = attempt(() => createToaster({ placement: "bottom-end", max: 5 }));
+  if (created.isErr) {
     return err({
       reason: "TOASTER_CREATE_FAILED",
       cause: errorToString(created.error),
@@ -48,8 +46,9 @@ function pushToaster(options: Options) {
   const toaster = getToaster();
   if (toaster.isErr()) return err(toaster.error);
 
+  // @ts-ignore
   const pushed = attempt(() => toaster.value.create(options));
-  if (pushed.error) {
+  if (pushed.isErr) {
     return err({
       reason: "TOAST_CREATE_FAILED",
       cause: errorToString(pushed.error),
@@ -77,7 +76,7 @@ function subscribeToastPush() {
       });
     }),
   );
-  if (subscribed.error) {
+  if (subscribed.isErr) {
     return err({
       reason: "TOAST_SUBSCRIBE_FAILED",
       cause: errorToString(subscribed.error),

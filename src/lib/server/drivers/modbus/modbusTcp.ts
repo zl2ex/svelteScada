@@ -51,7 +51,7 @@ export class ModbusTCPDriver extends BaseModbusDriver<
       } as const satisfies ModbusTCPDriverError);
     }
     const created = attempt(() => new ModbusTCPDriver(parsed.data as DeviceModbusTcpOptionsConfig));
-    if (created.error) {
+    if (created.isErr) {
       return err({
         reason: "DRIVER_CREATE_FAILED",
         cause: `[ModbusTCPDriver] create() ${errorToString(created.error)}`,
@@ -78,7 +78,7 @@ export class ModbusTCPDriver extends BaseModbusDriver<
   protected openTransport() {
     if (this.connected || this.#socket.connecting) return ok(undefined);
     const connecting = attempt(() => this.#socket.connect(this.options.port, this.options.ip));
-    if (connecting.error) {
+    if (connecting.isErr) {
       this.setConnected(false);
       return err({
         reason: "SOCKET_CONNECT_FAILED",

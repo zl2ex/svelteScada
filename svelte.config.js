@@ -14,6 +14,10 @@ const config = {
     // See https://kit.svelte.dev/docs/adapters for more information about adapters.
     adapter: adapter({ websocket: true }),
 
+    alias: {
+      $generated: "generated",
+    },
+
     experimental: {
 			remoteFunctions: true
 		},

@@ -10,7 +10,7 @@ import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 const opened = attempt(() => new Database(resolve(DB_URL ?? "./database.db")));
-if (opened.error) {
+if (opened.isErr) {
   const failure = {
     reason: "DB_OPEN_FAILED",
     cause: `[db] could not open the database at ${
@@ -24,12 +24,12 @@ if (opened.error) {
 export const sqlite = opened.data;
 
 const journalMode = attempt(() => sqlite.pragma("journal_mode = WAL"));
-if (journalMode.error) {
+if (journalMode.isErr) {
   logger.warn(`[db] could not enable WAL journal mode: ${errorToString(journalMode.error)}`);
 }
 
 const foreignKeys = attempt(() => sqlite.pragma("foreign_keys = ON"));
-if (foreignKeys.error) {
+if (foreignKeys.isErr) {
   logger.warn(`[db] could not enable foreign keys: ${errorToString(foreignKeys.error)}`);
 }
 
@@ -40,7 +40,7 @@ const connected = attempt(() =>
     relations: relationsConfig,
   }),
 );
-if (connected.error) {
+if (connected.isErr) {
   const failure = {
     reason: "DB_DRIZZLE_INIT_FAILED",
     cause: `[db] drizzle could not be created: ${errorToString(connected.error)}`,

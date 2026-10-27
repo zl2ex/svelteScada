@@ -44,7 +44,7 @@ export class OpcuaFolder {
       return new OpcuaFolder(addressSpace, node, uaObject);
     });
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "OPCUA_FOLDER_CREATE_FAILED",
         cause: errorToString(result.error),
@@ -61,7 +61,7 @@ export class OpcuaFolder {
       // TD WIP Maybe delete and create a new node with browseName updated as well ??
     });
 
-    if (result.error) {
+    if (result.isErr) {
       return err({
         reason: "OPCUA_RENAME_FAILED",
         cause: errorToString(result.error),
@@ -77,7 +77,7 @@ export class OpcuaFolder {
     );
 
     const listeners = attempt(() => this.uaObject.removeAllListeners());
-    if (listeners.error) {
+    if (listeners.isErr) {
       logger.error(
         `[OpcuaFolder] dispose() failed to remove listeners on ${this.uaObject.browseName.toString()}: ${errorToString(listeners.error)}`,
       );
@@ -86,15 +86,15 @@ export class OpcuaFolder {
     const parents = attempt(() =>
       this.uaObject.findReferences("HasComponent", false),
     );
-    if (parents.error) {
+    if (parents.isErr) {
       logger.error(
         `[OpcuaFolder] dispose() failed to find references on ${this.uaObject.browseName.toString()}: ${errorToString(parents.error)}`,
       );
     }
 
-    for (const p of parents.data ?? []) {
+    for (const p of parents.isOk ? parents.data : []) {
       const parentNode = attempt(() => this.#addressSpace.findNode(p.nodeId));
-      if (parentNode.error) {
+      if (parentNode.isErr) {
         logger.error(
           `[OpcuaFolder] dispose() failed to find parent node ${p.nodeId.toString()}: ${errorToString(parentNode.error)}`,
         );
@@ -109,7 +109,7 @@ export class OpcuaFolder {
             nodeId: this.uaObject,
           }),
         );
-        if (removed.error) {
+        if (removed.isErr) {
           logger.error(
             `[OpcuaFolder] dispose() failed to remove reference to ${this.uaObject.browseName.toString()}: ${errorToString(removed.error)}`,
           );
@@ -119,7 +119,7 @@ export class OpcuaFolder {
     }
 
     const deleted = attempt(() => this.#addressSpace.deleteNode(this.uaObject));
-    if (deleted.error) {
+    if (deleted.isErr) {
       logger.error(
         `[OpcuaFolder] dispose() failed to delete node ${this.uaObject.browseName.toString()}: ${errorToString(deleted.error)}`,
       );

@@ -18,7 +18,7 @@ function registerTagEventHandlers(plc: Controller) {
       });
     }),
   );
-  if (registered.error) {
+  if (registered.isErr) {
     logger.error(
       `[ethernetIp] failed to register the tag event handlers: ${errorToString(registered.error)}`,
     );
@@ -27,7 +27,7 @@ function registerTagEventHandlers(plc: Controller) {
 
 async function start() {
   const created = attempt(() => new Controller());
-  if (created.error) {
+  if (created.isErr) {
     logger.error(
       `[ethernetIp] failed to create the controller: ${errorToString(created.error)}`,
     );
@@ -38,14 +38,14 @@ async function start() {
   // Add some tags to group
   //PLC.subscribe(new Tag("progTag", "prog")); // Program Scope Tag in PLC Program "prog")
   const createdTag = attempt(() => new Tag("_20TT01"));
-  if (createdTag.error) {
+  if (createdTag.isErr) {
     logger.error(
       `[ethernetIp] failed to create the _20TT01 tag: ${errorToString(createdTag.error)}`,
     );
     return;
   }
   const subscribed = attempt(() => PLC.subscribe(createdTag.data));
-  if (subscribed.error) {
+  if (subscribed.isErr) {
     logger.error(
       `[ethernetIp] failed to subscribe the _20TT01 tag: ${errorToString(subscribed.error)}`,
     );
@@ -55,7 +55,7 @@ async function start() {
   registerTagEventHandlers(PLC);
 
   const connected = await attempt(() => PLC.connect("172.16.2.10", 0));
-  if (connected.error) {
+  if (connected.isErr) {
     logger.error(
       `[ethernetIp] failed to connect to 172.16.2.10: ${errorToString(connected.error)}`,
     );
@@ -67,7 +67,7 @@ async function start() {
 
   // Begin Scanning
   const scanned = await attempt(() => PLC.scan());
-  if (scanned.error) {
+  if (scanned.isErr) {
     logger.error(
       `[ethernetIp] failed to scan: ${errorToString(scanned.error)}`,
     );

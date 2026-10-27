@@ -25,7 +25,7 @@ export class OpcuaServerDriver {
           },
         }),
     );
-    if (created.error) {
+    if (created.isErr) {
       return err({
         reason: "OPCUA_SERVER_CREATE_FAILED",
         cause: errorToString(created.error),
@@ -35,7 +35,7 @@ export class OpcuaServerDriver {
     this.server = created.data;
 
     const initialised = await attempt(() => this.server!.initialize());
-    if (initialised.error) {
+    if (initialised.isErr) {
       return err({
         reason: "OPCUA_SERVER_INIT_FAILED",
         cause: errorToString(initialised.error),
@@ -54,7 +54,7 @@ export class OpcuaServerDriver {
     }
 
     const listening = await attempt(() => this.server!.start());
-    if (listening.error) {
+    if (listening.isErr) {
       this.started = false;
       return err({
         reason: "OPCUA_SERVER_START_FAILED",
@@ -82,7 +82,7 @@ export class OpcuaServerDriver {
 
   #buildAddressSpace(addressSpace: AddressSpace) {
     const allTags = attempt(() => db.select().from(tables.tags).all());
-    if (allTags.error) {
+    if (allTags.isErr) {
       return err({
         reason: "OPCUA_ADDRESS_SPACE_BUILD_FAILED",
         cause: errorToString(allTags.error),
@@ -94,7 +94,7 @@ export class OpcuaServerDriver {
 
   async stop() {
     const shutdown = await attempt(() => this.server?.shutdown(1000));
-    if (shutdown.error) {
+    if (shutdown.isErr) {
       return err({
         reason: "OPCUA_SERVER_STOP_FAILED",
         cause: errorToString(shutdown.error),
@@ -113,7 +113,7 @@ export class OpcuaServerDriver {
     // Once deleted, node-opcua nulls the node's internal addressSpace reference,
     // so calling findReferences() on it throws. Skip it if it's already gone.
     const found = attempt(() => addressSpace.findNode(varible.nodeId));
-    if (found.error) {
+    if (found.isErr) {
       return err({
         reason: "OPCUA_VARIABLE_DELETE_FAILED",
         cause: errorToString(found.error),
@@ -123,7 +123,7 @@ export class OpcuaServerDriver {
 
     // Find its parent
     const parents = attempt(() => varible.findReferences("HasComponent", false));
-    if (parents.error) {
+    if (parents.isErr) {
       return err({
         reason: "OPCUA_VARIABLE_DELETE_FAILED",
         cause: errorToString(parents.error),
@@ -132,7 +132,7 @@ export class OpcuaServerDriver {
 
     for (const p of parents.data) {
       const parentNode = attempt(() => addressSpace.findNode(p.nodeId));
-      if (parentNode.error) {
+      if (parentNode.isErr) {
         return err({
           reason: "OPCUA_VARIABLE_DELETE_FAILED",
           cause: errorToString(parentNode.error),
@@ -147,7 +147,7 @@ export class OpcuaServerDriver {
             nodeId: varible,
           }),
         );
-        if (removed.error) {
+        if (removed.isErr) {
           return err({
             reason: "OPCUA_VARIABLE_DELETE_FAILED",
             cause: errorToString(removed.error),
@@ -157,7 +157,7 @@ export class OpcuaServerDriver {
     }
 
     const listeners = attempt(() => varible.removeAllListeners());
-    if (listeners.error) {
+    if (listeners.isErr) {
       return err({
         reason: "OPCUA_VARIABLE_DELETE_FAILED",
         cause: errorToString(listeners.error),
@@ -165,7 +165,7 @@ export class OpcuaServerDriver {
     }
 
     const deleted = attempt(() => addressSpace.deleteNode(varible));
-    if (deleted.error) {
+    if (deleted.isErr) {
       return err({
         reason: "OPCUA_VARIABLE_DELETE_FAILED",
         cause: errorToString(deleted.error),

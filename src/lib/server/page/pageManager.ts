@@ -28,7 +28,7 @@ export type CreatePageInput = {
 export class PageManager {
   getAll() {
     const result = attempt(() => db.select().from(pages).all());
-    if (result.error) return dbError(result.error, "getAll() failed");
+    if (result.isErr) return dbError(result.error, "getAll() failed");
     return ok(result.data);
   }
 
@@ -36,13 +36,13 @@ export class PageManager {
     const result = attempt(() =>
       db.select().from(pages).where(eq(pages.projectId, projectId)).all(),
     );
-    if (result.error) return dbError(result.error, "getAllForProject() failed");
+    if (result.isErr) return dbError(result.error, "getAllForProject() failed");
     return ok(result.data);
   }
 
   get(id: string) {
     const result = attempt(() => db.select().from(pages).where(eq(pages.id, id)).get());
-    if (result.error) return dbError(result.error, "get() failed");
+    if (result.isErr) return dbError(result.error, "get() failed");
     if (!result.data) {
       return err({
         reason: "PAGE_NOT_FOUND",
@@ -63,7 +63,7 @@ export class PageManager {
     const project = attempt(() =>
       db.select().from(projects).where(eq(projects.id, input.projectId)).get(),
     );
-    if (project.error) return dbError(project.error, "create() project lookup failed");
+    if (project.isErr) return dbError(project.error, "create() project lookup failed");
     if (!project.data) {
       return err({
         reason: "PROJECT_NOT_FOUND",
@@ -101,7 +101,7 @@ export class PageManager {
         })
         .run(),
     );
-    if (inserted.error) return dbError(inserted.error, "create() insert failed");
+    if (inserted.isErr) return dbError(inserted.error, "create() insert failed");
 
     logger.info(`[PageManager] created page ${id}`);
     return this.get(id);
@@ -146,7 +146,7 @@ export class PageManager {
         .where(eq(pages.id, id))
         .run(),
     );
-    if (updated.error) return dbError(updated.error, "replace() failed");
+    if (updated.isErr) return dbError(updated.error, "replace() failed");
 
     return this.get(id);
   }
@@ -168,7 +168,7 @@ export class PageManager {
     const updated = attempt(() =>
       db.update(pages).set({ name, updatedAt: Date.now() }).where(eq(pages.id, id)).run(),
     );
-    if (updated.error) return dbError(updated.error, "rename() failed");
+    if (updated.isErr) return dbError(updated.error, "rename() failed");
 
     logger.info(`[PageManager] renamed page ${id}`);
     return this.get(id);
@@ -187,7 +187,7 @@ export class PageManager {
     const updated = attempt(() =>
       db.update(pages).set({ sortIndex, updatedAt: Date.now() }).where(eq(pages.id, id)).run(),
     );
-    if (updated.error) return dbError(updated.error, "reorder() failed");
+    if (updated.isErr) return dbError(updated.error, "reorder() failed");
 
     return this.get(id);
   }
@@ -197,7 +197,7 @@ export class PageManager {
     if (page.isErr()) return err(page.error);
 
     const deleted = attempt(() => db.delete(pages).where(eq(pages.id, id)).run());
-    if (deleted.error) return dbError(deleted.error, "delete() failed");
+    if (deleted.isErr) return dbError(deleted.error, "delete() failed");
 
     logger.info(`[PageManager] deleted page ${id}`);
     return ok({ id });
@@ -221,7 +221,7 @@ export class PageManager {
         )
         .get(),
     );
-    if (result.error) return dbError(result.error, "checkName() failed");
+    if (result.isErr) return dbError(result.error, "checkName() failed");
     if (result.data) {
       return err({
         reason: "DUPLICATE_PAGE_NAME",
