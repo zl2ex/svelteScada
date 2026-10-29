@@ -14,6 +14,7 @@ import {
   parseElementWrite,
   validateElementAttributes,
   validateElementKindPayload,
+  validateElementStyle,
 } from "$lib/page/elementValidation";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
@@ -137,6 +138,14 @@ export class ElementManager {
       } as const satisfies NeverThrowError);
     }
 
+    const styleError = validateElementStyle(parsed.data.style);
+    if (styleError) {
+      return err({
+        reason: "INVALID_ELEMENT",
+        cause: styleError,
+      } as const satisfies NeverThrowError);
+    }
+
     const containerError = elementContainerTypeError(parsed.data);
     if (containerError) {
       return err({
@@ -223,6 +232,14 @@ export class ElementManager {
       } as const satisfies NeverThrowError);
     }
 
+    const styleError = validateElementStyle(parsed.data.style);
+    if (styleError) {
+      return err({
+        reason: "INVALID_ELEMENT",
+        cause: styleError,
+      } as const satisfies NeverThrowError);
+    }
+
     const containerError = elementContainerTypeError(parsed.data);
     if (containerError) {
       return err({
@@ -270,6 +287,7 @@ export class ElementManager {
           text: parsed.data.text,
           containerType: parsed.data.containerType,
           attributes: parsed.data.attributes,
+          style: parsed.data.style,
           bindings: normalizeBindings(parsed.data.kind, parsed.data.bindings),
           updatedAt: Date.now(),
         })

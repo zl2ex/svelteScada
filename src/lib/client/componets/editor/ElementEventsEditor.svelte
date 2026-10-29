@@ -79,8 +79,10 @@
       <span class="opacity-40">preview only</span>
     </div>
     <p class="opacity-50">
-      Scripts receive <code>event</code>
-      ,
+      Scripts run in a sandbox with no access to <code>window</code>,
+      <code>document</code>, <code>fetch</code>, storage, or cookies. They receive a safe
+      <code>event</code>
+      snapshot,
       <code>writeTag()</code>
       ,
       <code>goto()</code>

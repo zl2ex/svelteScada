@@ -13,11 +13,11 @@
     containerTypeStyle,
     elementStyleToString,
     isContainerElement,
-    isElementStyle,
     isSvgDrawingElement,
     sortedChildren,
   } from "$lib/page/elementTypes";
   import { svgNamespace } from "$lib/page/svgTags";
+  import { createEventSnapshot } from "$lib/client/editor/script/eventSnapshot";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
   import PageElement from "./PageElement.svelte";
@@ -68,10 +68,7 @@
   }
 
   let resolvedAttributes = $derived.by(() => {
-    const attributes: Record<string, AttributeValue> = {};
-    for (const [name, value] of Object.entries(element.attributes)) {
-      if (!isElementStyle(value)) attributes[name] = value;
-    }
+    const attributes: Record<string, AttributeValue> = { ...element.attributes };
     for (const [name, expression] of Object.entries(element.bindings?.attributes ?? {})) {
       if (name.toLowerCase().startsWith("on")) continue;
       const value = toAttributeValue(evaluateExpression(expression, bindingContext));
@@ -82,9 +79,7 @@
   });
 
   let resolvedStyle = $derived.by(() => {
-    const style: Record<string, string> = isElementStyle(element.attributes.style)
-      ? { ...element.attributes.style }
-      : {};
+    const style: Record<string, string> = { ...element.style };
     for (const [property, expression] of Object.entries(element.bindings?.style ?? {})) {
       const value = evaluateExpression(expression, bindingContext);
       if (value === null || value === undefined) delete style[property];
@@ -98,10 +93,7 @@
   });
 
   let resolvedProps = $derived.by(() => {
-    const props: ElementAttributes = {};
-    for (const [name, value] of Object.entries(element.attributes)) {
-      if (!isElementStyle(value)) props[name] = value;
-    }
+    const props: ElementAttributes = { ...element.attributes };
     for (const [name, expression] of Object.entries(element.bindings?.props ?? {})) {
       const value = toAttributeValue(evaluateExpression(expression, bindingContext));
       console.debug(value);
@@ -136,7 +128,10 @@
       for (const [name, script] of Object.entries(params.events)) {
         if (!name.trim() || !script.trim()) continue;
         const handler = (event: Event) => {
-          void runEventScript(script, { ...params.context, event });
+          void runEventScript(script, {
+            ...params.context,
+            event: createEventSnapshot(event),
+          });
         };
         node.addEventListener(name, handler);
         cleanup.push(() => node.removeEventListener(name, handler));

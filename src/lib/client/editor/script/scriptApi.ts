@@ -8,7 +8,7 @@ export type ScriptAttributeValue = string | number | boolean;
 
 export type ScriptElementStyle = Record<string, string>;
 
-export type ScriptElementAttributeValue = ScriptAttributeValue | ScriptElementStyle;
+export type ScriptElementAttributeValue = ScriptAttributeValue;
 
 export type ScriptElementAttributes = Record<string, ScriptElementAttributeValue>;
 
@@ -88,6 +88,7 @@ export type ScriptElement = {
   text: string | null;
   containerType: ScriptContainerType;
   attributes: ScriptElementAttributes;
+  style: ScriptElementStyle;
   bindings?: ScriptElementBindings | null;
   sortIndex: number;
   createdAt: number;
@@ -127,8 +128,47 @@ export type ScriptBindingGlobals = {
   element: ScriptElement;
 };
 
+export type ScriptEventTarget = {
+  tagName: string;
+  id: string;
+  name: string;
+  type: string;
+  value: string | number | boolean | null;
+  checked: boolean | null;
+};
+
+export type ScriptEvent = {
+  type: string;
+  key: string;
+  code: string;
+  repeat: boolean;
+  button: number;
+  buttons: number;
+  clientX: number;
+  clientY: number;
+  pageX: number;
+  pageY: number;
+  screenX: number;
+  screenY: number;
+  deltaX: number;
+  deltaY: number;
+  deltaMode: number;
+  detail: number;
+  pointerType: string;
+  isTrusted: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  metaKey: boolean;
+  target: ScriptEventTarget | null;
+  currentTarget: ScriptEventTarget | null;
+  preventDefault: () => void;
+  stopPropagation: () => void;
+  stopImmediatePropagation: () => void;
+};
+
 export type ScriptEventGlobals = ScriptBindingGlobals & {
-  event: Event;
+  event: ScriptEvent;
   writeTag: ScriptWriteTag;
   goto: ScriptGoto;
   toast: ScriptToast;

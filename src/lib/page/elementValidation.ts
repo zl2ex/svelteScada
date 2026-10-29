@@ -14,7 +14,7 @@ export const z_ElementStyle = z.record(z.string(), z.string());
 
 export const z_ElementAttributes = z.record(
   z.string(),
-  z.union([z.string(), z.number(), z.boolean(), z_ElementStyle]),
+  z.union([z.string(), z.number(), z.boolean()]),
 );
 
 export const z_ElementBindings = z.object({
@@ -37,6 +37,7 @@ export const z_ElementWrite = z.object({
   text: z.string().nullable(),
   containerType: z.enum(containerTypes),
   attributes: z_ElementAttributes,
+  style: z_ElementStyle,
   bindings: z_ElementBindings.nullable(),
 });
 
@@ -120,12 +121,7 @@ export function validateElementAttributes(attributes: Record<string, unknown>) {
       return `Attribute "${key}" is not allowed`;
     }
     if (key === "style") {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) {
-        return 'Attribute "style" must be an object of CSS properties';
-      }
-      const styleError = validateElementStyle(value as Record<string, unknown>);
-      if (styleError) return styleError;
-      continue;
+      return 'Attribute "style" must be edited in the Style section';
     }
     if (typeof value === "object" && value !== null) {
       return `Attribute "${key}" must be a string, number, or boolean`;
@@ -181,6 +177,7 @@ export function toElementRecord(value: ElementRecord): ElementRecord {
     text: value.text,
     containerType: value.containerType,
     attributes: value.attributes,
+    style: value.style,
     bindings: value.bindings,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,

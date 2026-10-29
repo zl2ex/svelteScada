@@ -308,6 +308,7 @@ export class EditorState {
       text: null,
       containerType: "none",
       attributes: options.attributes ?? {},
+      style: {},
       bindings: null,
       createdAt: now,
       updatedAt: now,

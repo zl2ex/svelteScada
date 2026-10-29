@@ -54,9 +54,9 @@ if (externalImports.length > 0) {
 const globals = `declare global {
   interface ScriptTagPaths {}
 
-  const tag: (lookup: keyof ScriptTagPaths | (string & {})) => ScriptTagEntry | undefined;
-  const tagValue: (lookup: keyof ScriptTagPaths | (string & {})) => ScriptTagValue | undefined;
-  const tagStatus: (lookup: keyof ScriptTagPaths | (string & {})) => ScriptTagStatus;
+  const tag: (lookup: keyof ScriptTagPaths) => ScriptTagEntry | undefined;
+  const tagValue: (lookup: keyof ScriptTagPaths) => ScriptTagValue | undefined;
+  const tagStatus: (lookup: keyof ScriptTagPaths) => ScriptTagStatus;
   const props: ScriptElementAttributes;
   const element: ScriptElement;
   const writeTag: ScriptEventGlobals["writeTag"];

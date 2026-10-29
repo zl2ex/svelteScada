@@ -138,7 +138,7 @@
   function saveStyleValue(property: string, raw: string) {
     if (!selected) return;
     editor.elementsCollection?.update(selected.id, {
-      attributes: setStyleProperty(selected, property, raw === "" ? null : raw),
+      style: setStyleProperty(selected, property, raw === "" ? null : raw),
       updatedAt: Date.now(),
     });
   }
@@ -177,7 +177,7 @@
       return false;
     }
     editor.elementsCollection?.update(selected.id, {
-      attributes: setStyleProperty(selected, key, value),
+      style: setStyleProperty(selected, key, value),
       updatedAt: Date.now(),
     });
     return true;

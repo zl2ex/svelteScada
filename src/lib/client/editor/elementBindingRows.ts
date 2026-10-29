@@ -5,7 +5,6 @@ import type {
   ElementRecord,
   ElementStyle,
 } from "$lib/page/elementTypes";
-import { isElementStyle } from "$lib/page/elementTypes";
 
 export type AttributeBindingScope = "attributes" | "props";
 export type BindingScope = AttributeBindingScope | "style" | "text";
@@ -29,15 +28,11 @@ export function getBindingMap(
 }
 
 export function getTopLevelAttributes(element: ElementRecord): Record<string, AttributeValue> {
-  const attributes: Record<string, AttributeValue> = {};
-  for (const [key, value] of Object.entries(element.attributes)) {
-    if (!isElementStyle(value)) attributes[key] = value;
-  }
-  return attributes;
+  return { ...element.attributes };
 }
 
 export function getStyle(element: ElementRecord): ElementStyle {
-  return isElementStyle(element.attributes.style) ? { ...element.attributes.style } : {};
+  return { ...element.style };
 }
 
 function cloneBindings(element: ElementRecord): ElementBindings {
@@ -88,15 +83,11 @@ export function setStyleProperty(
   element: ElementRecord,
   property: string,
   value: string | null,
-): ElementAttributes {
+): ElementStyle {
   const style = getStyle(element);
   if (value === null) delete style[property];
   else style[property] = value;
-
-  const attributes: ElementAttributes = { ...element.attributes };
-  if (Object.keys(style).length > 0) attributes.style = style;
-  else delete attributes.style;
-  return attributes;
+  return style;
 }
 
 export function removeTopLevelAttributeRow(
@@ -112,7 +103,7 @@ export function removeTopLevelAttributeRow(
 
 export function removeStyleRow(element: ElementRecord, property: string) {
   return {
-    attributes: setStyleProperty(element, property, null),
+    style: setStyleProperty(element, property, null),
     bindings: setBinding(element, "style", property, ""),
   };
 }

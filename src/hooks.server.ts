@@ -8,19 +8,6 @@ import { FolderManager } from "$lib/server/tag/folderManager";
 import { OpcuaServerDriver } from "$lib/server/drivers/opcua/opcuaServer";
 import { neverThrowErrorToString } from "$lib/util/neverThrow";
 
-// for serialisiing errors
-Object.defineProperty(Error.prototype, "toJSON", {
-  value: function () {
-    return {
-      name: this.name,
-      message: this.message,
-      stack: this.stack,
-      ...this,
-    };
-  },
-  configurable: true,
-});
-
 export const deviceManager = new DeviceManager();
 export const udtManager = new UdtManager();
 export const folderManager = new FolderManager();

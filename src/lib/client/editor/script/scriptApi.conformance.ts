@@ -10,6 +10,7 @@ import type {
   ElementAttributes,
   ElementBindings,
   ElementKind,
+  ElementStyle,
 } from "$lib/page/elementTypes";
 import type { NeverThrowError, WireResult } from "$lib/util/neverThrow";
 import type {
@@ -18,6 +19,7 @@ import type {
   ScriptElementAttributes,
   ScriptElementBindings,
   ScriptElementKind,
+  ScriptElementStyle,
   ScriptEventGlobals,
   ScriptNeverThrowError,
   ScriptValue,
@@ -35,6 +37,14 @@ export type _ElementAttributesToScriptAttributes = AssertAssignable<
 export type _ScriptAttributesToElementAttributes = AssertAssignable<
   ScriptElementAttributes,
   ElementAttributes
+>;
+export type _ElementStyleToScriptElementStyle = AssertAssignable<
+  ElementStyle,
+  ScriptElementStyle
+>;
+export type _ScriptElementStyleToElementStyle = AssertAssignable<
+  ScriptElementStyle,
+  ElementStyle
 >;
 export type _ElementBindingsToScriptBindings = AssertAssignable<
   ElementBindings,

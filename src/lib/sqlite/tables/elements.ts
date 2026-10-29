@@ -8,6 +8,7 @@ import {
   elementKinds,
   type ElementAttributes,
   type ElementBindings,
+  type ElementStyle,
 } from "../../page/elementTypes";
 
 export const elements = sqliteTable(
@@ -34,6 +35,7 @@ export const elements = sqliteTable(
       .$type<ElementAttributes>()
       .notNull()
       .default({}),
+    style: text("style", { mode: "json" }).$type<ElementStyle>().notNull().default({}),
     bindings: text("bindings", { mode: "json" }).$type<ElementBindings>(),
     createdAt: integer("createdAt", { mode: "number" })
       .notNull()

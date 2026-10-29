@@ -12,13 +12,9 @@ export type ElementStyle = Record<string, string>;
 
 export type AttributeValue = string | number | boolean;
 
-export type ElementAttributeValue = AttributeValue | ElementStyle;
+export type ElementAttributeValue = AttributeValue;
 
 export type ElementAttributes = Record<string, ElementAttributeValue>;
-
-export function isElementStyle(value: ElementAttributeValue | undefined): value is ElementStyle {
-  return typeof value === "object" && value !== null;
-}
 
 export type ElementBindings = {
   text?: string;

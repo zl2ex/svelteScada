@@ -22,7 +22,13 @@ function tagPathsDeclaration(paths: Set<string>) {
     .map((path) => `    ${JSON.stringify(path)}: true;`)
     .join("\n");
 
-  return `declare global {\n  interface ScriptTagPaths {\n${properties}\n  }\n}\n\nexport {};`;
+  return `declare global {\n
+    interface ScriptTagPaths {\n
+    ${properties}\n
+      }\n
+      }\n
+      \n
+      export {};`;
 }
 
 function applyTagPaths() {
