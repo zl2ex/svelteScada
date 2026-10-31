@@ -1,6 +1,6 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
-import { routeSegmentPattern } from "../../page/elementTypes";
+import { routeSegmentPattern } from "../../elements/elementTypes";
 
 export const projects = sqliteTable("projects", {
   id: text("id")

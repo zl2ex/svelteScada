@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import type * as Monaco from "monaco-editor";
+  import { scriptScopes, type ScriptScope } from "$lib/client/editor/script/scriptScopes";
 
   let {
     value = "",
     height = "160px",
     readonly = false,
     ariaLabel = "Script editor",
+    scope = "element",
     onchange,
     onblur,
   }: {
@@ -14,6 +16,7 @@
     height?: string;
     readonly?: boolean;
     ariaLabel?: string;
+    scope?: ScriptScope;
     onchange?: (value: string) => void;
     onblur?: (value: string) => void;
   } = $props();
@@ -48,10 +51,11 @@
 
       configureMonaco();
 
+      const extension = scope === "tag" ? "ts" : "js";
       const nextModel = monaco.editor.createModel(
         value,
-        "javascript",
-        monaco.Uri.parse(`inmemory://script/${crypto.randomUUID()}.js`),
+        scriptScopes[scope],
+        monaco.Uri.parse(`inmemory://script/${crypto.randomUUID()}.${extension}`),
       );
 
       const nextEditor = monaco.editor.create(container, {

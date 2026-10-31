@@ -48,6 +48,7 @@
     SaveIcon,
     TagIcon,
     Trash2Icon,
+    XIcon,
   } from "@lucide/svelte";
   import { getAllTags, getAllTagFolders, getOpcuaStatusCodeMap } from "$lib/remote/tag.remote";
   import type { ClosureTableNodeWithPath } from "$lib/server/sqlite/util/tagClosureTable";
@@ -765,12 +766,8 @@
   <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-2">
     <div>
       <Menu>
-        <Menu.Trigger
-          class="btn preset-filled-surface-200-800 p-3"
-          aria-label="Saved views"
-          title="Saved views"
-        >
-          <ListIcon class="size-4" />
+        <Menu.Trigger class="btn preset-tonal p-3" aria-label="Saved views" title="Saved views">
+          <ListIcon />
         </Menu.Trigger>
         <Portal>
           <Menu.Positioner>
@@ -902,7 +899,7 @@
       {/snippet}
 
       <Popover.Provider value={tagPopover}>
-        <Popover.Trigger class="btn preset-filled p-3" title="Select tags to plot">
+        <Popover.Trigger class="btn preset-tonal p-3" title="Select tags to plot">
           <TagIcon />
           tags ({selectedTagIds.length})
         </Popover.Trigger>
@@ -983,12 +980,18 @@
   <div class="flex flex-wrap items-center gap-2">
     {#each selectedTagIds as tagId (tagId)}
       <span
-        class="chip preset-tonal flex items-center gap-1"
+        class="chip preset-tonal flex items-center gap-2"
         title={tags.find((t) => t.id == tagId)?.path}
       >
-        <span class="size-2 rounded-full" style:background={colorFor(tagId)}></span>
+        <span class="size-2.5 rounded-full" style:background={colorFor(tagId)}></span>
         {tagName(tagId)}
-        <button type="button" class="cursor-pointer" onclick={() => toggleTag(tagId)}>×</button>
+        <button
+          type="button"
+          class="cursor-pointer hover:bg-surface-400-600 p-0.5 rounded-md"
+          onclick={() => toggleTag(tagId)}
+        >
+          <XIcon class="size-3.5" />
+        </button>
       </span>
     {:else}
       <span class="text-sm opacity-60">select one or more tags to plot</span>
@@ -1008,15 +1011,3 @@
     {/snippet}
   </svelte:boundary>
 </div>
-
-<style>
-  /* skeleton <TreeView> change selected apperance */
-
-  :global(
-    [data-scope="tree-view"] [data-part="item"][data-selected],
-    [data-scope="tree-view"] [data-part="branch-control"][data-selected]
-  ) {
-    background-color: light-dark(var(--color-primary-300), var(--color-primary-800));
-    color: light-dark(var(--color-neutral-000), var(--color-neutral-900));
-  }
-</style>

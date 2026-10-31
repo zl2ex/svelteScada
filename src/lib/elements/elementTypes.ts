@@ -1,4 +1,5 @@
 import type { ElementSelect } from "$lib/sqlite/tables/elements";
+import type { Bindings } from "$lib/bindings";
 
 export const elementKinds = ["html", "svg", "base-component", "user-component"] as const;
 
@@ -16,13 +17,13 @@ export type ElementAttributeValue = AttributeValue;
 
 export type ElementAttributes = Record<string, ElementAttributeValue>;
 
-export type ElementBindings = {
-  text?: string;
-  attributes?: Record<string, string>;
-  style?: Record<string, string>;
-  props?: Record<string, string>;
-  events?: Record<string, string>;
-};
+export type ElementBindings = Bindings<{
+  text: string;
+  attributes: Record<string, string>;
+  style: Record<string, string>;
+  props: Record<string, string>;
+  events: Record<string, string>;
+}>;
 
 export const userComponentPropTypes = ["string", "number", "boolean", "color", "tag"] as const;
 

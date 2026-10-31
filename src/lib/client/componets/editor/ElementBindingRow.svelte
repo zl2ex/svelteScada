@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { BracesIcon, Trash2Icon, Unlink2Icon } from "@lucide/svelte";
-  import { Popover, Portal } from "@skeletonlabs/skeleton-svelte";
-  import ScriptEditor from "./ScriptEditor.svelte";
+  import { Trash2Icon } from "@lucide/svelte";
+  import BindingEditor from "./BindingEditor.svelte";
 
   let {
     label,
@@ -27,21 +26,8 @@
     onRemove?: () => void;
   } = $props();
 
-  let draftBinding = $state("");
-  let lastBinding: string | null = null;
   let isBound = $derived(binding.trim().length > 0);
   let displayedValue = $derived(isBound ? result : value);
-
-  $effect(() => {
-    if (binding === lastBinding) return;
-
-    lastBinding = binding;
-    draftBinding = binding;
-  });
-
-  function saveBinding() {
-    onBindingSave(draftBinding.trim());
-  }
 </script>
 
 <div class="flex flex-col gap-1">
@@ -72,58 +58,8 @@
       />
     {/if}
 
-    <Popover>
-      <Popover.Trigger
-        type="button"
-        class="btn btn-sm {isBound ? 'preset-filled' : 'preset-tonal'} shrink-0"
-        title={isBound ? binding : "Add binding"}
-      >
-        <BracesIcon class="size-4" />
-      </Popover.Trigger>
+    <BindingEditor {label} {binding} scope="element" {onBindingSave} {onBindingRemove} />
 
-      <Portal>
-        <Popover.Positioner>
-          <Popover.Content class="bg-surface-100-900 rounded-lg p-2">
-            <div class="flex flex-col gap-2 p-1">
-              <div class="flex items-center justify-between gap-2">
-                <span class="font-semibold truncate">{label} binding</span>
-                {#if isBound}
-                  <Popover.CloseTrigger class="btn btn-sm preset-tonal" onclick={onBindingRemove}>
-                    <Unlink2Icon class="size-3.5" />
-                    Remove
-                  </Popover.CloseTrigger>
-                {/if}
-              </div>
-
-              <p class="opacity-50">
-                Expressions receive <code>tag()</code>
-                ,
-                <code>tagStatus()</code>
-                ,
-                <code>props</code>
-                , and
-                <code>element</code>
-                .
-              </p>
-
-              <ScriptEditor
-                value={draftBinding}
-                height="300px"
-                ariaLabel={`${label} binding expression`}
-                onchange={(next) => (draftBinding = next)}
-              />
-
-              <div class="flex justify-end gap-2">
-                <Popover.CloseTrigger class="btn btn-sm preset-tonal">Cancel</Popover.CloseTrigger>
-                <Popover.CloseTrigger class="btn btn-sm preset-filled" onclick={saveBinding}>
-                  Save
-                </Popover.CloseTrigger>
-              </div>
-            </div>
-          </Popover.Content>
-        </Popover.Positioner>
-      </Portal>
-    </Popover>
     {#if removable && onRemove}
       <button
         type="button"

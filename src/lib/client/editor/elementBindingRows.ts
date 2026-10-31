@@ -1,10 +1,10 @@
 import type {
   AttributeValue,
   ElementAttributes,
-  ElementBindings,
   ElementRecord,
   ElementStyle,
-} from "$lib/page/elementTypes";
+} from "$lib/elements/elementTypes";
+import { updateBinding } from "$lib/client/editor/bindings";
 
 export type AttributeBindingScope = "attributes" | "props";
 export type BindingScope = AttributeBindingScope | "style" | "text";
@@ -35,37 +35,13 @@ export function getStyle(element: ElementRecord): ElementStyle {
   return { ...element.style };
 }
 
-function cloneBindings(element: ElementRecord): ElementBindings {
-  const bindings: ElementBindings = {};
-  if (element.bindings?.text !== undefined) bindings.text = element.bindings.text;
-  if (element.bindings?.attributes) bindings.attributes = { ...element.bindings.attributes };
-  if (element.bindings?.style) bindings.style = { ...element.bindings.style };
-  if (element.bindings?.props) bindings.props = { ...element.bindings.props };
-  if (element.bindings?.events) bindings.events = { ...element.bindings.events };
-  return bindings;
-}
-
 export function setBinding(
   element: ElementRecord,
   scope: BindingScope,
   key: string,
   expression: string,
-): ElementBindings | null {
-  const bindings = cloneBindings(element);
-
-  if (scope === "text") {
-    if (expression.trim()) bindings.text = expression;
-    else delete bindings.text;
-  } else {
-    const map = { ...(bindings[scope] ?? {}) };
-    if (expression.trim()) map[key] = expression;
-    else delete map[key];
-
-    if (Object.keys(map).length > 0) bindings[scope] = map;
-    else delete bindings[scope];
-  }
-
-  return Object.keys(bindings).length > 0 ? bindings : null;
+) {
+  return updateBinding(element.bindings, scope, scope === "text" ? null : key, expression);
 }
 
 export function setTopLevelAttribute(
@@ -125,15 +101,4 @@ export function coerceAttributeValue(
   return raw;
 }
 
-export function formatBindingResult(value: unknown): string {
-  if (value === undefined) return "";
-  if (value === null) return "null";
-  if (typeof value === "object") {
-    try {
-      return JSON.stringify(value) ?? "";
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-}
+export { formatBindingResult } from "$lib/client/editor/bindings";

@@ -3,8 +3,8 @@ import { logger } from "$lib/server/pino/logger";
 import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.svelte";
 import { pageManager } from "$lib/server/page/pageManager";
 import { pageElementManager } from "$lib/server/page/pageElementManager";
-import type { ElementRecord } from "$lib/page/elementTypes";
-import type { PageRecord } from "$lib/page/pageTypes";
+import type { ElementRecord } from "$lib/elements/elementTypes";
+import type { PageRecord } from "$lib/elements/pageTypes";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 
 export const _guard = guard((ctx) => {

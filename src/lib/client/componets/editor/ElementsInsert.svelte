@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Box, Boxes, Plus } from "@lucide/svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
-  import { baseComponentNames } from "$lib/page/baseComponents";
-  import type { ElementRecord } from "$lib/page/elementTypes";
-  import { elementParentError, isSvgContainer, sortedChildren } from "$lib/page/elementTypes";
+  import { baseComponentNames } from "$lib/elements/baseComponents";
+  import type { ElementRecord } from "$lib/elements/elementTypes";
+  import { elementParentError, isSvgContainer, sortedChildren } from "$lib/elements/elementTypes";
 
   const editor = getEditorContext();
 

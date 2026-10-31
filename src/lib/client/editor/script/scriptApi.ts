@@ -12,13 +12,26 @@ export type ScriptElementAttributeValue = ScriptAttributeValue;
 
 export type ScriptElementAttributes = Record<string, ScriptElementAttributeValue>;
 
-export type ScriptElementBindings = {
-  text?: string;
-  attributes?: Record<string, string>;
-  style?: Record<string, string>;
-  props?: Record<string, string>;
-  events?: Record<string, string>;
-};
+export type ScriptBindings<T> = Partial<T>;
+
+export type ScriptElementBindings = ScriptBindings<{
+  text: string;
+  attributes: Record<string, string>;
+  style: Record<string, string>;
+  props: Record<string, string>;
+  events: Record<string, string>;
+}>;
+
+export type ScriptTagBindings = ScriptBindings<{
+  nodeId: string;
+  dataType: string;
+  initalValue: string;
+  writeable: string;
+  exposeOverOpcua: string;
+  parameters: string;
+  unit: string;
+  trend: string;
+}>;
 
 export type ScriptNeverThrowError = {
   reason: string;
@@ -53,6 +66,7 @@ export type ScriptTagOptions = {
   exposeOverOpcua?: boolean | null;
   parameters?: unknown;
   unit?: string;
+  bindings?: ScriptTagBindings | null;
   trend?: {
     tagId?: string;
     minimumIntervalMs?: number;
@@ -120,12 +134,19 @@ export type ScriptWriteTag = (
   value: ScriptValue,
 ) => Promise<ScriptWireResult<{ success: true }, ScriptNeverThrowError>>;
 
-export type ScriptBindingGlobals = {
+export type ScriptCommonBindingGlobals = {
   tag: (lookup: string) => ScriptTagEntry | undefined;
   tagValue: (lookup: string) => ScriptTagValue | undefined;
   tagStatus: (lookup: string) => ScriptTagStatus;
+};
+
+export type ScriptBindingGlobals = ScriptCommonBindingGlobals & {
   props: ScriptElementAttributes;
   element: ScriptElement;
+};
+
+export type ScriptTagBindingGlobals = {
+  tagConfig: ScriptTagOptions;
 };
 
 export type ScriptEventTarget = {

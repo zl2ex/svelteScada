@@ -35,7 +35,7 @@
 
   let connectionMessage = $derived.by(() => {
     if ($status !== "failed") {
-      return "No heartbeat from the server for 5 seconds. Waiting for the connection to recover...";
+      return `No heartbeat from the server for ${HEARTBEAT_TIMEOUT_MS / 1000} seconds`;
     }
 
     switch ($failure?.class) {

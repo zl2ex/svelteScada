@@ -43,11 +43,8 @@ input[type="number"] {
 }
 
 /* skeleton <TreeView> change selected apperance */
-
-:global(
-  [data-scope="tree-view"] [data-part="item"][data-selected],
-  [data-scope="tree-view"] [data-part="branch-control"][data-selected]
-) {
+[data-scope="tree-view"] [data-part="item"][data-selected],
+[data-scope="tree-view"] [data-part="branch-control"][data-selected] {
   /*background-color: light-dark(var(--color-primary-300), var(--color-primary-800));*/
   color: light-dark(var(--color-neutral-000), var(--color-neutral-900));
 

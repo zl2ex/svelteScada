@@ -3,7 +3,7 @@ import {
   parseElementWrite,
   validateElementAttributes,
   validateElementStyle,
-} from "$lib/page/elementValidation";
+} from "$lib/elements/elementValidation";
 
 function elementPayload(overrides: Record<string, unknown> = {}) {
   return {

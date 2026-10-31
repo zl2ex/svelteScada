@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
-  import type { ElementBindings } from "$lib/page/elementTypes";
+  import type { ElementBindings } from "$lib/elements/elementTypes";
   import { toast } from "$lib/client/toast.svelte";
   import ScriptEditor from "./ScriptEditor.svelte";
 
@@ -79,8 +79,12 @@
       <span class="opacity-40">preview only</span>
     </div>
     <p class="opacity-50">
-      Scripts run in a sandbox with no access to <code>window</code>,
-      <code>document</code>, <code>fetch</code>, storage, or cookies. They receive a safe
+      Scripts run in a sandbox with no access to <code>window</code>
+      ,
+      <code>document</code>
+      ,
+      <code>fetch</code>
+      , storage, or cookies. They receive a safe
       <code>event</code>
       snapshot,
       <code>writeTag()</code>
@@ -103,6 +107,7 @@
           value={item.script}
           height="300px"
           ariaLabel={`${item.name} event script`}
+          scope="event"
           onchange={(next) => (item.script = next)}
           onblur={() => saveEvents(events)}
         />

@@ -6,15 +6,17 @@ import { undoManager } from "$lib/client/history/undoManager";
 import { getProjectElements } from "$lib/remote/editor.remote";
 import { applyPageElementPatches, pageElementPatches } from "$live/pages";
 import type { ProjectSelect, UserComponentSelect } from "$lib/sqlite/tables";
-import type { ElementRecord, ElementKind } from "$lib/page/elementTypes";
-import { elementParentError, findContainerInsertionTarget } from "$lib/page/elementTypes";
-import { pagePath, pageRoute, sortedPages, type PageRecord } from "$lib/page/pageTypes";
+import type {
+  ElementRecord,
+  ElementKind,
+  ElementAttributes,
+  ElementStyle,
+} from "$lib/elements/elementTypes";
+import { elementParentError, findContainerInsertionTarget } from "$lib/elements/elementTypes";
+import { getDefaultElementConfig } from "$lib/elements/defaults";
+import { pagePath, pageRoute, sortedPages, type PageRecord } from "$lib/elements/pageTypes";
 import { attempt } from "$lib/util/attempt";
-import {
-  errorToString,
-  neverThrowErrorToString,
-  type NeverThrowError,
-} from "$lib/util/neverThrow";
+import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { newId } from "$lib/util/newId";
 
 const OPEN_PAGES_KEY = "editor-open-page-ids";
@@ -65,9 +67,9 @@ export class EditorState {
   projectError = $state<string | null>(null);
   mode = $state<EditorMode>("edit");
 
-  #pageCollections = $state.raw<
-    Record<string, PatchCollection<ElementRecord, NeverThrowError>>
-  >({});
+  #pageCollections = $state.raw<Record<string, PatchCollection<ElementRecord, NeverThrowError>>>(
+    {},
+  );
   #projectReady = false;
   #focusHistory = $state.raw<EditorFocusSnapshot[]>([]);
   #focusFuture = $state.raw<EditorFocusSnapshot[]>([]);
@@ -284,7 +286,8 @@ export class EditorState {
       baseComponent?: string | null;
       referencedComponentId?: string | null;
       name?: string;
-      attributes?: Record<string, string | number | boolean>;
+      attributes?: ElementAttributes;
+      style?: ElementStyle;
     } = {},
   ) {
     const collection = this.elementsCollection;
@@ -296,6 +299,7 @@ export class EditorState {
     );
     const now = Date.now();
     const id = newId();
+    const defaults = getDefaultElementConfig(kind, options);
     const element: ElementRecord = {
       id,
       parentId,
@@ -307,8 +311,8 @@ export class EditorState {
       name: options.name ?? options.tag ?? options.baseComponent ?? kind,
       text: null,
       containerType: "none",
-      attributes: options.attributes ?? {},
-      style: {},
+      attributes: { ...defaults.attributes, ...options.attributes },
+      style: { ...defaults.style, ...options.style },
       bindings: null,
       createdAt: now,
       updatedAt: now,

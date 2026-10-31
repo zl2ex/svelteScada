@@ -7,11 +7,14 @@ export type SandboxBindingScope = {
   tag: (lookup: string) => unknown;
   tagValue: (lookup: string) => unknown;
   tagStatus: (lookup: string) => string;
+};
+
+export type SandboxElementBindingScope = SandboxBindingScope & {
   props: Record<string, unknown>;
   element: Record<string, unknown>;
 };
 
-export type SandboxEventScope = SandboxBindingScope & {
+export type SandboxEventScope = SandboxElementBindingScope & {
   event: ScriptEvent;
   writeTag: (lookup: string, value: unknown) => Promise<unknown>;
   goto: (url: string | URL, options?: unknown) => Promise<void>;
@@ -43,9 +46,7 @@ function compileExpression(expression: string): Executor<unknown> | null {
   const cached = expressionCache.get(expression);
   if (cached !== undefined) return cached;
 
-  const compiled = attempt(() =>
-    expressionSandbox.compile<unknown>(`return (\n${expression}\n);`),
-  );
+  const compiled = attempt(() => expressionSandbox.compile<unknown>(`return (\n${expression}\n);`));
 
   if (compiled.isErr) {
     console.error(`[script sandbox] could not compile expression "${expression}"`, compiled.error);
@@ -57,9 +58,9 @@ function compileExpression(expression: string): Executor<unknown> | null {
   return compiled.data;
 }
 
-export function evaluateSandboxExpression(
+export function evaluateSandboxExpression<Scope extends Record<string, unknown>>(
   expression: string,
-  scope: SandboxBindingScope,
+  scope: Scope,
 ): unknown {
   if (!expression.trim()) return undefined;
 
@@ -67,7 +68,7 @@ export function evaluateSandboxExpression(
   if (!compiled) return undefined;
 
   const result = attempt(() => {
-    const execution = compiled(scope);
+    const execution = compiled(scope as Record<string, unknown>);
     execution.context.ctx.ticks.ticks = 0n;
     return execution.run();
   });

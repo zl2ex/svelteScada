@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
-  import type { ContainerType } from "$lib/page/elementTypes";
-  import { isContainerElement } from "$lib/page/elementTypes";
+  import type { ContainerType } from "$lib/elements/elementTypes";
+  import { isContainerElement } from "$lib/elements/elementTypes";
   import { toast } from "$lib/client/toast.svelte";
   import {
     attributeBindingScope,

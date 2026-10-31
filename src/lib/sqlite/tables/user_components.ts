@@ -1,7 +1,7 @@
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { projects } from "./projects";
-import type { UserComponentPropDefinition } from "../../page/elementTypes";
+import type { UserComponentPropDefinition } from "../../elements/elementTypes";
 
 export const user_components = sqliteTable(
   "user_components",

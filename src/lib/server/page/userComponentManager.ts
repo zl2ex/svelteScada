@@ -2,7 +2,7 @@ import { and, eq, isNotNull } from "drizzle-orm";
 import { err, ok } from "neverthrow";
 import { db } from "$lib/server/sqlite/db";
 import { elements, user_components } from "$lib/sqlite/tables";
-import type { ElementRecord } from "$lib/page/elementTypes";
+import type { ElementRecord } from "$lib/elements/elementTypes";
 import { pageElementManager } from "./pageElementManager";
 import { elementClosureTable } from "$lib/server/sqlite/util/elementClosureTable";
 import { attempt } from "$lib/util/attempt";

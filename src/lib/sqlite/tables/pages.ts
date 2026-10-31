@@ -1,7 +1,7 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { projects } from "./projects";
-import { containerTypes, routeSegmentPattern } from "../../page/elementTypes";
+import { containerTypes, routeSegmentPattern } from "../../elements/elementTypes";
 
 export const pages = sqliteTable(
   "pages",

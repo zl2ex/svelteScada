@@ -20,12 +20,9 @@
   } from "$lib/util/neverThrow";
   import { PanelLayout } from "$lib/client/util/localStorage/panelLayout.svelte";
   import { undoManager } from "$lib/client/history/undoManager";
-  import {
-    EditorState,
-    type EditorLeftPanelTab,
-  } from "$lib/client/editor/editorState.svelte.js";
+  import { EditorState, type EditorLeftPanelTab } from "$lib/client/editor/editorState.svelte.js";
   import { setEditorContext } from "$lib/client/editor/editorContext.js";
-  import type { PageRecord } from "$lib/page/pageTypes";
+  import type { PageRecord } from "$lib/elements/pageTypes.js";
   import { page } from "$app/state";
   import { pagePatches, applyPagePatches } from "$live/pages";
   import TagsTab from "$lib/client/componets/editor/TagsTab.svelte";
@@ -185,9 +182,25 @@
     <AppBar class="bg-surface-50-950 border-b-surface-200-800 border-b-1 p-2">
       <AppBar.Toolbar class="grid-cols-[auto_1fr_auto]">
         <AppBar.Lead>
-          <button type="button" class="btn-icon btn-icon-lg hover:preset-tonal">
-            <MenuIcon />
-          </button>
+          <Popover>
+            <Popover.Trigger class="btn-icon btn-icon-lg">
+              <MenuIcon />
+            </Popover.Trigger>
+
+            <Portal>
+              <Popover.Positioner>
+                <Popover.Content class="flex flex-col gap-4 bg-surface-200-800 card p-4 w-80">
+                  <Popover.CloseTrigger class="btn btn-sm w-fit preset-tonal">
+                    <XIcon class="size-3.5" />
+                  </Popover.CloseTrigger>
+                  <div class="flex flex-col gap-2 w-1/2">
+                    <a class="btn preset-tonal" href="/editor">Editor</a>
+                    <a class="btn preset-tonal" href="/editor/devices">Devices</a>
+                  </div>
+                </Popover.Content>
+              </Popover.Positioner>
+            </Portal>
+          </Popover>
         </AppBar.Lead>
         <AppBar.Headline></AppBar.Headline>
         <AppBar.Trail class="items-center">
@@ -336,8 +349,13 @@
             <PagesTab />
           </Tabs.Content>
         </Tabs>
+
         {#snippet pending()}
-          <LoaderIcon class="size-4 animate-spin" />
+          <div class="flex flex-col grow gap-2 p-2">
+            {#each Array.from({ length: 20 }) as _, i}
+              <div class="bg-surface-200-800 grow rounded-md animate-pulse"></div>
+            {/each}
+          </div>
         {/snippet}
         {#snippet failed(error, reset)}
           <p class="text-error-700-300">{error}</p>
@@ -387,15 +405,3 @@
     </aside>
   </main>
 </div>
-
-<style>
-  /* skeleton <TreeView> change selected apperance */
-
-  :global(
-    [data-scope="tree-view"] [data-part="item"][data-selected],
-    [data-scope="tree-view"] [data-part="branch-control"][data-selected]
-  ) {
-    background-color: light-dark(var(--color-primary-300), var(--color-primary-800));
-    color: light-dark(var(--color-neutral-000), var(--color-neutral-900));
-  }
-</style>

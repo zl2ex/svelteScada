@@ -2,8 +2,12 @@
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { handleEditorKeydown, isEditableTarget } from "$lib/client/editor/editorKeyboard";
   import type { EditorMode } from "$lib/client/editor/editorState.svelte";
-  import type { ContainerType, ElementRecord } from "$lib/page/elementTypes";
-  import { containerTypeStyle, elementStyleToString, sortedChildren } from "$lib/page/elementTypes";
+  import type { ContainerType, ElementRecord } from "$lib/elements/elementTypes";
+  import {
+    containerTypeStyle,
+    elementStyleToString,
+    sortedChildren,
+  } from "$lib/elements/elementTypes";
   import PageElement from "./PageElement.svelte";
   import PageElementEditWrapper from "./PageElementEditWrapper.svelte";
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
-  import type { ContainerType } from "$lib/page/elementTypes";
+  import type { ContainerType } from "$lib/elements/elementTypes";
 
   const editor = getEditorContext();
   const containerOptions: ContainerType[] = ["none", "absolute", "flex", "grid", "block"];

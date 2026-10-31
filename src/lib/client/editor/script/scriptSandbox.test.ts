@@ -3,12 +3,14 @@ import {
   EVENT_SCRIPT_TIMEOUT_MS,
   evaluateSandboxExpression,
   executeSandboxEvent,
-  type SandboxBindingScope,
+  type SandboxElementBindingScope,
   type SandboxEventScope,
 } from "$lib/client/editor/script/scriptSandbox";
 import type { ScriptEvent } from "$lib/client/editor/script/scriptApi";
 
-function bindingScope(overrides: Partial<SandboxBindingScope> = {}): SandboxBindingScope {
+function bindingScope(
+  overrides: Partial<SandboxElementBindingScope> = {},
+): SandboxElementBindingScope {
   return {
     tag: () => undefined,
     tagValue: () => undefined,
@@ -75,7 +77,7 @@ describe("expression sandbox", () => {
   it("evaluates expressions against the provided scope", () => {
     const result = evaluateSandboxExpression('tagValue("tag").value * 2 + props.offset', {
       ...bindingScope(),
-      tagValue: (lookup) => (lookup === "tag" ? { value: 5 } : undefined),
+      tagValue: (lookup: string) => (lookup === "tag" ? { value: 5 } : undefined),
       props: { offset: 1 },
     });
 
@@ -213,7 +215,10 @@ describe("event sandbox", () => {
 
   it("returns an error when the script throws", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const result = await executeSandboxEvent('throw new Error("boom")', eventScope(eventSnapshot()));
+    const result = await executeSandboxEvent(
+      'throw new Error("boom")',
+      eventScope(eventSnapshot()),
+    );
     expect(result.isErr).toBe(true);
   });
 
@@ -222,7 +227,7 @@ describe("event sandbox", () => {
     const started = Date.now();
 
     const result = await executeSandboxEvent(
-      "await writeTag(\"tag\", 1);",
+      'await writeTag("tag", 1);',
       eventScope(eventSnapshot(), {
         writeTag: () => new Promise(() => {}),
       }),

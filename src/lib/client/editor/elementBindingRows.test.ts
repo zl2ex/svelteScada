@@ -5,7 +5,7 @@ import {
   removeStyleRow,
   setStyleProperty,
 } from "$lib/client/editor/elementBindingRows";
-import type { ElementRecord } from "$lib/page/elementTypes";
+import type { ElementRecord } from "$lib/elements/elementTypes";
 
 function element(overrides: Partial<ElementRecord> = {}): ElementRecord {
   return {

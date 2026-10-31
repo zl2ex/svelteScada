@@ -2,6 +2,7 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { tag_folders } from "./tag_folders";
 import { baseTypeKeys } from "../../validation/baseTypes";
+import { z_TagBindings, type TagBindings } from "../../tagBindings";
 
 export const tags = sqliteTable("tags", {
   id: text("id").primaryKey(),
@@ -19,6 +20,7 @@ export const tags = sqliteTable("tags", {
   exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).default(true),
   parameters: text("parameters", { mode: "json" }),
   unit: text("unit").notNull().default(""),
+  bindings: text("bindings", { mode: "json" }).$type<TagBindings>(),
 });
 
 export type TagSelect = typeof tags.$inferSelect;
@@ -27,6 +29,7 @@ export type TagInsert = typeof tags.$inferInsert;
 export const z_TagSelect = createSelectSchema(tags);
 
 export const z_TagInsert = createInsertSchema(tags, {
+  bindings: () => z_TagBindings.nullable().optional(),
   type: (s) => s.default("tag"),
   writeable: (s) => s.default(true),
   exposeOverOpcua: (s) => s.default(true),

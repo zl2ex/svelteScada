@@ -1,9 +1,9 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
-  import type { ElementRecord } from "$lib/page/elementTypes";
+  import type { ElementRecord } from "$lib/elements/elementTypes";
   import type { Snippet } from "svelte";
   import { attempt } from "$lib/util/attempt";
-  import { svgNamespace } from "$lib/page/svgTags";
+  import { svgNamespace } from "$lib/elements/svgTags";
 
   type Props = {
     children: Snippet;

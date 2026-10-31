@@ -1,5 +1,5 @@
 import { element_paths, elements, type ElementSelect } from "$lib/sqlite/tables";
-import type { ElementOwner } from "$lib/page/elementTypes";
+import type { ElementOwner } from "$lib/elements/elementTypes";
 import { ClosureTable } from "./closureTable";
 
 export type ElementClosureNode = ElementSelect & {

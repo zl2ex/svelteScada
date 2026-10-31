@@ -23,9 +23,9 @@
   } from "@skeletonlabs/skeleton-svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { handleEditorKeydown } from "$lib/client/editor/editorKeyboard";
-  import type { ElementRecord } from "$lib/page/elementTypes";
-  import { sortedChildren } from "$lib/page/elementTypes";
-  import type { PageRecord } from "$lib/page/pageTypes";
+  import type { ElementRecord } from "$lib/elements/elementTypes";
+  import { sortedChildren } from "$lib/elements/elementTypes";
+  import type { PageRecord } from "$lib/elements/pageTypes";
   import { focusOnMount } from "$lib/client/util/use";
   import { toast } from "$lib/client/toast.svelte";
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
@@ -348,69 +348,77 @@
 </script>
 
 {#snippet projectLabel(project: ProjectSelect)}
-  <BlocksIcon class="size-4 shrink-0 opacity-60" />
-  <span class="font-semibold truncate">{project.name}</span>
-  <span class="opacity-50 truncate">/{project.name}</span>
+  <div class="flex grow gap-2 min-w-0">
+    <BlocksIcon class="size-4 shrink-0 opacity-60" />
+    <span class="font-semibold truncate">{project.name}</span>
+    <span class="opacity-50 truncate">/{project.name}</span>
+  </div>
 {/snippet}
 
 {#snippet pageLabel(page: PageRecord)}
-  <FileTextIcon class="size-4 shrink-0 opacity-60" />
-  {#if renamingId === page.id}
-    <input
-      class="input min-w-0 flex-1 px-1 py-0"
-      value={page.name}
-      use:focusOnMount
-      onclick={(event) => event.stopPropagation()}
-      onblur={(event) => {
-        const newName = formatRename(event.currentTarget.value);
-        editor.renamePage(page.id, newName);
-      }}
-      onkeydown={(event) => {
-        if (event.key === "Enter") {
-          event.stopPropagation();
-          event.currentTarget.blur();
-        }
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          renamingId = null;
-        }
-      }}
-    />
-  {:else}
-    <span class="truncate flex-1">{page.name}</span>
-    <span class="opacity-50 truncate max-w-36">
-      {editor.route(page.id)}
-    </span>
-  {/if}
+  <div class="flex grow gap-2 min-w-0">
+    <FileTextIcon class="size-4 shrink-0 opacity-60" />
+    {#if renamingId === page.id}
+      <input
+        class="input p-0 text-xs grow"
+        value={page.name}
+        use:focusOnMount
+        onclick={(ev) => ev.stopPropagation()}
+        onblur={(ev) => {
+          const newName = formatRename(ev.currentTarget.value);
+          editor.renamePage(page.id, newName);
+        }}
+        onkeydown={(ev) => {
+          if (ev.key === "Enter") {
+            ev.stopPropagation();
+            ev.currentTarget.blur();
+          }
+          if (ev.key === "Escape") {
+            ev.stopPropagation();
+            ev.currentTarget.value = page.name;
+            renamingId = null;
+          }
+        }}
+      />
+    {:else}
+      <span class="truncate">{page.name}</span>
+      <span class="truncate opacity-50 ml-auto">
+        {editor.route(page.id)}
+      </span>
+    {/if}
+  </div>
 {/snippet}
 
 {#snippet elementLabel(element: ElementRecord)}
-  {#if renamingId === element.id}
-    <input
-      class="input min-w-0 flex-1 px-1 py-0"
-      value={element.name}
-      use:focusOnMount
-      onclick={(event) => event.stopPropagation()}
-      onblur={(event) => {
-        const newName = formatRename(event.currentTarget.value);
-        editor.elementsCollection?.update(element.id, { name: newName });
-      }}
-      onkeydown={(event) => {
-        if (event.key === "Enter") {
-          event.stopPropagation();
-          event.currentTarget.blur();
-        }
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          renamingId = null;
-        }
-      }}
-    />
-  {:else}
+  <div class="flex grow gap-2 min-w-0">
     <BoxIcon class="size-4 shrink-0 opacity-60" />
-    <span class="truncate flex-1">{element.name || element.tag || element.kind}</span>
-    <span class="opacity-50">{element.kind}</span>
-  {/if}
+    {#if renamingId === element.id}
+      <input
+        class="input p-0 text-xs grow"
+        value={element.name}
+        use:focusOnMount
+        onclick={(ev) => ev.stopPropagation()}
+        onblur={(ev) => {
+          const newName = formatRename(ev.currentTarget.value);
+          editor.elementsCollection?.update(element.id, { name: newName });
+        }}
+        onkeydown={(ev) => {
+          if (ev.key === "Enter") {
+            ev.stopPropagation();
+            ev.currentTarget.blur();
+          }
+          if (ev.key === "Escape") {
+            ev.stopPropagation();
+            ev.currentTarget.value = element.name;
+            renamingId = null;
+          }
+        }}
+      />
+    {:else}
+      <span class="truncate">{element.name || element.tag || element.kind}</span>
+      <span class="truncate ml-auto opacity-50">{element.kind}</span>
+    {/if}
+  </div>
 {/snippet}
 
 {#snippet treeNode(node: TreeNode, indexPath: number[])}
@@ -421,7 +429,7 @@
         <TreeView.BranchControl>
           <TreeView.BranchIndicator />
           <div class="flex items-center justify-between grow">
-            <TreeView.BranchText class="flex items-center gap-2">
+            <TreeView.BranchText>
               {@render projectLabel(node.project)}
             </TreeView.BranchText>
             <button
@@ -450,7 +458,7 @@
         <TreeView.Branch>
           <TreeView.BranchControl data-page-id={node.page.id}>
             <TreeView.BranchIndicator />
-            <TreeView.BranchText class="flex min-w-0 flex-1 items-center gap-1">
+            <TreeView.BranchText class="w-full ">
               {@render pageLabel(node.page)}
             </TreeView.BranchText>
           </TreeView.BranchControl>
@@ -463,9 +471,7 @@
         </TreeView.Branch>
       {:else}
         <TreeView.Item data-page-id={node.page.id}>
-          <span class="flex min-w-0 flex-1 items-center gap-1">
-            {@render pageLabel(node.page)}
-          </span>
+          {@render pageLabel(node.page)}
         </TreeView.Item>
       {/if}
     {:else if node.kind === "element"}
@@ -473,11 +479,10 @@
         <TreeView.Branch>
           <TreeView.BranchControl data-element-id={node.element.id}>
             <TreeView.BranchIndicator />
-            <div class="flex grow justify-between">
-              <TreeView.BranchText class="flex items-center gap-1">
-                {@render elementLabel(node.element)}
-              </TreeView.BranchText>
-            </div>
+
+            <TreeView.BranchText class="w-full">
+              {@render elementLabel(node.element)}
+            </TreeView.BranchText>
           </TreeView.BranchControl>
           <TreeView.BranchContent>
             <TreeView.BranchIndentGuide />
@@ -487,10 +492,8 @@
           </TreeView.BranchContent>
         </TreeView.Branch>
       {:else}
-        <TreeView.Item data-element-id={node.element.id} class="flex justify-between">
-          <span class="flex items-center gap-1">
-            {@render elementLabel(node.element)}
-          </span>
+        <TreeView.Item data-element-id={node.element.id}>
+          {@render elementLabel(node.element)}
         </TreeView.Item>
       {/if}
     {/if}
@@ -540,6 +543,7 @@
               <Menu.ItemText class="flex items-center w-full gap-2">
                 <ArrowUpIcon class="size-4" />
                 <span>Add</span>
+                <span class="text-xs text-neutral-500 ml-auto">Ins</span>
               </Menu.ItemText>
             </Menu.Item>
           {/if}
@@ -547,12 +551,14 @@
             <Menu.ItemText class="flex items-center w-full gap-2">
               <PencilIcon class="size-4" />
               <span>Rename</span>
+              <span class="text-xs text-neutral-500 ml-auto">F2</span>
             </Menu.ItemText>
           </Menu.Item>
           <Menu.Item value="delete" class="text-error-600-400">
             <Menu.ItemText class="flex items-center w-full gap-2">
               <Trash2Icon class="size-4" />
               <span>Delete</span>
+              <span class="text-xs text-neutral-500 ml-auto">Del</span>
             </Menu.ItemText>
           </Menu.Item>
         </Menu.Content>

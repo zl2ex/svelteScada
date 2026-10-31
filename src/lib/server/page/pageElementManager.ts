@@ -3,8 +3,8 @@ import { err, ok } from "neverthrow";
 import { db } from "$lib/server/sqlite/db";
 import { logger } from "$lib/server/pino/logger";
 import { elements, pages, user_components, type ElementSelect } from "$lib/sqlite/tables";
-import type { ElementOwner, ElementRecord } from "$lib/page/elementTypes";
-import { elementContainerTypeError, elementParentError } from "$lib/page/elementTypes";
+import type { ElementOwner, ElementRecord } from "$lib/elements/elementTypes";
+import { elementContainerTypeError, elementParentError } from "$lib/elements/elementTypes";
 import {
   elementClosureTable,
   elementOwnerScope,
@@ -15,7 +15,7 @@ import {
   validateElementAttributes,
   validateElementKindPayload,
   validateElementStyle,
-} from "$lib/page/elementValidation";
+} from "$lib/elements/elementValidation";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 

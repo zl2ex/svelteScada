@@ -8,15 +8,19 @@
     type BindingContext,
     type EventContext,
   } from "$lib/client/editor/elementExpressions";
-  import type { AttributeValue, ElementAttributes, ElementRecord } from "$lib/page/elementTypes";
+  import type {
+    AttributeValue,
+    ElementAttributes,
+    ElementRecord,
+  } from "$lib/elements/elementTypes";
   import {
     containerTypeStyle,
     elementStyleToString,
     isContainerElement,
     isSvgDrawingElement,
     sortedChildren,
-  } from "$lib/page/elementTypes";
-  import { svgNamespace } from "$lib/page/svgTags";
+  } from "$lib/elements/elementTypes";
+  import { svgNamespace } from "$lib/elements/svgTags";
   import { createEventSnapshot } from "$lib/client/editor/script/eventSnapshot";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";

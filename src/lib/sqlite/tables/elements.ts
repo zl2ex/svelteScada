@@ -9,7 +9,7 @@ import {
   type ElementAttributes,
   type ElementBindings,
   type ElementStyle,
-} from "../../page/elementTypes";
+} from "../../elements/elementTypes";
 
 export const elements = sqliteTable(
   "elements",

@@ -21,6 +21,7 @@ function stopHeartbeat() {
   heartbeatTimer = null;
 }
 
+// stop timer when vite does a hmr update
 if (import.meta.hot) {
   import.meta.hot.dispose(stopHeartbeat);
 }

@@ -9,6 +9,7 @@ import {
 } from "./elementTypes";
 import { htmlTags } from "./htmlTags";
 import { svgTags } from "./svgTags";
+import { z_BindingExpression, z_BindingExpressionMap } from "$lib/bindings";
 
 export const z_ElementStyle = z.record(z.string(), z.string());
 
@@ -18,11 +19,11 @@ export const z_ElementAttributes = z.record(
 );
 
 export const z_ElementBindings = z.object({
-  text: z.string().optional(),
-  attributes: z.record(z.string(), z.string()).optional(),
-  style: z.record(z.string(), z.string()).optional(),
-  props: z.record(z.string(), z.string()).optional(),
-  events: z.record(z.string(), z.string()).optional(),
+  text: z_BindingExpression.optional(),
+  attributes: z_BindingExpressionMap.optional(),
+  style: z_BindingExpressionMap.optional(),
+  props: z_BindingExpressionMap.optional(),
+  events: z_BindingExpressionMap.optional(),
 });
 
 export const z_ElementWrite = z.object({
