@@ -12,7 +12,6 @@ import { tag_folder_paths } from "./tag_folder_paths";
 import { device_modbus_tcp_options } from "./device_modbus_tcp_options";
 import { device_modbus_rtu_options } from "./device_modbus_rtu_options";
 import { device_opcua_client_options } from "./device_opcua_client_options";
-import { tag_trend_options } from "./tag_trend_options";
 import { trends } from "./trends";
 
 export {
@@ -30,7 +29,6 @@ export {
   device_modbus_tcp_options,
   device_modbus_rtu_options,
   device_opcua_client_options,
-  tag_trend_options,
   trends,
 };
 
@@ -49,7 +47,6 @@ export const tables = {
   device_modbus_tcp_options,
   device_modbus_rtu_options,
   device_opcua_client_options,
-  tag_trend_options,
   trends,
 } as const;
 
@@ -79,7 +76,6 @@ export type {
   DeviceOpcuaClientOptionsInsert,
   DeviceOpcuaClientOptionsConfig,
 } from "./device_opcua_client_options";
-export type { TagTrendOptionsSelect, TagTrendOptionsInsert } from "./tag_trend_options";
 export type { TrendSelect, TrendInsert } from "./trends";
 
 export { z_UserSelect, z_UserInsert, z_UserLogin } from "./users";
@@ -105,7 +101,6 @@ export {
   z_DeviceOpcuaClientOptionsSelect,
   z_DeviceOpcuaClientOptionsInsert,
 } from "./device_opcua_client_options";
-export { z_TagTrendOptionsSelect, z_TagTrendOptionsInsert } from "./tag_trend_options";
 export { z_TrendSelect, z_TrendInsert } from "./trends";
 
 export { driverNames } from "./devices";

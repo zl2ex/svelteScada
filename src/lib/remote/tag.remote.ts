@@ -1,22 +1,26 @@
-import { prerender, query } from "$app/server";
+import { getRequestEvent, prerender, query } from "$app/server";
 import { StatusCodes } from "node-opcua";
 import { getAllDataTypeStrings } from "$lib/server/tag/tag";
 import { tagFoldersClosureTable } from "$lib/server/sqlite/util/tagClosureTable";
 import { wireErr, wireOk } from "$lib/util/neverThrow";
 import { tagManager } from "../../hooks.server";
+import { assertCan } from "$lib/server/auth/authorize";
 
 export const getDataTypeStrings = query(async () => {
+  assertCan(getRequestEvent().locals.ability, "read", "Tag");
   return getAllDataTypeStrings();
 });
 
 // tag folder tree (id, name, parentId) so the client can group tags by folder
 export const getAllTagFolders = query(async () => {
+  assertCan(getRequestEvent().locals.ability, "read", "Tag");
   const folders = tagFoldersClosureTable.getAll();
   if (folders.isErr()) return wireErr(folders.error);
   return wireOk(folders.value);
 });
 
 export const getAllTags = query(async () => {
+  assertCan(getRequestEvent().locals.ability, "read", "TagValue");
   const tags = tagManager.getAllTags();
   return tags.map((tag) => {
     if (tag.isErr()) {

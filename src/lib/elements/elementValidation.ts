@@ -11,12 +11,13 @@ import { htmlTags } from "./htmlTags";
 import { svgTags } from "./svgTags";
 import { z_BindingExpression, z_BindingExpressionMap } from "$lib/bindings";
 
+export const z_ElementKind = z.enum(elementKinds);
+export const z_ContainerType = z.enum(containerTypes);
+export const z_AttributeValue = z.union([z.string(), z.number(), z.boolean()]);
+
 export const z_ElementStyle = z.record(z.string(), z.string());
 
-export const z_ElementAttributes = z.record(
-  z.string(),
-  z.union([z.string(), z.number(), z.boolean()]),
-);
+export const z_ElementAttributes = z.record(z.string(), z_AttributeValue);
 
 export const z_ElementBindings = z.object({
   text: z_BindingExpression.optional(),
@@ -30,13 +31,13 @@ export const z_ElementWrite = z.object({
   id: z.string().min(1),
   parentId: z.string().nullable(),
   sortIndex: z.number().int().min(0),
-  kind: z.enum(elementKinds),
+  kind: z_ElementKind,
   tag: z.string().nullable(),
   baseComponent: z.string().nullable(),
   referencedComponentId: z.string().nullable(),
   name: z.string(),
   text: z.string().nullable(),
-  containerType: z.enum(containerTypes),
+  containerType: z_ContainerType,
   attributes: z_ElementAttributes,
   style: z_ElementStyle,
   bindings: z_ElementBindings.nullable(),

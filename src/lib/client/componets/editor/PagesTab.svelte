@@ -10,6 +10,7 @@
     BoxIcon,
     FilePlus2Icon,
     FileTextIcon,
+    Link2Icon,
     MoreHorizontalIcon,
     PencilIcon,
     Trash2Icon,
@@ -22,6 +23,7 @@
     useTreeView,
   } from "@skeletonlabs/skeleton-svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { handleEditorKeydown } from "$lib/client/editor/editorKeyboard";
   import type { ElementRecord } from "$lib/elements/elementTypes";
   import { sortedChildren } from "$lib/elements/elementTypes";
@@ -31,6 +33,7 @@
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
 
   const editor = getEditorContext();
+  const ability = getAbilityContext();
   type ProjectSelect = (typeof editor.projects)[number];
 
   let renamingId = $state<string | null>(null);
@@ -416,7 +419,12 @@
       />
     {:else}
       <span class="truncate">{element.name || element.tag || element.kind}</span>
-      <span class="truncate ml-auto opacity-50">{element.kind}</span>
+      <div class="flex gap-2 shrink ml-auto items-center min-w-0">
+        {#if element.bindings}
+          <Link2Icon class="size-5 opacity-85" />
+        {/if}
+        <span class="truncate opacity-50">{element.kind}</span>
+      </div>
     {/if}
   </div>
 {/snippet}
@@ -501,68 +509,70 @@
 {/snippet}
 
 <div class="flex flex-col h-full min-h-0 text-xs">
-  {#if editor.projects.length === 0}
-    <p class="p-3 opacity-60">
-      No projects exist yet. Insert a project row in the database to start creating pages.
-    </p>
-  {/if}
-  <Menu onSelect={(details) => handleMenuSelect(details.value)}>
-    <Menu.ContextTrigger class="flex flex-1 overflow-y-auto ">
-      <TreeView.Provider value={treeView}>
-        <TreeView.Tree
-          class="w-full"
-          oncontextmenu={handleTreeContextMenu}
-          onkeydown={(event) => handleEditorKeydown(editor, event)}
-        >
-          {#each childrenOf(rootNode) as node, index (node.id)}
-            {@render treeNode(node, [index])}
-          {/each}
-        </TreeView.Tree>
-      </TreeView.Provider>
-    </Menu.ContextTrigger>
-    <Portal>
-      <Menu.Positioner>
-        <Menu.Content class="text-xs border-none bg-surface-100-900">
-          {#if contextMenuPage}
-            <Menu.Item value="move-up">
-              <Menu.ItemText class="flex items-center w-full gap-2">
-                <ArrowUpIcon class="size-4" />
-                <span>Move up</span>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Item value="move-down">
-              <Menu.ItemText class="flex items-center w-full gap-2">
-                <ArrowDownIcon class="size-4" />
-                <span>Move down</span>
-              </Menu.ItemText>
-            </Menu.Item>
-          {/if}
+  <fieldset class="contents" disabled={!ability.can("update", "Page")}>
+    {#if editor.projects.length === 0}
+      <p class="p-3 opacity-60">
+        No projects exist yet. Insert a project row in the database to start creating pages.
+      </p>
+    {/if}
+    <Menu onSelect={(details) => handleMenuSelect(details.value)}>
+      <Menu.ContextTrigger class="flex flex-1 overflow-y-auto ">
+        <TreeView.Provider value={treeView}>
+          <TreeView.Tree
+            class="w-full"
+            oncontextmenu={handleTreeContextMenu}
+            onkeydown={(event) => handleEditorKeydown(editor, event)}
+          >
+            {#each childrenOf(rootNode) as node, index (node.id)}
+              {@render treeNode(node, [index])}
+            {/each}
+          </TreeView.Tree>
+        </TreeView.Provider>
+      </Menu.ContextTrigger>
+      <Portal>
+        <Menu.Positioner>
+          <Menu.Content class="text-xs border-none bg-surface-100-900">
+            {#if contextMenuPage}
+              <Menu.Item value="move-up">
+                <Menu.ItemText class="flex items-center w-full gap-2">
+                  <ArrowUpIcon class="size-4" />
+                  <span>Move up</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item value="move-down">
+                <Menu.ItemText class="flex items-center w-full gap-2">
+                  <ArrowDownIcon class="size-4" />
+                  <span>Move down</span>
+                </Menu.ItemText>
+              </Menu.Item>
+            {/if}
 
-          {#if contextMenuElement}
-            <Menu.Item value="add">
+            {#if contextMenuElement}
+              <Menu.Item value="add">
+                <Menu.ItemText class="flex items-center w-full gap-2">
+                  <ArrowUpIcon class="size-4" />
+                  <span>Add</span>
+                  <span class="text-xs text-neutral-500 ml-auto">Ins</span>
+                </Menu.ItemText>
+              </Menu.Item>
+            {/if}
+            <Menu.Item value="rename">
               <Menu.ItemText class="flex items-center w-full gap-2">
-                <ArrowUpIcon class="size-4" />
-                <span>Add</span>
-                <span class="text-xs text-neutral-500 ml-auto">Ins</span>
+                <PencilIcon class="size-4" />
+                <span>Rename</span>
+                <span class="text-xs text-neutral-500 ml-auto">F2</span>
               </Menu.ItemText>
             </Menu.Item>
-          {/if}
-          <Menu.Item value="rename">
-            <Menu.ItemText class="flex items-center w-full gap-2">
-              <PencilIcon class="size-4" />
-              <span>Rename</span>
-              <span class="text-xs text-neutral-500 ml-auto">F2</span>
-            </Menu.ItemText>
-          </Menu.Item>
-          <Menu.Item value="delete" class="text-error-600-400">
-            <Menu.ItemText class="flex items-center w-full gap-2">
-              <Trash2Icon class="size-4" />
-              <span>Delete</span>
-              <span class="text-xs text-neutral-500 ml-auto">Del</span>
-            </Menu.ItemText>
-          </Menu.Item>
-        </Menu.Content>
-      </Menu.Positioner>
-    </Portal>
-  </Menu>
+            <Menu.Item value="delete" class="text-error-600-400">
+              <Menu.ItemText class="flex items-center w-full gap-2">
+                <Trash2Icon class="size-4" />
+                <span>Delete</span>
+                <span class="text-xs text-neutral-500 ml-auto">Del</span>
+              </Menu.ItemText>
+            </Menu.Item>
+          </Menu.Content>
+        </Menu.Positioner>
+      </Portal>
+    </Menu>
+  </fieldset>
 </div>

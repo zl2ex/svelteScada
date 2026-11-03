@@ -101,7 +101,7 @@
   });
 </script>
 
-<div class="relative rounded border border-surface-300-700" style:height>
+<div class="relative w-120 rounded border border-surface-300-700" style:height>
   <div class="absolute inset-0" bind:this={container}></div>
   {#if loading}
     <div class="absolute inset-0 grid place-items-center text-xs opacity-50">Loading editor...</div>

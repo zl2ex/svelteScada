@@ -68,6 +68,14 @@ function eventScope(
   };
 }
 
+function expectExpressionValue(
+  result: ReturnType<typeof evaluateSandboxExpression>,
+  expected: unknown,
+) {
+  expect(result.isOk()).toBe(true);
+  if (result.isOk()) expect(result.value).toBe(expected);
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -81,17 +89,21 @@ describe("expression sandbox", () => {
       props: { offset: 1 },
     });
 
-    expect(result).toBe(11);
+    expectExpressionValue(result, 11);
   });
 
-  it("returns undefined when the expression does not compile", () => {
+  it("returns a compile error when the expression does not compile", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(evaluateSandboxExpression("1 +", bindingScope())).toBeUndefined();
+    const result = evaluateSandboxExpression("1 +", bindingScope());
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) expect(result.error.reason).toBe("SCRIPT_COMPILE_ERROR");
   });
 
-  it("returns undefined when the expression throws", () => {
+  it("returns a runtime error when the expression throws", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(evaluateSandboxExpression("missing.value", bindingScope())).toBeUndefined();
+    const result = evaluateSandboxExpression("missing.value", bindingScope());
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) expect(result.error.reason).toBe("SCRIPT_RUNTIME_ERROR");
   });
 
   it("does not expose browser globals even when the host has them", () => {
@@ -106,14 +118,20 @@ describe("expression sandbox", () => {
     host.process = { env: { SECRET: "secret" } };
 
     try {
-      expect(evaluateSandboxExpression("typeof window", bindingScope())).toBe("undefined");
-      expect(evaluateSandboxExpression("typeof document", bindingScope())).toBe("undefined");
-      expect(evaluateSandboxExpression("typeof fetch", bindingScope())).toBe("undefined");
-      expect(evaluateSandboxExpression("typeof localStorage", bindingScope())).toBe("undefined");
-      expect(evaluateSandboxExpression("typeof indexedDB", bindingScope())).toBe("undefined");
-      expect(evaluateSandboxExpression("typeof XMLHttpRequest", bindingScope())).toBe("undefined");
-      expect(evaluateSandboxExpression("typeof WebSocket", bindingScope())).toBe("undefined");
-      expect(evaluateSandboxExpression("typeof process", bindingScope())).toBe("undefined");
+      expectExpressionValue(evaluateSandboxExpression("typeof window", bindingScope()), "undefined");
+      expectExpressionValue(evaluateSandboxExpression("typeof document", bindingScope()), "undefined");
+      expectExpressionValue(evaluateSandboxExpression("typeof fetch", bindingScope()), "undefined");
+      expectExpressionValue(
+        evaluateSandboxExpression("typeof localStorage", bindingScope()),
+        "undefined",
+      );
+      expectExpressionValue(evaluateSandboxExpression("typeof indexedDB", bindingScope()), "undefined");
+      expectExpressionValue(
+        evaluateSandboxExpression("typeof XMLHttpRequest", bindingScope()),
+        "undefined",
+      );
+      expectExpressionValue(evaluateSandboxExpression("typeof WebSocket", bindingScope()), "undefined");
+      expectExpressionValue(evaluateSandboxExpression("typeof process", bindingScope()), "undefined");
     } finally {
       delete host.window;
       delete host.document;
@@ -127,30 +145,30 @@ describe("expression sandbox", () => {
   });
 
   it("blocks constructor-chain escapes", () => {
-    expect(
+    expectExpressionValue(
       evaluateSandboxExpression(
         '({}).constructor.constructor("return typeof window")()',
         bindingScope(),
       ),
-    ).toBe("undefined");
+      "undefined",
+    );
   });
 
   it("enforces an execution quota for infinite loops", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const started = Date.now();
 
-    expect(evaluateSandboxExpression("(() => { while (true) {} })()", bindingScope())).toBe(
-      undefined,
-    );
+    const result = evaluateSandboxExpression("(() => { while (true) {} })()", bindingScope());
+    expect(result.isErr()).toBe(true);
+    if (result.isErr()) expect(result.error.reason).toBe("SCRIPT_QUOTA_EXCEEDED");
     expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it("resets the quota between evaluations", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(evaluateSandboxExpression("(() => { while (true) {} })()", bindingScope())).toBe(
-      undefined,
-    );
-    expect(evaluateSandboxExpression("1 + 1", bindingScope())).toBe(2);
+    const quotaResult = evaluateSandboxExpression("(() => { while (true) {} })()", bindingScope());
+    expect(quotaResult.isErr()).toBe(true);
+    expectExpressionValue(evaluateSandboxExpression("1 + 1", bindingScope()), 2);
   });
 });
 

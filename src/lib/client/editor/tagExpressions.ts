@@ -18,8 +18,10 @@ export function resolveTagBindings(config: TagOptionsInput) {
     const expression = config.bindings?.[key];
     if (!expression?.trim()) continue;
 
-    const value = evaluateTagBinding(expression, bindingContext);
-    if (value !== undefined) Object.assign(resolved, { [key]: value });
+    const evaluation = evaluateTagBinding(expression, bindingContext);
+    if (evaluation.isOk() && evaluation.value !== undefined) {
+      Object.assign(resolved, { [key]: evaluation.value });
+    }
   }
 
   return resolved;

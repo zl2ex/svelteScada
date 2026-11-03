@@ -10,6 +10,7 @@ import {
   type ElementBindings,
   type ElementStyle,
 } from "../../elements/elementTypes";
+import { BaseComponentNames } from "$lib/elements/baseComponents";
 
 export const elements = sqliteTable(
   "elements",
@@ -24,7 +25,7 @@ export const elements = sqliteTable(
     sortIndex: integer("sortIndex").notNull().default(0),
     kind: text("kind", { enum: elementKinds }).notNull(),
     tag: text("tag"),
-    baseComponent: text("baseComponent"),
+    baseComponent: text("baseComponent").$type<BaseComponentNames>(),
     referencedComponentId: text("referencedComponentId").references(() => user_components.id, {
       onDelete: "restrict",
     }),

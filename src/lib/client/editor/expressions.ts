@@ -1,7 +1,11 @@
 import type { TagMapEntry, TagMapStatus } from "$lib/client/live/tagMap.svelte";
 import type { ClientTagValue } from "$lib/server/tag/tag";
 import { clonePlain } from "$lib/client/editor/script/plainData";
-import { evaluateSandboxExpression } from "$lib/client/editor/script/scriptSandbox";
+import {
+  evaluateSandboxExpression,
+  type ScriptEvaluationError,
+} from "$lib/client/editor/script/scriptSandbox";
+import { ok, type Result } from "neverthrow";
 
 export type TagRead = (lookup: string) => TagMapEntry | undefined;
 export type TagValueRead = (lookup: string) => ClientTagValue | undefined;
@@ -37,7 +41,7 @@ export function createBindingScope<Context extends Record<string, unknown>>(cont
 export function evaluateExpression<Context extends Record<string, unknown>>(
   expression: string,
   context: Context,
-) {
-  if (!expression.trim()) return undefined;
+): Result<unknown, ScriptEvaluationError> {
+  if (!expression.trim()) return ok(undefined);
   return evaluateSandboxExpression(expression, createBindingScope(context));
 }

@@ -621,9 +621,10 @@ export class Tag {
    * fast changing tag cannot flood the trends table.
    */
   #trend(value: TagValue, statusCode: StatusCode) {
-    if (!this.options.trend.enabled) return;
+    if (!this.options.trendEnabled) return;
     const now = Date.now();
-    if (now - this.#lastTrendWriteMs < this.options.trend.minimumIntervalMs) return;
+    const minimumIntervalMs = this.options.trendMinimumSamplingIntervalMs ?? 1000;
+    if (now - this.#lastTrendWriteMs < minimumIntervalMs) return;
     this.#lastTrendWriteMs = now;
 
     const written = attempt(() =>

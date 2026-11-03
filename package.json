@@ -59,6 +59,7 @@
     "zod": "^4.6.5"
   },
   "dependencies": {
+    "@casl/ability": "^7.1.1",
     "@nyariv/sandboxjs": "0.9.7",
     "better-sqlite3": "^13.0.3",
     "dotenv": "^18.0.1",

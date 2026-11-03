@@ -3,6 +3,7 @@
     Copy,
     FolderIcon,
     FolderPlus,
+    Link2Icon,
     LoaderIcon,
     PencilIcon,
     Scissors,
@@ -46,6 +47,8 @@
   import { formatBindingResult, updateBinding } from "$lib/client/editor/bindings";
   import { evaluateTagBinding, resolveTagBindings } from "$lib/client/editor/tagExpressions";
   import type { TagBindingKey } from "$lib/tagBindings";
+  import { getAbilityContext } from "$lib/client/permissions/abilityContext";
+  import { tagWriteLevels, type TagWriteLevel } from "$lib/permissions/constants";
 
   let {
     tagFolders,
@@ -56,6 +59,7 @@
   } = $props();
 
   const editor = getEditorContext();
+  const ability = getAbilityContext();
 
   let tagFolderPatchesCollection = $state(
     new PatchCollection<ClosureTableNode, NeverThrowError>({
@@ -129,10 +133,24 @@
     return Boolean(node.bindings?.[key]?.trim());
   }
 
-  function tagBindingResult(node: TagOptionsInput, key: TagBindingKey) {
+  function tagBindingEvaluation(node: TagOptionsInput, key: TagBindingKey) {
     const expression = node.bindings?.[key];
-    if (!expression?.trim()) return "";
-    return formatBindingResult(evaluateTagBinding(expression, { tagConfig: node }));
+    if (!expression?.trim()) return { result: "", error: null };
+
+    const evaluation = evaluateTagBinding(expression, { tagConfig: node });
+    if (evaluation.isErr()) {
+      return { result: "", error: neverThrowErrorToString(evaluation.error) };
+    }
+
+    return { result: formatBindingResult(evaluation.value), error: null };
+  }
+
+  function tagBindingResult(node: TagOptionsInput, key: TagBindingKey) {
+    return tagBindingEvaluation(node, key).result;
+  }
+
+  function tagBindingError(node: TagOptionsInput, key: TagBindingKey) {
+    return tagBindingEvaluation(node, key).error;
   }
 
   function saveTagBinding(node: TagOptionsInput, key: TagBindingKey, expression: string) {
@@ -481,11 +499,9 @@
       dataType: "Double" as BaseTypeStrings,
       unit: "",
       bindings: null,
-      trend: {
-        tagId: id,
-        minimumIntervalMs: 1000,
-        enabled: true,
-      },
+      writeLevel: "operator",
+      trendEnabled: false,
+      trendMinimumSamplingIntervalMs: 1000,
     };
     renamingId = id;
     treeView().expand([parentNode.id]);
@@ -682,7 +698,9 @@
         parameters: tag.parameters ?? null,
         unit: tag.unit ?? "",
         bindings: tag.bindings ?? null,
-        trend: tag.trend,
+        writeLevel: tag.writeLevel ?? "operator",
+        trendEnabled: tag.trendEnabled ?? false,
+        trendMinimumSamplingIntervalMs: tag.trendMinimumSamplingIntervalMs ?? 1000,
       });
     }
 
@@ -773,6 +791,7 @@
     binding={node.bindings?.[key] ?? ""}
     contextDescription="tagConfig"
     scope="tag"
+    savedError={tagBindingError(node, key)}
     onBindingSave={(expression) => saveTagBinding(node, key, expression)}
     onBindingRemove={() => saveTagBinding(node, key, "")}
   />
@@ -845,9 +864,9 @@
                       tagEditPopover().setOpen(true);
                     }}
                     tabindex={-1}
-                    class="w-full flex items-center justify-between gap-1 min-w-0 focus-visible:outline-none"
+                    class="w-full flex items-center justify-between gap-4 min-w-0 focus-visible:outline-none"
                   >
-                    <div class="flex items-center gap-2 w-full">
+                    <div class="flex items-center gap-2 min-w-0 w-full">
                       <TagIcon class="size-4 shrink-0 opacity-60" />
                       {#if renamingId === node.id}
                         <input
@@ -857,19 +876,23 @@
                           use:focusOnMount
                           onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
                           onkeydown={(e) => {
-                            if (e.key === "Enter") finalizeTagRename(node.id, e.currentTarget.value);
+                            if (e.key === "Enter")
+                              finalizeTagRename(node.id, e.currentTarget.value);
                             if (e.key === "Escape") cancelTagRename(node.id);
                           }}
                         />
                       {:else}
                         <span class="truncate" title={node.name}>{node.name}</span>
+                        {#if node.bindings}
+                          <Link2Icon class="size-5 shrink-0 opacity-85" />
+                        {/if}
                       {/if}
                     </div>
                     {#if renamingId !== node.id}
                       <TagInput
                         id={node.id}
                         label=""
-                        class="py-0 px-1 border-none max-w-20 rounded-sm"
+                        class="py-0  border-none max-w-40 rounded-sm"
                         onclick={(ev) => ev.stopPropagation()}
                         onkeydown={(ev) => ev.stopPropagation()}
                       />
@@ -882,21 +905,50 @@
             <Portal>
               <Popover.Positioner>
                 <Popover.Content class="bg-surface-100-900 rounded-lg p-2">
-                  <div class="flex flex-col gap-2 p-1">
+                  <fieldset class="flex flex-col gap-2" disabled={!ability.can("update", "Tag")}>
+                    <label class="opacity-60" for={`dataType-${node.id}`}>Data Type</label>
                     <div class="flex items-center gap-2">
-                      <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="whitespace-nowrap opacity-60 w-24" for={`nodeId-${node.id}`}>
-                        Node Id
-                      </label>
+                      {#if isTagBound(node, "dataType")}
+                        <input
+                          id={`dataType-${node.id}`}
+                          class="input py-0"
+                          value={tagBindingResult(node, "dataType")}
+                          disabled
+                          placeholder="No result"
+                        />
+                      {:else}
+                        <select
+                          id={`dataType-${node.id}`}
+                          class="select py-1.5"
+                          value={node.dataType}
+                          onchange={(e) =>
+                            saveTagConfig(node, {
+                              dataType: e.currentTarget.value as BaseTypeStrings,
+                            })}
+                        >
+                          {#each await getDataTypeStrings() as dataType}
+                            <option value={dataType}>{dataType}</option>
+                          {/each}
+                        </select>
+                      {/if}
+                      {@render tagBindingEditor(node, "dataType", "Data Type")}
+                    </div>
+
+                    <label class="opacity-60" for={`nodeId-${node.id}`}>
+                      Driver connection path
+                    </label>
+                    <div class="flex gap-2">
                       <input
                         id={`nodeId-${node.id}`}
                         type="text"
-                        class="input py-0 px-1 border-none flex-1"
+                        class="input py-0 placeholder:opacity-50"
                         value={isTagBound(node, "nodeId")
                           ? tagBindingResult(node, "nodeId")
                           : (node.nodeId ?? "")}
                         disabled={isTagBound(node, "nodeId")}
-                        placeholder={isTagBound(node, "nodeId") ? "No result" : ""}
+                        placeholder={isTagBound(node, "nodeId")
+                          ? "No result"
+                          : "[deviceName]pathToTag"}
                         onblur={(e) =>
                           saveTagConfig(node, {
                             nodeId: e.currentTarget.value || null,
@@ -913,69 +965,7 @@
                     </div>
 
                     <div class="flex items-center gap-2">
-                      <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="whitespace-nowrap opacity-60 w-24" for={`dataType-${node.id}`}>
-                        Data Type
-                      </label>
-                      {#if isTagBound(node, "dataType")}
-                        <input
-                          id={`dataType-${node.id}`}
-                          class="input py-0 px-1 border-none flex-1"
-                          value={tagBindingResult(node, "dataType")}
-                          disabled
-                          placeholder="No result"
-                        />
-                      {:else}
-                        <select
-                          id={`dataType-${node.id}`}
-                          class="input py-0 px-1 border-none flex-1"
-                          value={node.dataType}
-                          onchange={(e) =>
-                            saveTagConfig(node, {
-                              dataType: e.currentTarget.value as BaseTypeStrings,
-                            })}
-                        >
-                          {#each await getDataTypeStrings() as dataType}
-                            <option value={dataType}>{dataType}</option>
-                          {/each}
-                        </select>
-                      {/if}
-                      {@render tagBindingEditor(node, "dataType", "Data Type")}
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="whitespace-nowrap opacity-60 w-24" for={`initalValue-${node.id}`}>
-                        Inital Value
-                      </label>
-                      <input
-                        id={`initalValue-${node.id}`}
-                        type="text"
-                        class="input py-0 px-1 border-none flex-1"
-                        value={isTagBound(node, "initalValue")
-                          ? tagBindingResult(node, "initalValue")
-                          : node.initalValue}
-                        disabled={isTagBound(node, "initalValue")}
-                        placeholder={isTagBound(node, "initalValue") ? "No result" : ""}
-                        onblur={(e) =>
-                          saveTagConfig(node, {
-                            initalValue:
-                              e.currentTarget.value === "" ? null : String(e.currentTarget.value),
-                          })}
-                        onkeydown={(e) => {
-                          if (e.key === "Enter") e.currentTarget.blur();
-                          if (e.key === "Escape") {
-                            e.currentTarget.value = String(node.initalValue ?? "");
-                            e.currentTarget.blur();
-                          }
-                        }}
-                      />
-                      {@render tagBindingEditor(node, "initalValue", "Inital Value")}
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                      <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="whitespace-nowrap opacity-60 w-24" for={`writeable-${node.id}`}>
+                      <label class="opacity-60 mr-auto" for={`writeable-${node.id}`}>
                         Writeable
                       </label>
                       <input
@@ -993,13 +983,31 @@
                       />
                       {@render tagBindingEditor(node, "writeable", "Writeable")}
                     </div>
+
+                    <label class="opacity-60" for={`writeLevel-${node.id}`}>Write Level</label>
                     <div class="flex items-center gap-2">
-                      <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label
-                        class="whitespace-nowrap opacity-60 w-24"
-                        for={`exposeOverOpcua-${node.id}`}
+                      <select
+                        id={`writeLevel-${node.id}`}
+                        class="select py-1.5"
+                        value={node.writeLevel ?? "operator"}
+                        disabled={!ability.can("manage", "Tag")}
+                        title={!ability.can("manage", "Tag")
+                          ? "User does not have permission to edit"
+                          : ""}
+                        onchange={(e) =>
+                          saveTagConfig(node, {
+                            writeLevel: e.currentTarget.value as TagWriteLevel,
+                          })}
                       >
-                        Expose OPC UA
+                        {#each tagWriteLevels as level}
+                          <option value={level}>{level}</option>
+                        {/each}
+                      </select>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <label class="opacity-60 mr-auto" for={`exposeOverOpcua-${node.id}`}>
+                        Expose Tag On OPCUA Server
                       </label>
                       <input
                         id={`exposeOverOpcua-${node.id}`}
@@ -1017,62 +1025,82 @@
                       {@render tagBindingEditor(node, "exposeOverOpcua", "Expose OPC UA")}
                     </div>
 
+                    <hr />
+                    <p>Trending</p>
                     <div class="flex items-center gap-2">
-                      <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="whitespace-nowrap opacity-60 w-24" for={`trending-${node.id}`}>
-                        Trending
+                      <label class="opacity-60 mr-auto" for={`trendEnabled-${node.id}`}>
+                        Enabled
                       </label>
-                      {#if isTagBound(node, "trend")}
+                      {#if isTagBound(node, "trendEnabled")}
                         <input
-                          id={`trending-${node.id}`}
-                          class="input py-0 px-1 border-none flex-1"
-                          value={tagBindingResult(node, "trend")}
+                          id={`trendEnabled-${node.id}`}
+                          class="input py-0"
+                          value={tagBindingResult(node, "trendEnabled")}
                           disabled
                           placeholder="No result"
                         />
                       {:else}
                         <input
-                          id={`trending-${node.id}`}
+                          id={`trendEnabled-${node.id}`}
                           type="checkbox"
                           class="checkbox"
-                          checked={node.trend.enabled ?? false}
+                          checked={node.trendEnabled ?? false}
                           onchange={(e) =>
                             saveTagConfig(node, {
-                              trend: { ...node.trend, enabled: Boolean(e.currentTarget.checked) },
+                              trendEnabled: Boolean(e.currentTarget.checked),
                             })}
                         />
+                      {/if}
+                      {@render tagBindingEditor(node, "trendEnabled", "Trend Enabled")}
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <label
+                        class="opacity-60 mr-auto"
+                        for={`trendMinimumSamplingIntervalMs-${node.id}`}
+                      >
+                        Minimum interval
+                      </label>
+                      {#if isTagBound(node, "trendMinimumSamplingIntervalMs")}
                         <input
+                          id={`trendMinimumSamplingIntervalMs-${node.id}`}
+                          class="input py-0"
+                          value={tagBindingResult(node, "trendMinimumSamplingIntervalMs")}
+                          disabled
+                          placeholder="No result"
+                        />
+                      {:else}
+                        <input
+                          id={`trendMinimumSamplingIntervalMs-${node.id}`}
                           type="number"
                           class="input w-24"
                           min="100"
                           step="100"
                           placeholder="minimum interval ms"
-                          disabled={!(node.trend.enabled ?? false)}
-                          value={node.trend.minimumIntervalMs}
+                          disabled={!(node.trendEnabled ?? false)}
+                          value={node.trendMinimumSamplingIntervalMs ?? 1000}
                           onblur={(e) => {
-                            const minimumIntervalMs = Number(e.currentTarget.value);
-                            saveTagConfig(node, {
-                              trend: { ...node.trend, minimumIntervalMs },
-                            });
+                            const trendMinimumSamplingIntervalMs = Number(e.currentTarget.value);
+                            saveTagConfig(node, { trendMinimumSamplingIntervalMs });
                           }}
                         />
-                        <span class="text-xs opacity-60">ms</span>
                       {/if}
-                      {@render tagBindingEditor(node, "trend", "Trend")}
+                      <span class="text-xs opacity-60">ms</span>
+                      {@render tagBindingEditor(
+                        node,
+                        "trendMinimumSamplingIntervalMs",
+                        "Trend Interval",
+                      )}
                     </div>
 
                     <div class="flex items-start gap-2">
                       <Settings2Icon class="size-4 shrink-0 opacity-60 mt-1" />
-                      <label
-                        class="whitespace-nowrap opacity-60 w-24 pt-1"
-                        for={`parameters-${node.id}`}
-                      >
+                      <label class="opacity-60 pt-1" for={`parameters-${node.id}`}>
                         Parameters
                       </label>
                       <textarea
                         id={`parameters-${node.id}`}
                         rows="4"
-                        class="input py-0 px-1 border-none flex-1 font-mono text-xs"
+                        class="input py-0 font-mono text-xs"
                         value={isTagBound(node, "parameters")
                           ? tagBindingResult(node, "parameters")
                           : node.parameters
@@ -1090,7 +1118,11 @@
                           }
                           const parsed = attempt(() => JSON.parse(raw));
                           if (parsed.isErr) {
-                            e.currentTarget.value = JSON.stringify(node.parameters ?? null, null, 2);
+                            e.currentTarget.value = JSON.stringify(
+                              node.parameters ?? null,
+                              null,
+                              2,
+                            );
                             return;
                           }
                           saveTagConfig(node, {
@@ -1099,7 +1131,11 @@
                         }}
                         onkeydown={(e) => {
                           if (e.key === "Escape") {
-                            e.currentTarget.value = JSON.stringify(node.parameters ?? null, null, 2);
+                            e.currentTarget.value = JSON.stringify(
+                              node.parameters ?? null,
+                              null,
+                              2,
+                            );
                             e.currentTarget.blur();
                           }
                         }}></textarea>
@@ -1108,13 +1144,11 @@
 
                     <div class="flex items-center gap-2">
                       <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="whitespace-nowrap opacity-60 w-24" for={`unit-${node.id}`}>
-                        Unit
-                      </label>
+                      <label class="opacity-60" for={`unit-${node.id}`}>Unit</label>
                       <input
                         id={`unit-${node.id}`}
                         type="text"
-                        class="input py-0 px-1 border-none flex-1"
+                        class="input py-0"
                         value={isTagBound(node, "unit")
                           ? tagBindingResult(node, "unit")
                           : (node.unit ?? "")}
@@ -1134,18 +1168,16 @@
 
                     <div class="flex items-center gap-2">
                       <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="whitespace-nowrap opacity-60 w-24" for={`type-${node.id}`}>
-                        Type
-                      </label>
+                      <label class="opacity-60" for={`type-${node.id}`}>Type</label>
                       <input
                         id={`type-${node.id}`}
                         type="text"
-                        class="input py-0 px-1 border-none flex-1"
+                        class="input py-0"
                         value={node.type ?? "tag"}
                         disabled
                       />
                     </div>
-                  </div>
+                  </fieldset>
                 </Popover.Content>
               </Popover.Positioner>
             </Portal>

@@ -23,7 +23,6 @@
 
     <div class="flex justify-between items-center">
       <button class="btn preset-filled" type="submit">Login</button>
-      <a href="/register" class="anchor">register</a>
     </div>
 
     <div>

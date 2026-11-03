@@ -30,7 +30,8 @@ export type ScriptTagBindings = ScriptBindings<{
   exposeOverOpcua: string;
   parameters: string;
   unit: string;
-  trend: string;
+  trendEnabled: string;
+  trendMinimumSamplingIntervalMs: string;
 }>;
 
 export type ScriptNeverThrowError = {
@@ -66,12 +67,10 @@ export type ScriptTagOptions = {
   exposeOverOpcua?: boolean | null;
   parameters?: unknown;
   unit?: string;
+  writeLevel?: "operator" | "engineer" | "admin";
   bindings?: ScriptTagBindings | null;
-  trend?: {
-    tagId?: string;
-    minimumIntervalMs?: number;
-    enabled?: boolean;
-  };
+  trendEnabled?: boolean;
+  trendMinimumSamplingIntervalMs?: number;
 };
 
 export type ScriptTagValue = {

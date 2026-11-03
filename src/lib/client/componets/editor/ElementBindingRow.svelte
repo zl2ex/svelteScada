@@ -7,6 +7,7 @@
     value,
     binding,
     result,
+    savedError = null,
     multiline = false,
     removable = false,
     onValueCommit,
@@ -18,6 +19,7 @@
     value: string;
     binding: string;
     result: string;
+    savedError?: string | null;
     multiline?: boolean;
     removable?: boolean;
     onValueCommit: (value: string) => void;
@@ -58,7 +60,14 @@
       />
     {/if}
 
-    <BindingEditor {label} {binding} scope="element" {onBindingSave} {onBindingRemove} />
+    <BindingEditor
+      {label}
+      {binding}
+      {savedError}
+      scope="element"
+      {onBindingSave}
+      {onBindingRemove}
+    />
 
     {#if removable && onRemove}
       <button

@@ -53,6 +53,7 @@
       value={row.value}
       binding={row.binding}
       result={row.result}
+      savedError={row.error}
       removable
       onValueCommit={(value) => onValueCommit(row, value)}
       onBindingSave={(expression) => onBindingSave(row, expression)}

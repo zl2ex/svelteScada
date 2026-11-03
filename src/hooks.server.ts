@@ -7,6 +7,7 @@ import { TagManager } from "$lib/server/tag/tagManager";
 import { FolderManager } from "$lib/server/tag/folderManager";
 import { OpcuaServerDriver } from "$lib/server/drivers/opcua/opcuaServer";
 import { neverThrowErrorToString } from "$lib/util/neverThrow";
+import { defineAbilityFor } from "$lib/permissions/ability";
 
 export const deviceManager = new DeviceManager();
 export const udtManager = new UdtManager();
@@ -64,15 +65,16 @@ export const handle: Handle = async ({ event, resolve }) => {
       `[hooks.server.ts] handle hook unauthenticated: ${neverThrowErrorToString(authenticated.error)}`,
     );
     event.locals.user = undefined;
+    event.locals.ability = defineAbilityFor(null);
   } else {
     event.locals.user = authenticated.value;
+    event.locals.ability = defineAbilityFor(authenticated.value);
   }
 
   // only the login page is unprotected unless logged in
   if (
     event.locals.user ||
-    event.url.pathname.startsWith("/login") ||
-    event.url.pathname.startsWith("/register")
+    event.url.pathname.startsWith("/login")
   ) {
     return await resolve(event);
   } else {

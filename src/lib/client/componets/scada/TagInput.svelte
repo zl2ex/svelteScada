@@ -6,6 +6,9 @@
   import { type NeverThrowError } from "$lib/util/neverThrow";
   import { err, ok } from "neverthrow";
   import NeverThrowErrorDisplay from "$lib/client/componets/NeverThrowErrorDisplay.svelte";
+  import { getAbilityContext } from "$lib/client/permissions/abilityContext";
+  import { canWriteTag } from "$lib/permissions/ability";
+  import type { TagWriteLevel } from "$lib/permissions/constants";
 
   interface Props extends HTMLInputAttributes {
     id?: string;
@@ -19,6 +22,7 @@
   let lookup = $derived.by(() => id ?? path ?? "");
 
   const tagValueMap = getTagValueMapContext();
+  const ability = getAbilityContext();
   let entry = $derived(tagValueMap.tag(lookup));
 
   let isFocus = $state(false);
@@ -33,12 +37,22 @@
     if (entry.value.isErr) {
       return err(entry.value.error);
     }
+    if (!canWrite(entry.value.value.options.writeLevel)) {
+      return err({
+        reason: "WRITE_FORBIDDEN",
+        cause: `your role cannot write ${entry.value.value.options.writeLevel} tags`,
+      } as const satisfies NeverThrowError);
+    }
     const result = await tagValueMap.writeTag(lookup, value);
     if (result.isErr) {
       console.error(result.error);
       return err(result.error);
     }
     return ok(result.value);
+  }
+
+  function canWrite(writeLevel: TagWriteLevel | undefined): boolean {
+    return canWriteTag(ability, writeLevel ?? "operator");
   }
 
   function classWithError(base: string): string {
@@ -126,7 +140,7 @@
                   ev.target.checked = Boolean(tag.value);
                 }
               }}
-              disabled={!tag.options.writeable}
+              disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
           {:else if typeof tag.value === "number"}
@@ -157,7 +171,7 @@
               onfocusin={() => {
                 isFocus = true;
               }}
-              disabled={!tag.options.writeable}
+              disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
           {:else}
@@ -188,7 +202,7 @@
               onfocusin={() => {
                 isFocus = true;
               }}
-              disabled={!tag.options.writeable}
+              disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
           {/if}

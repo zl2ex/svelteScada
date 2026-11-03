@@ -1,5 +1,13 @@
 import type { ElementSelect } from "$lib/sqlite/tables/elements";
-import type { Bindings } from "$lib/bindings";
+import type {
+  z_AttributeValue,
+  z_ContainerType,
+  z_ElementAttributes,
+  z_ElementBindings,
+  z_ElementKind,
+  z_ElementStyle,
+} from "./elementValidation";
+import type { z } from "zod";
 
 export const elementKinds = ["html", "svg", "base-component", "user-component"] as const;
 
@@ -9,21 +17,15 @@ export const containerTypes = ["none", "absolute", "flex", "grid", "block"] as c
 
 export type ContainerType = (typeof containerTypes)[number];
 
-export type ElementStyle = Record<string, string>;
+export type ElementStyle = z.infer<typeof z_ElementStyle>;
 
-export type AttributeValue = string | number | boolean;
+export type AttributeValue = z.infer<typeof z_AttributeValue>;
 
 export type ElementAttributeValue = AttributeValue;
 
-export type ElementAttributes = Record<string, ElementAttributeValue>;
+export type ElementAttributes = z.infer<typeof z_ElementAttributes>;
 
-export type ElementBindings = Bindings<{
-  text: string;
-  attributes: Record<string, string>;
-  style: Record<string, string>;
-  props: Record<string, string>;
-  events: Record<string, string>;
-}>;
+export type ElementBindings = z.infer<typeof z_ElementBindings>;
 
 export const userComponentPropTypes = ["string", "number", "boolean", "color", "tag"] as const;
 

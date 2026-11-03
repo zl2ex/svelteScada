@@ -1,7 +1,12 @@
 import Sandbox, { SandboxExecutionQuotaExceededError, type IExecContext } from "@nyariv/sandboxjs";
+import { err, ok, type Result } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
-import { errorToString } from "$lib/util/neverThrow";
+import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import type { ScriptEvent } from "./scriptApi";
+
+export type ScriptEvaluationError = NeverThrowError & {
+  reason: "SCRIPT_COMPILE_ERROR" | "SCRIPT_RUNTIME_ERROR" | "SCRIPT_QUOTA_EXCEEDED";
+};
 
 export type SandboxBindingScope = {
   tag: (lookup: string) => unknown;
@@ -40,9 +45,9 @@ function createSandbox(quota: bigint) {
 }
 
 const expressionSandbox = createSandbox(EXPRESSION_EXECUTION_QUOTA);
-const expressionCache = new Map<string, Executor<unknown> | null>();
+const expressionCache = new Map<string, Result<Executor<unknown>, ScriptEvaluationError>>();
 
-function compileExpression(expression: string): Executor<unknown> | null {
+function compileExpression(expression: string): Result<Executor<unknown>, ScriptEvaluationError> {
   const cached = expressionCache.get(expression);
   if (cached !== undefined) return cached;
 
@@ -50,25 +55,30 @@ function compileExpression(expression: string): Executor<unknown> | null {
 
   if (compiled.isErr) {
     console.error(`[script sandbox] could not compile expression "${expression}"`, compiled.error);
-    expressionCache.set(expression, null);
-    return null;
+    const failure = err({
+      reason: "SCRIPT_COMPILE_ERROR",
+      cause: errorToString(compiled.error),
+    } as const satisfies ScriptEvaluationError);
+    expressionCache.set(expression, failure);
+    return failure;
   }
 
-  expressionCache.set(expression, compiled.data);
-  return compiled.data;
+  const success = ok(compiled.data);
+  expressionCache.set(expression, success);
+  return success;
 }
 
 export function evaluateSandboxExpression<Scope extends Record<string, unknown>>(
   expression: string,
   scope: Scope,
-): unknown {
-  if (!expression.trim()) return undefined;
+): Result<unknown, ScriptEvaluationError> {
+  if (!expression.trim()) return ok(undefined);
 
   const compiled = compileExpression(expression);
-  if (!compiled) return undefined;
+  if (compiled.isErr()) return err(compiled.error);
 
   const result = attempt(() => {
-    const execution = compiled(scope as Record<string, unknown>);
+    const execution = compiled.value(scope as Record<string, unknown>);
     execution.context.ctx.ticks.ticks = 0n;
     return execution.run();
   });
@@ -76,13 +86,20 @@ export function evaluateSandboxExpression<Scope extends Record<string, unknown>>
   if (result.isErr) {
     if (result.error instanceof SandboxExecutionQuotaExceededError) {
       console.error(`[script sandbox] expression "${expression}" exceeded its execution quota`);
-    } else {
-      console.error(`[script sandbox] expression "${expression}" threw`, result.error);
+      return err({
+        reason: "SCRIPT_QUOTA_EXCEEDED",
+        cause: errorToString(result.error),
+      } as const satisfies ScriptEvaluationError);
     }
-    return undefined;
+
+    console.error(`[script sandbox] expression "${expression}" threw`, result.error);
+    return err({
+      reason: "SCRIPT_RUNTIME_ERROR",
+      cause: errorToString(result.error),
+    } as const satisfies ScriptEvaluationError);
   }
 
-  return result.data;
+  return ok(result.data);
 }
 
 export async function executeSandboxEvent(

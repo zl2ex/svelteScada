@@ -6,9 +6,11 @@ import { pageElementManager } from "$lib/server/page/pageElementManager";
 import type { ElementRecord } from "$lib/elements/elementTypes";
 import type { PageRecord } from "$lib/elements/pageTypes";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
+import { assertLiveCan } from "$lib/server/auth/authorize";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
+  assertLiveCan(ctx.user, "read", "Page");
 });
 
 export const pagePatches = live.stream(
@@ -29,6 +31,8 @@ export const applyPagePatches = live(
 
     const id = patch.path[0].toString();
     const value = patch.value as PageRecord;
+    const action = patch.op === "add" ? "create" : patch.op === "remove" ? "delete" : "update";
+    assertLiveCan(ctx.user, action, "Page");
     let published = patch;
 
     if (patch.op === "add") {
@@ -82,7 +86,10 @@ export const applyPagePatches = live(
 // type textually from its return annotation.
 export const pageElementPatches = live.stream(
   (ctx, pageId: string) => `page-elements:${pageId}`,
-  async (ctx, pageId: string): Promise<PatchPayload> => ({ patches: [] }),
+  async (ctx, pageId: string): Promise<PatchPayload> => {
+    assertLiveCan(ctx.user, "read", "Element");
+    return { patches: [] };
+  },
   { merge: "set", replay: true },
 );
 
@@ -103,6 +110,9 @@ export const applyPageElementPatches = live(
 
     const page = pageManager.get(pageId);
     if (page.isErr()) return wireErr(page.error);
+
+    const action = patch.op === "add" ? "create" : patch.op === "remove" ? "delete" : "update";
+    assertLiveCan(ctx.user, action, "Element");
 
     const id = patch.path[0].toString();
     const owner = { type: "page", pageId } as const;

@@ -3,6 +3,7 @@ import { PRIVATE_KEY } from "$env/static/private";
 import { logger } from "../pino/logger";
 import { db } from "../sqlite/db";
 import type { UserSelect } from "$lib/sqlite/tables";
+import type { SessionUser } from "$lib/permissions/ability";
 import { err, ok } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
@@ -21,6 +22,12 @@ export async function authenticateUser(token: string) {
     db.query.users.findFirst({
       where: {
         id: jwtUser.id,
+      },
+      columns: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
       },
       with: {
         permissions: true,
@@ -42,5 +49,5 @@ export async function authenticateUser(token: string) {
     } as const satisfies NeverThrowError);
   }
 
-  return ok(user.data);
+  return ok(user.data satisfies SessionUser);
 }

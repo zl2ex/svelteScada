@@ -39,9 +39,7 @@ export type ValidBaseDataType = keyof typeof dataTypeMap; // e.g. "Double", "Boo
 
 // Accepts things like "Double", "Double[]", "Double[3]"
 export type ValidDataTypeString =
-  | ValidBaseDataType
-  | `${ValidBaseDataType}[]`
-  | `${ValidBaseDataType}[${number}]`;
+  ValidBaseDataType | `${ValidBaseDataType}[]` | `${ValidBaseDataType}[${number}]`;
 
 type ValidBaseType = keyof typeof dataTypeMap;
 
@@ -65,9 +63,7 @@ type ParseDataType<T extends string> = T extends `${infer Base}[${infer N}]`
     : never;
 
 type AllDataTypeStrings =
-  | keyof BaseDataTypeMap
-  | `${keyof BaseDataTypeMap}[${number}]`
-  | `${keyof BaseDataTypeMap}[]`;
+  keyof BaseDataTypeMap | `${keyof BaseDataTypeMap}[${number}]` | `${keyof BaseDataTypeMap}[]`;
 
 type FieldDefinition = {
   [K in AllDataTypeStrings]: {
@@ -78,11 +74,9 @@ type FieldDefinition = {
 }[AllDataTypeStrings];
 
 // 2. Helper to build fixed-length arrays
-export type FixedLengthArray<
-  T,
-  N extends number,
-  A extends T[] = [],
-> = A["length"] extends N ? A : FixedLengthArray<T, N, [...A, T]>;
+export type FixedLengthArray<T, N extends number, A extends T[] = []> = A["length"] extends N
+  ? A
+  : FixedLengthArray<T, N, [...A, T]>;
 
 // 3. Parse types like "Double[2]" or "Position[]" into structured data
 /*export type ParseDataType<T extends string> =
@@ -226,9 +220,7 @@ export class UdtDefinition {
 
     let parameters = this.options.parameters ?? {};
     if (this.options.parameters && parentTagOptions?.parameters) {
-      for (const [key, udtDefParameter] of Object.entries(
-        this.options.parameters,
-      )) {
+      for (const [key, udtDefParameter] of Object.entries(this.options.parameters)) {
         if (parentTagOptions?.parameters[key]) {
           parameters[key] = parentTagOptions?.parameters[key];
         }
@@ -244,9 +236,12 @@ export class UdtDefinition {
 
       // inheritable options from parent tag if not defined
       options.parameters = parameters;
-      options.exposeOverOpcua =
-        options.exposeOverOpcua ?? parentTagOptions.exposeOverOpcua;
+      options.exposeOverOpcua = options.exposeOverOpcua ?? parentTagOptions.exposeOverOpcua;
       options.writeable = options.writeable ?? parentTagOptions.writeable;
+      options.writeLevel = parentTagOptions.writeLevel ?? options.writeLevel;
+      options.trendEnabled = options.trendEnabled ?? parentTagOptions.trendEnabled;
+      options.trendMinimumSamplingIntervalMs =
+        options.trendMinimumSamplingIntervalMs ?? parentTagOptions.trendMinimumSamplingIntervalMs;
 
       // instance overrides take priroity
       const overrides = options as unknown as Record<string, unknown> & {

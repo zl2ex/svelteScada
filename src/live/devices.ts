@@ -9,9 +9,11 @@ import {
   type DeviceStatus,
   type FailedDevice,
 } from "$lib/server/drivers/driver";
+import { assertLiveCan } from "$lib/server/auth/authorize";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
+  assertLiveCan(ctx.user, "read", "Device");
 });
 
 export const devicePatches = live.stream(
@@ -34,6 +36,7 @@ export const deviceStatus = live.stream(
   ): Promise<
     WireResult<DeviceStatus, NeverThrowError | { reason: "DEVICE_NOT_FOUND"; cause: string }>
   > => {
+    assertLiveCan(ctx.user, "read", "Device");
     const device = deviceManager.getDevice(id);
     if (!device) {
       return wireErr({
@@ -92,6 +95,8 @@ export const applyDevicePatches = live(
 
     const id = patch.path[0].toString();
     const value = patch.value as DeviceConfigInput;
+    const action = patch.op === "add" ? "create" : patch.op === "remove" ? "delete" : "update";
+    assertLiveCan(ctx.user, action, "Device");
 
     if (patch.op === "add") {
       const result = await deviceManager.addDevice(value);

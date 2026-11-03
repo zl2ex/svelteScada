@@ -52,19 +52,18 @@
   } from "@lucide/svelte";
   import { getAllTags, getAllTagFolders, getOpcuaStatusCodeMap } from "$lib/remote/tag.remote";
   import type { ClosureTableNodeWithPath } from "$lib/server/sqlite/util/tagClosureTable";
+  import type { HTMLAttributes } from "svelte/elements";
 
-  type SelectedTag = { id: string; name: string; folderId: string | null; path: string };
+  export type SelectedTag = { id: string; name: string; folderId: string | null; path: string };
 
-  type TrendChartOptions = {
-    stepped: boolean; // when true values are plotted at the same value till the next point instead of going diagoanlly to the next point
-  };
+  export type TrendChartOptions = {};
 
-  interface Props {
+  export interface TrendChartAttributes extends HTMLAttributes<HTMLDivElement> {
     selectedTags?: SelectedTag[];
-    options?: TrendChartOptions;
+    stepped?: boolean; // when true values are plotted at the same value till the next point instead of going diagoanlly to the next point
   }
 
-  let { selectedTags, options }: Props = $props();
+  let { selectedTags, stepped, ...rest }: TrendChartAttributes = $props();
 
   // static OPC-UA status code table for tooltip display (prerendered build-time)
   const statusCodeNames = await getOpcuaStatusCodeMap();
@@ -72,7 +71,7 @@
   const allTags = await getAllTags();
   // get all tags with tredning enabled and that are ok
   const tags = allTags.reduce((acc, tag) => {
-    if (tag.isOk && tag.value.options.trend.enabled) {
+    if (tag.isOk && tag.value.options.trendEnabled) {
       acc.push({
         id: tag.value.id,
         name: tag.value.name,
@@ -563,7 +562,7 @@
       pointRadius: 0,
       pointHitRadius: 6,
       spanGaps: false,
-      stepped: options?.stepped ?? false,
+      stepped: stepped ?? false,
       // dim segments touching a sample whose status is not Good
       segment: {
         borderColor: (ctx: ScriptableLineSegmentContext) => {
@@ -762,7 +761,7 @@
   });
 </script>
 
-<div class="flex h-full w-full flex-col gap-2 p-2">
+<div class="flex h-full w-full flex-col gap-2 p-2" {...rest}>
   <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-2">
     <div>
       <Menu>

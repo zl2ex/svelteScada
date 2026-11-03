@@ -39,10 +39,12 @@
   import { themeManager } from "$lib/client/theme.svelte.js";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
   import type * as ScriptMonaco from "$lib/client/editor/script/monaco";
+  import { getAbilityContext } from "$lib/client/permissions/abilityContext";
 
   let { data, children } = $props();
 
   const tagValueMap = getTagValueMapContext();
+  const ability = getAbilityContext();
   let scriptMonaco = $state.raw<typeof ScriptMonaco>();
 
   $effect(() => {
@@ -126,6 +128,10 @@
     userComponents: data.userComponents,
   });
 
+  if (!ability.can("update", "Page")) {
+    editor.mode = "preview";
+  }
+
   setEditorContext(editor);
 
   $effect(() => {
@@ -196,6 +202,9 @@
                   <div class="flex flex-col gap-2 w-1/2">
                     <a class="btn preset-tonal" href="/editor">Editor</a>
                     <a class="btn preset-tonal" href="/editor/devices">Devices</a>
+                    {#if ability.can("manage", "User")}
+                      <a class="btn preset-tonal" href="/editor/users">Users</a>
+                    {/if}
                   </div>
                 </Popover.Content>
               </Popover.Positioner>
@@ -272,6 +281,7 @@
 
                   <Popover.Description></Popover.Description>
                   <div class="">
+                    <p>{data.user?.role}</p>
                     <div>
                       <button
                         onclick={async () => {
@@ -315,7 +325,7 @@
     <aside
       id="left-panel"
       style={panelLayout.width.left ? `width: ${panelLayout.width.left}px` : ""}
-      class="text-xs flex flex-col min-h-0 overflow-hidden"
+      class="text-xs flex flex-col shrink-0 min-h-0 overflow-hidden"
     >
       <svelte:boundary
         onerror={(error) => {
@@ -364,7 +374,7 @@
       </svelte:boundary>
     </aside>
     <button
-      class="w-px bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
+      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400"
       onpointerdown={() => {
         panelLayout.dragging.left = true;
       }}
@@ -378,7 +388,7 @@
       </div>
     </main>
     <button
-      class="w-px bg-surface-200-800 cursor-col-resize active:bg-primary-600-400"
+      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400"
       onpointerdown={() => {
         panelLayout.dragging.right = true;
       }}
@@ -387,7 +397,7 @@
 
     <aside
       id="right-panel"
-      class="overflow-y-auto"
+      class="shrink-0 overflow-y-auto"
       style={panelLayout.width.right ? `width: ${panelLayout.width.right}px` : ""}
     >
       {#if editor.activePage}

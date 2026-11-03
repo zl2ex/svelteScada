@@ -1,9 +1,11 @@
 import { guard, live, LiveError } from "svelte-realtime/server";
 import { getRecentTrendPoints } from "$lib/server/trend/trend";
 import type { TrendPoint } from "$lib/util/trend";
+import { assertLiveCan } from "$lib/server/auth/authorize";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
+  assertLiveCan(ctx.user, "read", "Trend");
 });
 
 /** Ring buffer size per tag - the in-memory cap for the live store. */
@@ -28,6 +30,7 @@ export const TREND_INIT_LIMIT = 200;
 export const getTagTrend = live.stream(
   (ctx, tagId: string) => `trend:${tagId}`,
   async (ctx, tagId: string): Promise<TrendPoint[]> => {
+    assertLiveCan(ctx.user, "read", "Trend");
     const recent = getRecentTrendPoints(tagId, TREND_INIT_LIMIT);
     if (recent.isErr()) {
       throw new LiveError("SERVER_ERROR", `failed to read trend buffer for ${tagId}`);

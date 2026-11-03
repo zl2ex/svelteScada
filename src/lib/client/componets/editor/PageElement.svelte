@@ -26,6 +26,7 @@
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
   import PageElement from "./PageElement.svelte";
   import PageElementEditWrapper from "./PageElementEditWrapper.svelte";
+  import TrendChart from "../scada/TrendChart.svelte";
 
   type Props = {
     element: ElementRecord;
@@ -45,7 +46,6 @@
 
   let activeMode = $derived(mode ?? editor.mode);
   let children = $derived(sortedChildren(elements, element.id));
-  let selected = $derived(activeMode === "edit" && editor.selectedElementId === element.id);
 
   let bindingContext = $derived<BindingContext>({
     tag: (lookup) => tagValueMap.tag(lookup),
@@ -75,7 +75,8 @@
     const attributes: Record<string, AttributeValue> = { ...element.attributes };
     for (const [name, expression] of Object.entries(element.bindings?.attributes ?? {})) {
       if (name.toLowerCase().startsWith("on")) continue;
-      const value = toAttributeValue(evaluateExpression(expression, bindingContext));
+      const evaluation = evaluateExpression(expression, bindingContext);
+      const value = evaluation.isOk() ? toAttributeValue(evaluation.value) : undefined;
       if (value === undefined) delete attributes[name];
       else attributes[name] = value;
     }
@@ -85,7 +86,8 @@
   let resolvedStyle = $derived.by(() => {
     const style: Record<string, string> = { ...element.style };
     for (const [property, expression] of Object.entries(element.bindings?.style ?? {})) {
-      const value = evaluateExpression(expression, bindingContext);
+      const evaluation = evaluateExpression(expression, bindingContext);
+      const value = evaluation.isOk() ? evaluation.value : undefined;
       if (value === null || value === undefined) delete style[property];
       else style[property] = String(value);
     }
@@ -99,8 +101,8 @@
   let resolvedProps = $derived.by(() => {
     const props: ElementAttributes = { ...element.attributes };
     for (const [name, expression] of Object.entries(element.bindings?.props ?? {})) {
-      const value = toAttributeValue(evaluateExpression(expression, bindingContext));
-      console.debug(value);
+      const evaluation = evaluateExpression(expression, bindingContext);
+      const value = evaluation.isOk() ? toAttributeValue(evaluation.value) : undefined;
       if (value === undefined) delete props[name];
       else props[name] = value;
     }
@@ -110,7 +112,8 @@
   let text = $derived.by(() => {
     const expression = element.bindings?.text;
     if (expression === undefined) return element.text ?? "";
-    const value = evaluateExpression(expression, bindingContext);
+    const evaluation = evaluateExpression(expression, bindingContext);
+    const value = evaluation.isOk() ? evaluation.value : undefined;
     return value === null || value === undefined ? "" : String(value);
   });
 
@@ -155,23 +158,6 @@
       },
     };
   }
-
-  function select(event: MouseEvent) {
-    if (activeMode !== "edit") return;
-    event.stopPropagation();
-    editor.selectedElementId = element.id;
-  }
-
-  function selectOnEnter(event: KeyboardEvent) {
-    if (activeMode !== "edit") return;
-    if (event.key === "Enter") editor.selectedElementId = element.id;
-  }
-
-  function selectUserComponent(event: MouseEvent) {
-    if (activeMode !== "edit") return;
-    event.stopPropagation();
-    editor.selectedElementId = element.id;
-  }
 </script>
 
 {#if depth > 24}
@@ -188,8 +174,12 @@
       <TagInput {...resolvedAttributes} style={resolvedStyle} />
     {:else if element.baseComponent === "DeviceStatus"}
       <DeviceStatus id="" {...resolvedAttributes} style={resolvedStyle} />
+    {:else if element.baseComponent === "TrendChart"}
+      <TrendChart {...resolvedAttributes} style={resolvedStyle} />
     {:else}
-      <span class="text-xs opacity-50">Unknown component: {element.baseComponent}</span>
+      <span class="text-xs opacity-50">
+        Unknown component: {element.baseComponent satisfies null}
+      </span>
     {/if}
   </div>
 {:else if element.kind === "user-component"}

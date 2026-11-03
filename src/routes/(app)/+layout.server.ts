@@ -1,7 +1,9 @@
 import { tagManager } from "../../hooks.server";
 import type { TagOptionsInput } from "$lib/server/tag/tag";
+import { assertCan } from "$lib/server/auth/authorize";
 
 export async function load({ locals }) {
+  assertCan(locals.ability, "read", "Tag");
   const allTags = tagManager.getAllTags();
   const tagRows = allTags.map((tag) => {
     if (tag.isErr()) return tag.error.options;

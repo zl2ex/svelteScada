@@ -20,11 +20,8 @@ function tagOptions(overrides: Partial<TagOptionsInput> = {}): TagOptionsInput {
     parameters: null,
     unit: "",
     bindings: null,
-    trend: {
-      tagId: "tag-1",
-      minimumIntervalMs: 1000,
-      enabled: true,
-    },
+    trendEnabled: true,
+    trendMinimumSamplingIntervalMs: 1000,
     ...overrides,
   };
 }
@@ -39,10 +36,13 @@ describe("tag binding expressions", () => {
   it("evaluates expressions with TagOptionsInput available as tagConfig", () => {
     const config = tagOptions();
 
-    expect(evaluateTagBinding('tagConfig.nodeId + ":resolved"', context(config))).toBe(
-      "ns=1;s=old:resolved",
-    );
-    expect(evaluateTagBinding("tagConfig.writeable === true", context(config))).toBe(true);
+    const nodeId = evaluateTagBinding('tagConfig.nodeId + ":resolved"', context(config));
+    expect(nodeId.isOk()).toBe(true);
+    if (nodeId.isOk()) expect(nodeId.value).toBe("ns=1;s=old:resolved");
+
+    const writeable = evaluateTagBinding("tagConfig.writeable === true", context(config));
+    expect(writeable.isOk()).toBe(true);
+    if (writeable.isOk()) expect(writeable.value).toBe(true);
   });
 
   it("resolves editable fields without mutating the source config or removing bindings", () => {
@@ -55,7 +55,8 @@ describe("tag binding expressions", () => {
         exposeOverOpcua: "null",
         parameters: "({ source: tagConfig.nodeId })",
         unit: '"V"',
-        trend: "({ tagId: tagConfig.id, enabled: false, minimumIntervalMs: 100 })",
+        trendEnabled: "false",
+        trendMinimumSamplingIntervalMs: "100",
       },
     });
 
@@ -69,7 +70,8 @@ describe("tag binding expressions", () => {
       exposeOverOpcua: null,
       parameters: { source: "ns=1;s=old" },
       unit: "V",
-      trend: { tagId: "tag-1", enabled: false, minimumIntervalMs: 100 },
+      trendEnabled: false,
+      trendMinimumSamplingIntervalMs: 100,
       bindings: config.bindings,
     });
     expect(config).toMatchObject({
@@ -98,9 +100,11 @@ describe("tag binding expressions", () => {
   it("does not expose live tag readers to tag bindings", () => {
     const config = tagOptions();
 
-    expect(evaluateTagBinding("typeof tag", context(config))).toBe("undefined");
-    expect(evaluateTagBinding("typeof tagValue", context(config))).toBe("undefined");
-    expect(evaluateTagBinding("typeof tagStatus", context(config))).toBe("undefined");
+    for (const expression of ["typeof tag", "typeof tagValue", "typeof tagStatus"]) {
+      const evaluation = evaluateTagBinding(expression, context(config));
+      expect(evaluation.isOk()).toBe(true);
+      if (evaluation.isOk()) expect(evaluation.value).toBe("undefined");
+    }
   });
 
   it("validates persisted tag binding expressions", () => {

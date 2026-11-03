@@ -63,17 +63,17 @@ describe("element insertion defaults", () => {
 
   it("sets geometry and paint defaults for svg shapes", () => {
     expect(getDefaultElementStyle("svg", { tag: "circle" })).toMatchObject({
-      cx: "50px",
-      cy: "50px",
+      cx: "50%",
+      cy: "50%",
       r: "40px",
       fill: "var(--color-surface-600-400)",
       stroke: "none",
     });
     expect(getDefaultElementAttributes("svg", { tag: "line" })).toMatchObject({
-      x1: "0",
-      y1: "0",
-      x2: "100",
-      y2: "100",
+      x1: "50%",
+      y1: "50%",
+      x2: "60%",
+      y2: "60%",
     });
     expect(getDefaultElementAttributes("svg", { tag: "path" })).toHaveProperty("d");
   });

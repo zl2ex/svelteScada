@@ -1,11 +1,13 @@
 <script lang="ts">
   import { Box, Boxes, Plus } from "@lucide/svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { baseComponentNames } from "$lib/elements/baseComponents";
   import type { ElementRecord } from "$lib/elements/elementTypes";
   import { elementParentError, isSvgContainer, sortedChildren } from "$lib/elements/elementTypes";
 
   const editor = getEditorContext();
+  const ability = getAbilityContext();
 
   let customTag = $state("div");
   let customSvgTag = $state("rect");
@@ -106,6 +108,7 @@
 </script>
 
 <div class="flex flex-col text-xs">
+  <fieldset class="contents" disabled={!ability.can("create", "Element")}>
   <div class="flex flex-col gap-1 p-2 border-b border-surface-200-800">
     <div class="flex items-center justify-between gap-1">
       <span class="opacity-60 truncate">
@@ -217,4 +220,5 @@
       </button>
     </div>
   {/if}
+  </fieldset>
 </div>

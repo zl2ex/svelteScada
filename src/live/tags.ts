@@ -12,6 +12,8 @@ import { err, ok, type Result } from "neverthrow";
 import { logger } from "$lib/server/pino/logger";
 import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.svelte";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
+import { assertLiveCan } from "$lib/server/auth/authorize";
+import { tagValueSubject } from "$lib/permissions/ability";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -42,6 +44,25 @@ export const applyTagPatches = live(
 
     const id = patch.path[0].toString();
     const value = patch.value as TagOptionsInput;
+
+    const action = patch.op === "add" ? "create" : patch.op === "remove" ? "delete" : "update";
+    assertLiveCan(ctx.user, action, "Tag");
+
+    if (patch.op !== "remove") {
+      const nextWriteLevel = value.writeLevel ?? "operator";
+      const existing = patch.op === "replace" ? tagManager.getTagByIdOrPath(id) : undefined;
+      const previousWriteLevel =
+        existing?.isOk() && existing.value.isOk()
+          ? existing.value.value.options.writeLevel
+          : existing?.isOk() && existing.value.isErr()
+            ? existing.value.error.options?.writeLevel
+            : undefined;
+
+      if (previousWriteLevel !== nextWriteLevel) {
+        // Changing a tag's operational access level is an admin-only action.
+        assertLiveCan(ctx.user, "manage", "User");
+      }
+    }
 
     if (patch.op === "add") {
       const result = tagManager.createTag(value);
@@ -120,6 +141,7 @@ export const getTagValue = live.stream(
   ): Promise<
     WireResult<ClientTagValue, FailedTag | { reason: "TAG_NOT_FOUND"; cause: string }>
   > => {
+    assertLiveCan(ctx.user, "read", "TagValue");
     const tag = tagManager.getTagByIdOrPath(lookup);
 
     if (tag.isErr()) return wireErr(tag.error);
@@ -190,6 +212,7 @@ export const writeTagValue = live(
     }
 
     const tagOk = tag.value;
+    assertLiveCan(ctx.user, "write", tagValueSubject(tagOk.value.options.writeLevel ?? "operator"));
     const update = await tagOk.value.write(value);
     if (update.isErr()) {
       return wireErr(update.error);

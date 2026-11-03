@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import type { ContainerType } from "$lib/elements/elementTypes";
   import { isContainerElement } from "$lib/elements/elementTypes";
   import { toast } from "$lib/client/toast.svelte";
@@ -21,11 +22,13 @@
   } from "$lib/client/editor/elementBindingRows";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
   import { evaluateExpression, type BindingContext } from "$lib/client/editor/elementExpressions";
+  import { neverThrowErrorToString } from "$lib/util/neverThrow";
   import ElementBindingRow from "./ElementBindingRow.svelte";
   import ElementBindingSection from "./ElementBindingSection.svelte";
   import ElementEventsEditor from "./ElementEventsEditor.svelte";
 
   const editor = getEditorContext();
+  const ability = getAbilityContext();
   const tagValueMap = getTagValueMapContext();
   const containerOptions: ContainerType[] = ["none", "absolute", "flex", "grid", "block"];
 
@@ -60,20 +63,26 @@
     containerType = element.containerType;
   });
 
-  function evaluateBindingResult(expression: string, context: BindingContext | null) {
-    if (!expression.trim() || !context) return "";
-    return formatBindingResult(evaluateExpression(expression, context));
+  function evaluateBinding(expression: string, context: BindingContext | null) {
+    if (!expression.trim() || !context) return { result: "", error: null };
+    const evaluation = evaluateExpression(expression, context);
+    if (evaluation.isErr()) {
+      return { result: "", error: neverThrowErrorToString(evaluation.error) };
+    }
+    return { result: formatBindingResult(evaluation.value), error: null };
   }
 
   let textRow = $derived.by((): ElementBindingRowData | null => {
     const element = selected;
     if (!element) return null;
     const binding = element.bindings?.text ?? "";
+    const evaluation = evaluateBinding(binding, bindingContext);
     return {
       key: "text",
       value: element.text ?? "",
       binding,
-      result: evaluateBindingResult(binding, bindingContext),
+      result: evaluation.result,
+      error: evaluation.error,
     };
   });
 
@@ -86,11 +95,13 @@
     return keys.map((key) => {
       const binding = bindings[key] ?? "";
       const value = base[key];
+      const evaluation = evaluateBinding(binding, bindingContext);
       return {
         key,
         value: value === undefined ? "" : String(value),
         binding,
-        result: evaluateBindingResult(binding, bindingContext),
+        result: evaluation.result,
+        error: evaluation.error,
       };
     });
   });
@@ -103,11 +114,13 @@
     const keys = [...new Set([...Object.keys(base), ...Object.keys(bindings)])].sort();
     return keys.map((key) => {
       const binding = bindings[key] ?? "";
+      const evaluation = evaluateBinding(binding, bindingContext);
       return {
         key,
         value: base[key] ?? "",
         binding,
-        result: evaluateBindingResult(binding, bindingContext),
+        result: evaluation.result,
+        error: evaluation.error,
       };
     });
   });
@@ -212,6 +225,7 @@
 </script>
 
 <div class="flex flex-col text-xs">
+  <fieldset class="contents" disabled={!ability.can("update", "Element")}>
   {#if !selected}
     <p class="p-3 opacity-50">Select an element to edit its properties.</p>
   {:else}
@@ -289,4 +303,5 @@
       <ElementEventsEditor />
     </div>
   {/if}
+  </fieldset>
 </div>

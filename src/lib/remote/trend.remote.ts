@@ -1,4 +1,4 @@
-import { query } from "$app/server";
+import { getRequestEvent, query } from "$app/server";
 import z from "zod";
 import { getTrendSeries } from "$lib/server/trend/trend";
 import {
@@ -8,6 +8,7 @@ import {
   type NeverThrowError,
   type WireResult,
 } from "$lib/util/neverThrow";
+import { assertCan } from "$lib/server/auth/authorize";
 import { TREND_MAX_RANGE_MS, type TrendSeries } from "$lib/util/trend";
 
 const z_trendHistoryArgs = z
@@ -27,6 +28,7 @@ const z_trendHistoryArgs = z
 export const getTrendHistory = query(
   z_trendHistoryArgs,
   async (args): Promise<WireResult<TrendSeries, NeverThrowError>> => {
+    assertCan(getRequestEvent().locals.ability, "read", "Trend");
     const series = getTrendSeries(args.tagId, args.from, args.to);
     if (series.isErr()) {
       return wireErr({

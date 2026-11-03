@@ -9,7 +9,9 @@
   import { Popover, Portal, usePopover } from "@skeletonlabs/skeleton-svelte";
   import { newId } from "$lib/util/newId";
   import { getAvalibleDrivers } from "$lib/remote/devices.remote";
+  import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   let { data } = $props();
+  const ability = getAbilityContext();
 
   let popoverDeviceId = $state("");
 
@@ -189,6 +191,7 @@
 {/snippet}
 
 <div id="devices" class="m-8 grow">
+  <fieldset class="contents" disabled={!ability.can("update", "Device")}>
   <button
     class="btn preset-outlined mx-2"
     onclick={async () => {
@@ -383,4 +386,5 @@
       </Popover.Positioner>
     </Portal>
   </Popover.Provider>
+  </fieldset>
 </div>

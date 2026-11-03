@@ -58,15 +58,15 @@ export const relationsConfig = defineRelations(schema, (r) => ({
   },
 
   users: {
-    permissions: r.one.user_permissions({
+    permissions: r.many.user_permissions({
       from: r.users.id,
-      to: r.user_permissions.id,
+      to: r.user_permissions.userId,
     }),
   },
 
   user_permissions: {
-    users: r.one.users({
-      from: r.user_permissions.id,
+    user: r.one.users({
+      from: r.user_permissions.userId,
       to: r.users.id,
     }),
   },
@@ -101,10 +101,6 @@ export const relationsConfig = defineRelations(schema, (r) => ({
     folder: r.one.tag_folders({
       from: r.tags.folderId,
       to: r.tag_folders.id,
-    }),
-    trend: r.one.tag_trend_options({
-      from: r.tags.id,
-      to: r.tag_trend_options.tagId,
     }),
   },
 

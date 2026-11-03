@@ -8,6 +8,7 @@
     elementStyleToString,
     sortedChildren,
   } from "$lib/elements/elementTypes";
+  import { Menu, Portal } from "@skeletonlabs/skeleton-svelte";
   import PageElement from "./PageElement.svelte";
   import PageElementEditWrapper from "./PageElementEditWrapper.svelte";
 
@@ -29,33 +30,48 @@
   });
 </script>
 
-<div
-  bind:this={canvasElement}
-  class="relative min-h-full w-full overflow-auto bg-surface-50-950 outline-none"
-  role="presentation"
-  tabindex="-1"
-  onpointerdowncapture={(event) => {
-    if (isEditableTarget(event.target)) return;
-    canvasElement?.focus({ preventScroll: true });
-  }}
-  onkeydown={(event) => handleEditorKeydown(editor, event)}
-  onclick={() => {
-    if (mode === "edit") editor.selectedElementId = null;
+<Menu
+  onSelect={(details) => {
+    console.debug(details.value);
   }}
 >
-  <div class="page-canvas" style={canvasStyle}>
-    {#if roots.length === 0}
-      <div class="absolute inset-0 flex items-center justify-center text-sm text-surface-500">
-        Empty page — add an element from the Elements tab.
+  <Menu.ContextTrigger>
+    <div
+      bind:this={canvasElement}
+      class="relative min-h-full w-full overflow-auto bg-surface-50-950 outline-none"
+      role="presentation"
+      tabindex="-1"
+      onpointerdowncapture={(event) => {
+        if (isEditableTarget(event.target)) return;
+        canvasElement?.focus({ preventScroll: true });
+      }}
+      onkeydown={(event) => handleEditorKeydown(editor, event)}
+      onclick={() => {
+        if (mode === "edit") editor.selectedElementId = null;
+      }}
+    >
+      <div class="page-canvas" style={canvasStyle}>
+        {#if roots.length === 0}
+          <div class="absolute inset-0 flex items-center justify-center text-sm text-surface-500">
+            Empty page — add an element from the Elements tab.
+          </div>
+        {/if}
+        {#each roots as element (element.id)}
+          <PageElementEditWrapper {element}>
+            <PageElement {element} {elements} {mode} />
+          </PageElementEditWrapper>
+        {/each}
       </div>
-    {/if}
-    {#each roots as element (element.id)}
-      <PageElementEditWrapper {element}>
-        <PageElement {element} {elements} {mode} />
-      </PageElementEditWrapper>
-    {/each}
-  </div>
-</div>
+    </div>
+  </Menu.ContextTrigger>
+  <Portal>
+    <Menu.Positioner>
+      <Menu.Content>
+        <Menu.Item value="insert">Insert</Menu.Item>
+      </Menu.Content>
+    </Menu.Positioner>
+  </Portal>
+</Menu>
 
 <style>
   .page-canvas {

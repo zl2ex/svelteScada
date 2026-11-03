@@ -14,6 +14,7 @@ export type ElementBindingRowData = {
   value: string;
   binding: string;
   result: string;
+  error: string | null;
 };
 
 export function attributeBindingScope(element: ElementRecord): AttributeBindingScope {

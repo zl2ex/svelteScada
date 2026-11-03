@@ -9,6 +9,7 @@
     binding,
     contextDescription = "tag(), tagValue(), tagStatus(), props, and element",
     scope,
+    savedError = null,
     onBindingSave,
     onBindingRemove,
   }: {
@@ -16,6 +17,7 @@
     binding: string;
     contextDescription?: string;
     scope: ScriptScope;
+    savedError?: string | null;
     onBindingSave: (expression: string) => void;
     onBindingRemove: () => void;
   } = $props();
@@ -23,6 +25,7 @@
   let draftBinding = $state("");
   let lastBinding: string | null = null;
   let isBound = $derived(binding.trim().length > 0);
+  let hasError = $derived(Boolean(savedError));
 
   $effect(() => {
     if (binding === lastBinding) return;
@@ -43,8 +46,13 @@
 <Popover>
   <Popover.Trigger
     type="button"
-    class="btn btn-sm {isBound ? 'preset-filled' : 'preset-tonal'} shrink-0"
-    title={isBound ? binding : "Add binding"}
+    class="btn btn-sm {hasError
+      ? 'preset-filled-error-500'
+      : isBound
+        ? 'preset-filled'
+        : 'preset-tonal'} shrink-0"
+    aria-invalid={hasError}
+    title={hasError ? savedError : isBound ? binding : "Add binding"}
   >
     <BracesIcon class="size-4" />
   </Popover.Trigger>
@@ -76,6 +84,16 @@
             {scope}
             onchange={(next) => (draftBinding = next)}
           />
+
+          {#if savedError}
+            <div
+              class="rounded-lg border border-error-400-600/40 bg-error-500/10 p-2 text-error-400-600"
+              role="alert"
+            >
+              <p class="font-semibold">Binding error</p>
+              <p class="whitespace-pre-wrap break-words text-xs">{savedError}</p>
+            </div>
+          {/if}
 
           <div class="flex justify-end gap-2">
             <Popover.CloseTrigger class="btn btn-sm preset-tonal" onclick={revertBinding}>

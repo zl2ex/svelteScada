@@ -9,7 +9,8 @@ export const tagBindingKeys = [
   "exposeOverOpcua",
   "parameters",
   "unit",
-  "trend",
+  "trendEnabled",
+  "trendMinimumSamplingIntervalMs",
 ] as const;
 
 export type TagBindingKey = (typeof tagBindingKeys)[number];
@@ -23,5 +24,6 @@ export const z_TagBindings = z.object({
   exposeOverOpcua: z.string().optional(),
   parameters: z.string().optional(),
   unit: z.string().optional(),
-  trend: z.string().optional(),
+  trendEnabled: z.string().optional(),
+  trendMinimumSamplingIntervalMs: z.string().optional(),
 });

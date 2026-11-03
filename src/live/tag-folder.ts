@@ -2,19 +2,13 @@ import { type ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
 import { guard, live, LiveError } from "svelte-realtime/server";
 import { folderManager, tagManager } from "../hooks.server";
 import { logger } from "$lib/server/pino/logger";
-import type {
-  PatchOp,
-  PatchPayload,
-} from "$lib/client/live/patchCollection.svelte";
-import {
-  wireErr,
-  wireOk,
-  type NeverThrowError,
-  type WireResult,
-} from "$lib/util/neverThrow";
+import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.svelte";
+import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
+import { assertLiveCan } from "$lib/server/auth/authorize";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
+  assertLiveCan(ctx.user, "read", "TagFolder");
 });
 
 // TD WIP TYPE return
@@ -34,10 +28,7 @@ export const tagFolderPatches = live.stream(
 //
 
 export const applyTagFolderPatches = live(
-  async (
-    ctx,
-    patch: PatchOp,
-  ): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
+  async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch);
     if (patch.path.length !== 1) {
       throw new LiveError(
@@ -47,6 +38,8 @@ export const applyTagFolderPatches = live(
     }
     const id = patch.path[0].toString();
     const value = patch.value as ClosureTableNode;
+    const action = patch.op === "add" ? "create" : patch.op === "remove" ? "delete" : "update";
+    assertLiveCan(ctx.user, action, "TagFolder");
     if (patch.op == "add") {
       const result = folderManager.createFolder(value);
       if (result.isErr()) {
@@ -73,10 +66,7 @@ export const applyTagFolderPatches = live(
 
       //only move if it has actually moved
       if (opcuaFolder.node.parentId !== value.parentId) {
-        const result = folderManager.moveFolder(
-          id,
-          value.parentId ?? undefined,
-        );
+        const result = folderManager.moveFolder(id, value.parentId ?? undefined);
         if (result.isErr()) {
           console.error(result.error);
           return wireErr(result.error);

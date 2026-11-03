@@ -10,8 +10,12 @@
   import { createTagValueMap } from "$lib/client/live/tagMap.svelte";
   import { setTagValueMapContext } from "$lib/client/live/tagMapContext";
   import { LoaderIcon, NetworkIcon } from "@lucide/svelte";
+  import { defineAbilityFor } from "$lib/permissions/ability";
+  import { setAbilityContext } from "$lib/client/permissions/abilityContext";
 
   const { children, data } = $props();
+  const ability = defineAbilityFor(data.user);
+  setAbilityContext(ability);
 
   const HEARTBEAT_TIMEOUT_MS = 5000;
 

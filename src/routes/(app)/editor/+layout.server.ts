@@ -5,9 +5,11 @@ import {
 import { projectManager } from "$lib/server/project/projectManager";
 import { pageManager } from "$lib/server/page/pageManager";
 import { userComponentManager } from "$lib/server/page/userComponentManager";
-import type { PageRecord } from "$lib/page/pageTypes";
+import type { PageRecord } from "$lib/elements/pageTypes";
+import { assertCan } from "$lib/server/auth/authorize";
 
-export async function load() {
+export async function load({ locals }) {
+  assertCan(locals.ability, "manage", "Project");
   const folderResult = tagFoldersClosureTable.getAll();
   if (folderResult.isErr()) throw folderResult.error;
   const folderRows = folderResult.value;

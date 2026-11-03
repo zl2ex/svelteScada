@@ -160,16 +160,6 @@ export class TagManager {
           cause: errorToString(dbWrite.error),
         } as const satisfies NeverThrowError);
       }
-
-      opts.trend.tagId = opts.id; // make sure the id's match
-      const dbTrend = attempt(() => db.insert(tables.tag_trend_options).values(opts.trend).run());
-
-      if (dbTrend.isErr) {
-        return err({
-          reason: "DB_ERROR",
-          cause: errorToString(dbTrend.error),
-        } as const satisfies NeverThrowError);
-      }
     }
 
     if (opcuaFolder.node.id) {
@@ -205,21 +195,6 @@ export class TagManager {
       return err({
         reason: "DB_ERROR",
         cause: errorToString(dbResult.error),
-      } as const satisfies NeverThrowError);
-    }
-
-    const dbTrend = attempt(() =>
-      db
-        .update(tables.tag_trend_options)
-        .set(tagUpdates.trend)
-        .where(eq(tables.tag_trend_options.tagId, id))
-        .run(),
-    );
-
-    if (dbTrend.isErr) {
-      return err({
-        reason: "DB_ERROR",
-        cause: errorToString(dbTrend.error),
       } as const satisfies NeverThrowError);
     }
 
@@ -407,13 +382,7 @@ export class TagManager {
       );
     }
 
-    const tagOptions = await attempt(() =>
-      db.query.tags.findMany({
-        with: {
-          trend: true,
-        },
-      }),
-    );
+    const tagOptions = await attempt(() => db.query.tags.findMany());
     if (tagOptions.isErr) {
       return err({
         reason: "DB_ERROR",
@@ -426,8 +395,6 @@ export class TagManager {
 
       const opcuaFolder = this.#folderManager.get(tagOpt.folderId);
       if (!opcuaFolder) continue;
-
-      if (!tagOpt.trend) continue;
 
       const tag = this.tagConfigError(Tag.create(this.opcuaServer, opcuaFolder, tagOpt));
 
