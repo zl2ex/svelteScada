@@ -288,6 +288,7 @@ export class ElementManager {
           containerType: parsed.data.containerType,
           attributes: parsed.data.attributes,
           style: parsed.data.style,
+          styleClass: parsed.data.styleClass,
           bindings: normalizeBindings(parsed.data.kind, parsed.data.bindings),
           updatedAt: Date.now(),
         })

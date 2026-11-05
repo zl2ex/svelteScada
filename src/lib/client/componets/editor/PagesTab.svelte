@@ -4,7 +4,6 @@
   import { untrack } from "svelte";
   import type { SvelteHTMLElements } from "svelte/elements";
   import {
-    ArrowDownIcon,
     ArrowUpIcon,
     BlocksIcon,
     BoxIcon,
@@ -24,13 +23,25 @@
   } from "@skeletonlabs/skeleton-svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
-  import { handleEditorKeydown } from "$lib/client/editor/editorKeyboard";
+  import { handleEditorKeyup } from "$lib/client/editor/editorKeyboard";
   import type { ElementRecord } from "$lib/elements/elementTypes";
-  import { sortedChildren } from "$lib/elements/elementTypes";
+  import {
+    elementParentError,
+    isContainerElement,
+    sortedChildren,
+  } from "$lib/elements/elementTypes";
   import type { PageRecord } from "$lib/elements/pageTypes";
   import { focusOnMount } from "$lib/client/util/use";
   import { toast } from "$lib/client/toast.svelte";
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
+  import {
+    getDropPosition,
+    readTreeDragData,
+    reorderIds,
+    writeTreeDragData,
+    type DropPosition,
+    type TreeDragPayload,
+  } from "$lib/client/util/dragging";
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
@@ -163,34 +174,41 @@
   let treeView: PagesTreeApi = useTreeView({
     id: "PAGES_TREE",
     collection,
-    selectionMode: "single",
+    selectionMode: "multiple",
     expandOnClick: true,
     defaultExpandedValue: editor.projects.map((project) => `${project.id}`),
     onSelectionChange: (details) => {
-      const node = details.selectedNodes[0];
-      if (!node) return;
+      const last = details.selectedNodes.at(-1);
+      if (!last) {
+        editor.clearElementSelection();
+        return;
+      }
 
-      if (node.kind === "project" || node.kind === "page") {
-        editor.selectedElementId = null;
-        if (node.kind === "page" && node.page.id !== editor.activePageId) {
-          void open(node.page.id);
+      if (last.kind !== "element") {
+        editor.clearElementSelection();
+        if (last.kind === "page" && last.page.id !== editor.activePageId) {
+          void open(last.page.id);
         }
         return;
       }
 
-      if (node.kind === "element") {
-        editor.selectedElementId = node.element.id;
-        expandParents(node);
-      }
+      const selectedElements = details.selectedNodes.filter(
+        (node): node is ElementNode => node.kind === "element",
+      );
+      editor.setElementSelection(
+        selectedElements.map((node) => node.element.id),
+        last.element.id,
+      );
+      for (const node of selectedElements) expandParents(node);
     },
   });
 
   const treeSelection = $derived(
-    editor.selectedElementId
-      ? `${editor.selectedElementId}`
+    editor.selectedElementIds.length > 0
+      ? editor.selectedElementIds.map(String)
       : editor.activePageId
-        ? `${editor.activePageId}`
-        : null,
+        ? [String(editor.activePageId)]
+        : [],
   );
 
   $effect(() => {
@@ -215,13 +233,263 @@
     const value = treeSelection;
     untrack(() => {
       const current = treeView().selectedValue;
-      const next = value ? [value] : [];
-      if (current.length === next.length && current.every((item, index) => item === next[index])) {
+      if (
+        current.length === value.length &&
+        current.every((item, index) => item === value[index])
+      ) {
         return;
       }
-      treeView().setSelectedValue(next);
+      treeView().setSelectedValue(value);
     });
   });
+
+  let dragging = $state<TreeDragPayload | null>(null);
+  let dropTarget = $state<{ id: string; position: DropPosition } | null>(null);
+
+  function clearDrag() {
+    dragging = null;
+    dropTarget = null;
+  }
+
+  function handleDragStart(ev: DragEvent, node: TreeNode) {
+    const payload: TreeDragPayload | null =
+      node.kind === "page"
+        ? { kind: "page", id: node.page.id }
+        : node.kind === "element"
+          ? { kind: "element", id: node.element.id }
+          : null;
+    if (!payload) return;
+
+    ev.stopPropagation();
+    dragging = payload;
+    writeTreeDragData(ev, payload);
+  }
+
+  function resolveDrop(
+    event: DragEvent,
+    node: TreeNode,
+    payload: TreeDragPayload,
+  ): { position: DropPosition } | null {
+    const target = event.currentTarget;
+    if (!(target instanceof Element)) return null;
+
+    const pages = editor.pagesCollection.state;
+    const elements = editor.elementsCollection?.state ?? {};
+
+    if (payload.kind === "page") {
+      if (node.kind === "project") {
+        const page = pages[payload.id];
+        return page?.projectId === node.project.id ? { position: "inside" } : null;
+      }
+      if (node.kind === "page") {
+        if (payload.id === node.page.id) return null;
+        const page = pages[payload.id];
+        if (!page || page.projectId !== node.page.projectId) return null;
+        return { position: getDropPosition(event, target, false) };
+      }
+      return null;
+    }
+
+    if (payload.kind === "element") {
+      const dragged = elements[payload.id];
+      if (!dragged) return null;
+
+      if (node.kind === "page") {
+        return node.page.id === editor.activePageId ? { position: "inside" } : null;
+      }
+
+      if (node.kind !== "element") return null;
+      const targetElement = node.element;
+      if (dragged.id === targetElement.id) return null;
+      if (isElementDescendant(targetElement.id, dragged.id)) return null;
+
+      const allowInside = isContainerElement(targetElement);
+      const position = getDropPosition(event, target, allowInside);
+      const parent = targetElement.parentId ? (elements[targetElement.parentId] ?? null) : null;
+      const parentError =
+        position === "inside"
+          ? elementParentError(dragged, targetElement)
+          : elementParentError(dragged, parent);
+      return parentError ? null : { position };
+    }
+
+    return null;
+  }
+
+  function isElementDescendant(candidateId: string, ancestorId: string) {
+    const elements = editor.elementsCollection?.state ?? {};
+    let current: ElementRecord | undefined = elements[candidateId];
+    while (current) {
+      if (current.parentId === ancestorId) return true;
+      current = current.parentId ? elements[current.parentId] : undefined;
+    }
+    return false;
+  }
+
+  function handleDragOver(ev: DragEvent, node: TreeNode) {
+    if (!dragging) return;
+    const drop = resolveDrop(ev, node, dragging);
+    if (!drop) {
+      if (dropTarget?.id === node.id) dropTarget = null;
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "none";
+      return;
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+    if (dropTarget?.id !== node.id || dropTarget.position !== drop.position) {
+      dropTarget = { id: node.id, position: drop.position };
+    }
+  }
+
+  function handleDragLeave(ev: DragEvent, node: TreeNode) {
+    const current = ev.currentTarget;
+    if (
+      current instanceof Node &&
+      ev.relatedTarget instanceof Node &&
+      current.contains(ev.relatedTarget)
+    ) {
+      return;
+    }
+    if (dropTarget?.id === node.id) dropTarget = null;
+  }
+
+  function handleDropOnNode(ev: DragEvent, node: TreeNode) {
+    const payload = dragging ?? readTreeDragData(ev);
+    if (!payload) {
+      clearDrag();
+      return;
+    }
+    const drop = resolveDrop(ev, node, payload);
+    if (!drop) {
+      clearDrag();
+      return;
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (payload.kind === "page") applyPageDrop(payload.id, node, drop.position);
+    else if (payload.kind === "element") applyElementDrop(payload.id, node, drop.position);
+    clearDrag();
+  }
+
+  function updatePageOrder(pages: PageRecord[]) {
+    const now = Date.now();
+    editor.pagesCollection.updateMany(
+      pages.map((page, index) => ({
+        id: page.id,
+        changes: { sortIndex: index, updatedAt: now },
+      })),
+    );
+  }
+
+  function applyPageDrop(pageId: string, node: TreeNode, position: DropPosition) {
+    const dragged = editor.pagesCollection.state[pageId];
+    if (!dragged) return;
+
+    if (node.kind === "project") {
+      if (dragged.projectId !== node.project.id) return;
+      const pages = editor.children(node.project.id).filter((page) => page.id !== pageId);
+      updatePageOrder([...pages, dragged]);
+      return;
+    }
+
+    if (node.kind === "page" && dragged.projectId === node.page.projectId) {
+      const siblings = editor.children(node.page.projectId);
+      const byId = new Map(siblings.map((page) => [page.id, page]));
+      const ids = reorderIds(
+        siblings.map((page) => page.id),
+        pageId,
+        node.page.id,
+        position,
+      );
+      updatePageOrder(ids.map((id) => byId.get(id)).filter((page): page is PageRecord => !!page));
+    }
+  }
+
+  function applyElementDrop(elementId: string, node: TreeNode, position: DropPosition) {
+    const elements = editor.elementsCollection?.state ?? {};
+    const dragged = elements[elementId];
+    if (!dragged) return;
+
+    if (node.kind === "page" && node.page.id === editor.activePageId) {
+      moveElement(elementId, null);
+      return;
+    }
+
+    if (node.kind !== "element") return;
+    const target = node.element;
+
+    if (position === "inside") {
+      moveElement(elementId, target.id);
+      return;
+    }
+
+    moveElement(elementId, target.parentId, target.id, position);
+  }
+
+  function moveElement(
+    elementId: string,
+    newParentId: string | null,
+    targetId?: string,
+    position: DropPosition = "inside",
+  ) {
+    const collection = editor.elementsCollection;
+    const elements = collection?.state ?? {};
+    const dragged = elements[elementId];
+    if (!collection || !dragged) return;
+
+    const newParent = newParentId ? (elements[newParentId] ?? null) : null;
+    if (newParentId && !newParent) return;
+    if (elementParentError(dragged, newParent)) return;
+
+    const now = Date.now();
+    const changes = new Map<string, Partial<ElementRecord>>();
+    const oldParentId = dragged.parentId;
+    const newSiblings = sortedChildren(elements, newParentId).filter(
+      (element) => element.id !== elementId,
+    );
+    const orderedIds =
+      targetId === undefined
+        ? [...newSiblings.map((element) => element.id), elementId]
+        : reorderIds(
+            newSiblings.map((element) => element.id),
+            elementId,
+            targetId,
+            position,
+          );
+
+    orderedIds.forEach((id, index) => {
+      changes.set(id, {
+        ...(changes.get(id) ?? {}),
+        sortIndex: index,
+        updatedAt: now,
+      });
+    });
+    changes.set(elementId, {
+      ...(changes.get(elementId) ?? {}),
+      parentId: newParentId,
+      sortIndex: orderedIds.indexOf(elementId),
+      updatedAt: now,
+    });
+
+    if (oldParentId !== newParentId) {
+      sortedChildren(elements, oldParentId)
+        .filter((element) => element.id !== elementId)
+        .forEach((element, index) => {
+          changes.set(element.id, {
+            ...(changes.get(element.id) ?? {}),
+            sortIndex: index,
+            updatedAt: now,
+          });
+        });
+    }
+
+    collection.updateMany(
+      [...changes].map(([id, elementChanges]) => ({ id, changes: elementChanges })),
+    );
+  }
 
   /**
    * expand all parent elements in the tree and the page itself
@@ -278,13 +546,14 @@
 
     if (elementId) {
       contextMenuElementId = elementId;
-      editor.selectedElementId = elementId;
+      if (!editor.isElementSelected(elementId)) editor.setElementSelection([elementId], elementId);
       contextMenuPageId = null;
       return;
     }
     if (pageId) {
       contextMenuPageId = pageId;
       contextMenuElementId = null;
+      editor.clearElementSelection();
     }
   }
 
@@ -297,25 +566,6 @@
     return value;
   }
 
-  function siblingPages(page: PageRecord) {
-    return editor.children(page.projectId);
-  }
-
-  function move(page: PageRecord, direction: -1 | 1) {
-    const siblings = siblingPages(page);
-    const index = siblings.findIndex((item: PageRecord) => item.id === page.id);
-    const target = siblings[index + direction];
-    if (!target) return;
-    editor.pagesCollection.update(page.id, {
-      sortIndex: target.sortIndex,
-      updatedAt: Date.now(),
-    });
-    editor.pagesCollection.update(target.id, {
-      sortIndex: page.sortIndex,
-      updatedAt: Date.now(),
-    });
-  }
-
   function handleMenuSelect(value: string) {
     if (contextMenuElement) {
       switch (value) {
@@ -326,19 +576,14 @@
           renamingId = contextMenuElement.id;
           break;
         case "delete":
-          editor.elementsCollection?.remove(contextMenuElement.id);
+          if (editor.isElementSelected(contextMenuElement.id)) editor.removeSelectedElements();
+          else editor.removeElement(contextMenuElement.id);
           break;
       }
     }
 
     if (contextMenuPage) {
       switch (value) {
-        case "move-up":
-          move(contextMenuPage, -1);
-          break;
-        case "move-down":
-          move(contextMenuPage, 1);
-          break;
         case "rename":
           renamingId = contextMenuPage.id;
           break;
@@ -346,6 +591,12 @@
           removePage(contextMenuPage.id);
           break;
       }
+    }
+  }
+
+  function handleTreeKeyup(ev: KeyboardEvent) {
+    if (ev.key === "F2") {
+      renamingId = editor.primarySelectedElementId ?? editor.activePageId;
     }
   }
 </script>
@@ -418,10 +669,11 @@
         }}
       />
     {:else}
-      <span class="truncate">{element.name || element.tag || element.kind}</span>
+      <span class="truncate">{element.name}</span>
+      <span class="truncate opacity-50">{element.tag}</span>
       <div class="flex gap-2 shrink ml-auto items-center min-w-0">
         {#if element.bindings}
-          <Link2Icon class="size-5 opacity-85" />
+          <Link2Icon class="size-5 opacity-85" title="bindings" />
         {/if}
         <span class="truncate opacity-50">{element.kind}</span>
       </div>
@@ -434,7 +686,12 @@
   <TreeView.NodeProvider value={{ node, indexPath }}>
     {#if node.kind === "project"}
       <TreeView.Branch>
-        <TreeView.BranchControl>
+        <TreeView.BranchControl
+          data-drop={dropTarget?.id === node.id ? dropTarget.position : undefined}
+          ondragover={(ev) => handleDragOver(ev, node)}
+          ondragleave={(ev) => handleDragLeave(ev, node)}
+          ondrop={(ev) => handleDropOnNode(ev, node)}
+        >
           <TreeView.BranchIndicator />
           <div class="flex items-center justify-between grow">
             <TreeView.BranchText>
@@ -464,7 +721,16 @@
     {:else if node.kind === "page"}
       {#if children.length > 0}
         <TreeView.Branch>
-          <TreeView.BranchControl data-page-id={node.page.id}>
+          <TreeView.BranchControl
+            data-page-id={node.page.id}
+            data-drop={dropTarget?.id === node.id ? dropTarget.position : undefined}
+            draggable="true"
+            ondragstart={(ev) => handleDragStart(ev, node)}
+            ondragend={clearDrag}
+            ondragover={(ev) => handleDragOver(ev, node)}
+            ondragleave={(ev) => handleDragLeave(ev, node)}
+            ondrop={(ev) => handleDropOnNode(ev, node)}
+          >
             <TreeView.BranchIndicator />
             <TreeView.BranchText class="w-full ">
               {@render pageLabel(node.page)}
@@ -478,16 +744,33 @@
           </TreeView.BranchContent>
         </TreeView.Branch>
       {:else}
-        <TreeView.Item data-page-id={node.page.id}>
+        <TreeView.Item
+          data-page-id={node.page.id}
+          data-drop={dropTarget?.id === node.id ? dropTarget.position : undefined}
+          draggable="true"
+          ondragstart={(ev) => handleDragStart(ev, node)}
+          ondragend={clearDrag}
+          ondragover={(ev) => handleDragOver(ev, node)}
+          ondragleave={(ev) => handleDragLeave(ev, node)}
+          ondrop={(ev) => handleDropOnNode(ev, node)}
+        >
           {@render pageLabel(node.page)}
         </TreeView.Item>
       {/if}
     {:else if node.kind === "element"}
       {#if children.length > 0}
         <TreeView.Branch>
-          <TreeView.BranchControl data-element-id={node.element.id}>
+          <TreeView.BranchControl
+            data-element-id={node.element.id}
+            data-drop={dropTarget?.id === node.id ? dropTarget.position : undefined}
+            draggable="true"
+            ondragstart={(ev) => handleDragStart(ev, node)}
+            ondragend={clearDrag}
+            ondragover={(ev) => handleDragOver(ev, node)}
+            ondragleave={(ev) => handleDragLeave(ev, node)}
+            ondrop={(ev) => handleDropOnNode(ev, node)}
+          >
             <TreeView.BranchIndicator />
-
             <TreeView.BranchText class="w-full">
               {@render elementLabel(node.element)}
             </TreeView.BranchText>
@@ -500,7 +783,16 @@
           </TreeView.BranchContent>
         </TreeView.Branch>
       {:else}
-        <TreeView.Item data-element-id={node.element.id}>
+        <TreeView.Item
+          data-element-id={node.element.id}
+          data-drop={dropTarget?.id === node.id ? dropTarget.position : undefined}
+          draggable="true"
+          ondragstart={(ev) => handleDragStart(ev, node)}
+          ondragend={clearDrag}
+          ondragover={(ev) => handleDragOver(ev, node)}
+          ondragleave={(ev) => handleDragLeave(ev, node)}
+          ondrop={(ev) => handleDropOnNode(ev, node)}
+        >
           {@render elementLabel(node.element)}
         </TreeView.Item>
       {/if}
@@ -521,7 +813,10 @@
           <TreeView.Tree
             class="w-full"
             oncontextmenu={handleTreeContextMenu}
-            onkeydown={(event) => handleEditorKeydown(editor, event)}
+            onkeyup={(ev) => {
+              handleTreeKeyup(ev);
+              handleEditorKeyup(editor, ev);
+            }}
           >
             {#each childrenOf(rootNode) as node, index (node.id)}
               {@render treeNode(node, [index])}
@@ -532,21 +827,6 @@
       <Portal>
         <Menu.Positioner>
           <Menu.Content class="text-xs border-none bg-surface-100-900">
-            {#if contextMenuPage}
-              <Menu.Item value="move-up">
-                <Menu.ItemText class="flex items-center w-full gap-2">
-                  <ArrowUpIcon class="size-4" />
-                  <span>Move up</span>
-                </Menu.ItemText>
-              </Menu.Item>
-              <Menu.Item value="move-down">
-                <Menu.ItemText class="flex items-center w-full gap-2">
-                  <ArrowDownIcon class="size-4" />
-                  <span>Move down</span>
-                </Menu.ItemText>
-              </Menu.Item>
-            {/if}
-
             {#if contextMenuElement}
               <Menu.Item value="add">
                 <Menu.ItemText class="flex items-center w-full gap-2">
@@ -576,3 +856,22 @@
     </Menu>
   </fieldset>
 </div>
+
+<style>
+  :global([data-drop="before"]) {
+    border-top: 0.2rem solid var(--color-primary-500);
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  :global([data-drop="after"]) {
+    border-bottom: 0.2rem solid var(--color-primary-500);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  :global([data-drop="inside"]) {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: -2px;
+  }
+</style>

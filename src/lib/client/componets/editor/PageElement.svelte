@@ -1,7 +1,10 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import type { EditorMode } from "$lib/client/editor/editorState.svelte";
+  import type {
+    EditorMode,
+    UserComponentDefinition,
+  } from "$lib/client/editor/editorState.svelte";
   import {
     evaluateExpression,
     runEventScript,
@@ -22,6 +25,7 @@
   } from "$lib/elements/elementTypes";
   import { svgNamespace } from "$lib/elements/svgTags";
   import { createEventSnapshot } from "$lib/client/editor/script/eventSnapshot";
+  import { attempt } from "$lib/util/attempt";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
   import PageElement from "./PageElement.svelte";
@@ -35,16 +39,27 @@
     insideSvg?: boolean;
     depth?: number;
     mode?: EditorMode;
+    userComponents?: UserComponentDefinition[];
   };
 
   type EventActionContext = Omit<EventContext, "event">;
 
-  let { element, elements, propValues = {}, insideSvg = false, depth = 0, mode }: Props = $props();
+  let {
+    element,
+    elements,
+    propValues = {},
+    insideSvg = false,
+    depth = 0,
+    mode,
+    userComponents,
+  }: Props = $props();
 
-  const editor = getEditorContext();
+  const editorResult = attempt(() => getEditorContext());
+  const editor = editorResult.isOk ? editorResult.data : undefined;
   const tagValueMap = getTagValueMapContext();
 
-  let activeMode = $derived(mode ?? editor.mode);
+  let activeMode = $derived(mode ?? editor?.mode ?? "preview");
+  let componentDefinitions = $derived(userComponents ?? editor?.userComponents ?? []);
   let children = $derived(sortedChildren(elements, element.id));
 
   let bindingContext = $derived<BindingContext>({
@@ -83,6 +98,23 @@
     return attributes;
   });
 
+  let styleClassBindings = $derived(element.bindings?.styleClass ?? {});
+  let resolvedStyleClasses = $derived.by(() => {
+    const classes = element.styleClass ?? [];
+    return classes.filter((className) => {
+      const expression = styleClassBindings[className];
+      if (!expression?.trim()) return true;
+      const evaluation = evaluateExpression(expression, bindingContext);
+      return evaluation.isOk() && Boolean(evaluation.value);
+    });
+  });
+
+  let resolvedClass = $derived.by(() => {
+    const base = resolvedAttributes.class;
+    const baseClasses = typeof base === "string" ? base.split(/\s+/) : [];
+    return [...baseClasses, ...resolvedStyleClasses].filter(Boolean).join(" ");
+  });
+
   let resolvedStyle = $derived.by(() => {
     const style: Record<string, string> = { ...element.style };
     for (const [property, expression] of Object.entries(element.bindings?.style ?? {})) {
@@ -119,7 +151,9 @@
 
   let definition = $derived(
     element.kind === "user-component" && element.referencedComponentId
-      ? editor.userComponents.find((item) => item.component.id === element.referencedComponentId)
+      ? componentDefinitions.find(
+          (item) => item.component.id === element.referencedComponentId,
+        )
       : undefined,
   );
 
@@ -171,11 +205,11 @@
 {:else if element.kind === "base-component"}
   <div use:eventScripts={eventAction}>
     {#if element.baseComponent === "TagInput"}
-      <TagInput {...resolvedAttributes} style={resolvedStyle} />
+      <TagInput {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
     {:else if element.baseComponent === "DeviceStatus"}
-      <DeviceStatus id="" {...resolvedAttributes} style={resolvedStyle} />
+      <DeviceStatus id="" {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
     {:else if element.baseComponent === "TrendChart"}
-      <TrendChart {...resolvedAttributes} style={resolvedStyle} />
+      <TrendChart {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
     {:else}
       <span class="text-xs opacity-50">
         Unknown component: {element.baseComponent satisfies null}
@@ -184,7 +218,7 @@
   </div>
 {:else if element.kind === "user-component"}
   {#if definition}
-    <div use:eventScripts={eventAction}>
+    <div class={resolvedClass} use:eventScripts={eventAction}>
       {#each sortedChildren(definition.elements, null) as child (child.id)}
         <PageElementEditWrapper element={child}>
           <PageElement
@@ -194,6 +228,7 @@
             {insideSvg}
             depth={depth + 1}
             mode={activeMode}
+            userComponents={componentDefinitions}
           />
         </PageElementEditWrapper>
       {/each}
@@ -203,8 +238,8 @@
   {/if}
 {:else if element.kind === "svg" && element.tag === "svg"}
   <svg
-    class="overflow-visible"
     {...resolvedAttributes}
+    class={`overflow-visible ${resolvedClass}`}
     style={resolvedStyle}
     use:eventScripts={eventAction}
   >
@@ -217,6 +252,7 @@
           insideSvg={true}
           depth={depth + 1}
           mode={activeMode}
+          userComponents={componentDefinitions}
         />
       </PageElementEditWrapper>
     {/each}
@@ -225,13 +261,14 @@
   <svelte:element
     this={element.tag}
     {...resolvedAttributes}
+    class={resolvedClass}
     xmlns={element.kind === "svg" ? svgNamespace : undefined}
     style={resolvedStyle}
     use:eventScripts={eventAction}
   >
     {text}
     {#each children as child (child.id)}
-      <PageElementEditWrapper element={child}>
+      <PageElementEditWrapper element={child} {insideSvg}>
         <PageElement
           element={child}
           {elements}
@@ -239,6 +276,7 @@
           {insideSvg}
           depth={depth + 1}
           mode={activeMode}
+          userComponents={componentDefinitions}
         />
       </PageElementEditWrapper>
     {/each}

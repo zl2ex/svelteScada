@@ -12,6 +12,7 @@
   import { LoaderIcon, NetworkIcon } from "@lucide/svelte";
   import { defineAbilityFor } from "$lib/permissions/ability";
   import { setAbilityContext } from "$lib/client/permissions/abilityContext";
+  import { redirectToLogin } from "$lib/client/authRedirect";
 
   const { children, data } = $props();
   const ability = defineAbilityFor(data.user);
@@ -34,6 +35,12 @@
   $effect(() => {
     if (typeof $connectionHeartbeat === "number") {
       resetHeartbeatWatchdog();
+    }
+  });
+
+  $effect(() => {
+    if ($failure?.class === "TERMINAL" || $failure?.class === "AUTH") {
+      redirectToLogin();
     }
   });
 

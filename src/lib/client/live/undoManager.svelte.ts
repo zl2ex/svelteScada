@@ -69,12 +69,8 @@ export class UnifiedUndoManager {
       this.#transactionBuffer.clear();
       return;
     }
-    this.#undoTimeline = this.#undoTimeline.filter(
-      (entry) => !entry.contexts.includes(context),
-    );
-    this.#redoTimeline = this.#redoTimeline.filter(
-      (entry) => !entry.contexts.includes(context),
-    );
+    this.#undoTimeline = this.#undoTimeline.filter((entry) => !entry.contexts.includes(context));
+    this.#redoTimeline = this.#redoTimeline.filter((entry) => !entry.contexts.includes(context));
     this.#transactionBuffer.delete(context);
   }
 
@@ -106,10 +102,7 @@ export class UnifiedUndoManager {
     // the collection's Travels by N positions, so the entry must remember
     // N so undo/redo can step that far back/forward.
     if (this.#transactionStack > 0) {
-      this.#transactionBuffer.set(
-        context,
-        (this.#transactionBuffer.get(context) ?? 0) + 1,
-      );
+      this.#transactionBuffer.set(context, (this.#transactionBuffer.get(context) ?? 0) + 1);
       return;
     }
 

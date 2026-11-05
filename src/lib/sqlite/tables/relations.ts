@@ -3,6 +3,10 @@ import * as schema from "./index";
 
 export const relationsConfig = defineRelations(schema, (r) => ({
   projects: {
+    theme: r.one.user_theme({
+      from: r.projects.themeId,
+      to: r.user_theme.id,
+    }),
     pages: r.many.pages({
       from: r.projects.id,
       to: r.pages.projectId,
@@ -10,6 +14,13 @@ export const relationsConfig = defineRelations(schema, (r) => ({
     userComponents: r.many.user_components({
       from: r.projects.id,
       to: r.user_components.projectId,
+    }),
+  },
+
+  user_theme: {
+    projects: r.many.projects({
+      from: r.user_theme.id,
+      to: r.projects.themeId,
     }),
   },
 

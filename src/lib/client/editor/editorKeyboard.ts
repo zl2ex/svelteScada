@@ -7,7 +7,7 @@ export function isEditableTarget(target: EventTarget | null) {
   );
 }
 
-export function handleEditorKeydown(editor: EditorState, event: KeyboardEvent) {
+export function handleEditorKeyup(editor: EditorState, event: KeyboardEvent) {
   if (isEditableTarget(event.target)) return;
 
   if (editor.mode === "preview") {
@@ -16,16 +16,16 @@ export function handleEditorKeydown(editor: EditorState, event: KeyboardEvent) {
   }
 
   if (event.key === "Escape") {
-    if (editor.selectedElementId) {
-      editor.selectedElementId = null;
+    if (editor.selectedElementIds.length > 0) {
+      editor.clearElementSelection();
       return;
     }
     editor.setActivePage(null);
     return;
   }
 
-  if (event.key === "Delete" && editor.selectedElementId) {
+  if (event.key === "Delete" && editor.selectedElementIds.length > 0) {
     event.preventDefault();
-    editor.removeElement(editor.selectedElementId);
+    editor.removeSelectedElements();
   }
 }

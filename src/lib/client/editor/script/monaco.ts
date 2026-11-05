@@ -1,6 +1,7 @@
 import * as monaco from "monaco-editor";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 import tsWorker from "monaco-editor/languages/features/typescript/ts.worker?worker";
+import cssWorker from "monaco-editor/languages/features/css/css.worker?worker";
 import {
   conf as jsConf,
   language as jsLanguage,
@@ -29,6 +30,7 @@ import { scriptScopeIds, scriptScopes } from "./scriptScopes";
 
 globalThis.MonacoEnvironment = {
   getWorker(_workerId, label) {
+    if (label === "css" || label === "scss" || label === "less") return new cssWorker();
     return label === "typescript" || label === "javascript" || scriptScopeIds.has(label)
       ? new tsWorker()
       : new editorWorker();

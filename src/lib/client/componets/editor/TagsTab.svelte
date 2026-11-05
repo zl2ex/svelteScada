@@ -49,6 +49,12 @@
   import type { TagBindingKey } from "$lib/tagBindings";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { tagWriteLevels, type TagWriteLevel } from "$lib/permissions/constants";
+  import {
+    readTreeDragData,
+    writeTreeDragData,
+    type TreeDragPayload,
+  } from "$lib/client/util/dragging";
+  import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
 
   let {
     tagFolders,
@@ -60,6 +66,7 @@
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
+  const tagValueMap = getTagValueMapContext();
 
   let tagFolderPatchesCollection = $state(
     new PatchCollection<ClosureTableNode, NeverThrowError>({
@@ -155,6 +162,111 @@
 
   function saveTagBinding(node: TagOptionsInput, key: TagBindingKey, expression: string) {
     saveTagConfig(node, { bindings: updateBinding(node.bindings, key, null, expression) });
+  }
+
+  let dragging = $state<TreeDragPayload | null>(null);
+  let dropFolderId = $state<string | null>(null);
+
+  function clearTagDrag() {
+    dragging = null;
+    dropFolderId = null;
+  }
+
+  function handleTagDragStart(ev: DragEvent, node: ClosureTableNode | TagOptionsInput) {
+    const payload: TreeDragPayload = isClosureTableNode(node)
+      ? { kind: "tag-folder", id: node.id }
+      : { kind: "tag", id: node.id };
+    ev.stopPropagation();
+    dragging = payload;
+    writeTreeDragData(ev, payload);
+  }
+
+  function isFolderDescendant(candidateId: string, ancestorId: string) {
+    const allFolders = {
+      ...tagFolderPatchesCollection.state,
+      ...stagingFolders,
+    };
+    let current: ClosureTableNode | undefined = allFolders[candidateId];
+    while (current) {
+      if (current.parentId === ancestorId) return true;
+      current = current.parentId ? allFolders[current.parentId] : undefined;
+    }
+    return false;
+  }
+
+  function canDropOnFolder(targetId: string) {
+    if (!dragging) return false;
+    if (dragging.kind === "tag") return true;
+    if (dragging.kind !== "tag-folder") return false;
+    if (dragging.id === targetId) return false;
+    return !isFolderDescendant(targetId, dragging.id);
+  }
+
+  function handleTagDragOver(ev: DragEvent, targetId: string) {
+    if (!canDropOnFolder(targetId)) {
+      ev.stopPropagation();
+      if (dropFolderId === targetId) dropFolderId = null;
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = "none";
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = "move";
+    if (dropFolderId !== targetId) dropFolderId = targetId;
+  }
+
+  function handleTagDragLeave(ev: DragEvent, targetId: string) {
+    const current = ev.currentTarget;
+    if (
+      current instanceof Node &&
+      ev.relatedTarget instanceof Node &&
+      current.contains(ev.relatedTarget)
+    ) {
+      return;
+    }
+    if (dropFolderId === targetId) dropFolderId = null;
+  }
+
+  function handleTagDrop(ev: DragEvent, targetFolder: ClosureTableNode) {
+    const payload = dragging ?? readTreeDragData(ev);
+    if (!payload) {
+      clearTagDrag();
+      return;
+    }
+    if (payload.kind === "tag-folder") {
+      if (payload.id === targetFolder.id) {
+        ev.stopPropagation();
+        clearTagDrag();
+        return;
+      }
+      if (isFolderDescendant(targetFolder.id, payload.id)) {
+        ev.stopPropagation();
+        clearTagDrag();
+        return;
+      }
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    if (payload.kind === "tag") {
+      const staging = stagingTags[payload.id];
+      if (staging) {
+        staging.folderId = targetFolder.id;
+      } else {
+        const tag = tagPatchesCollection.state[payload.id];
+        if (tag) saveTagConfig(tag, { folderId: targetFolder.id });
+      }
+    } else if (payload.kind === "tag-folder") {
+      const staging = stagingFolders[payload.id];
+      if (staging) {
+        staging.parentId = targetFolder.id;
+      } else {
+        tagFolderPatchesCollection.update(payload.id, { parentId: targetFolder.id });
+      }
+    }
+
+    clearTagDrag();
   }
 
   let collection = $state(
@@ -418,6 +530,15 @@
         ...getChildTags(folders),
       ]);
       const copied = await copyToClipboard(json);
+      if (copied.isErr()) {
+        console.error(`handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`);
+      }
+    }
+
+    if (e.key === "q" && e.ctrlKey) {
+      // copy path of tag
+      if (!onlyOneTag) return;
+      const copied = await copyToClipboard(tagValueMap.tagValue(tags[0].id)?.path ?? "");
       if (copied.isErr()) {
         console.error(`handleTreeKeyup() ${neverThrowErrorToString(copied.error)}`);
       }
@@ -721,7 +842,7 @@
 
   async function handleMenuSelect(value: string) {
     switch (value) {
-      case "Rename": {
+      case "rename": {
         const onlyOneFolder = contextMenuFolders.length === 1 && contextMenuTags.length === 0;
         const onlyOneTag = contextMenuTags.length === 1 && contextMenuFolders.length === 0;
         if (onlyOneFolder) renamingId = contextMenuFolders[0].id;
@@ -746,6 +867,17 @@
           },
         );
         return;
+
+      case "copyPath":
+        if (contextMenuFolders.length != 0 && contextMenuTags.length != 1) return;
+        const copied = await copyToClipboard(
+          tagValueMap.tagValue(contextMenuTags[0].id)?.path ?? "",
+        );
+        if (copied.isErr()) {
+          console.error(`copy() ${neverThrowErrorToString(copied.error)}`);
+        }
+        return;
+
       case "cut":
         if (contextMenuFolders.length === 0 && contextMenuTags.length === 0) return;
         if (contextMenuFolders.length > 0) await foldersCut(contextMenuFolders);
@@ -818,7 +950,16 @@
           handlePaste(e, node);
         }}
       >
-        <TreeView.BranchControl data-folder-id={node.id}>
+        <TreeView.BranchControl
+          data-folder-id={node.id}
+          data-drop={dropFolderId === node.id ? "inside" : undefined}
+          draggable="true"
+          ondragstart={(ev) => handleTagDragStart(ev, node)}
+          ondragend={clearTagDrag}
+          ondragover={(ev) => handleTagDragOver(ev, node.id)}
+          ondragleave={(ev) => handleTagDragLeave(ev, node.id)}
+          ondrop={(ev) => handleTagDrop(ev, node)}
+        >
           <TreeView.BranchIndicator />
           <TreeView.BranchText class="truncate w-full">
             <FolderIcon class="size-4 shrink-0 opacity-60" />
@@ -848,10 +989,15 @@
         </TreeView.BranchContent>
       </TreeView.Branch>
     {:else if isTagOptions(node)}
-      <Popover>
+      <Popover positioning={{ placement: "right-end", offset: { mainAxis: 48 } }}>
         <Popover.Context>
           {#snippet children(tagEditPopover)}
-            <TreeView.Item data-tag-id={node.id}>
+            <TreeView.Item
+              data-tag-id={node.id}
+              draggable="true"
+              ondragstart={(ev) => handleTagDragStart(ev, node)}
+              ondragend={clearTagDrag}
+            >
               <Popover.Trigger>
                 {#snippet element(attributes)}
                   <button
@@ -911,7 +1057,7 @@
                       {#if isTagBound(node, "dataType")}
                         <input
                           id={`dataType-${node.id}`}
-                          class="input py-0"
+                          class="input placeholder:opacity-50 py-0"
                           value={tagBindingResult(node, "dataType")}
                           disabled
                           placeholder="No result"
@@ -1034,7 +1180,7 @@
                       {#if isTagBound(node, "trendEnabled")}
                         <input
                           id={`trendEnabled-${node.id}`}
-                          class="input py-0"
+                          class="input placeholder:opacity-50 py-0"
                           value={tagBindingResult(node, "trendEnabled")}
                           disabled
                           placeholder="No result"
@@ -1063,7 +1209,7 @@
                       {#if isTagBound(node, "trendMinimumSamplingIntervalMs")}
                         <input
                           id={`trendMinimumSamplingIntervalMs-${node.id}`}
-                          class="input py-0"
+                          class="input placeholder:opacity-50 py-0"
                           value={tagBindingResult(node, "trendMinimumSamplingIntervalMs")}
                           disabled
                           placeholder="No result"
@@ -1072,7 +1218,7 @@
                         <input
                           id={`trendMinimumSamplingIntervalMs-${node.id}`}
                           type="number"
-                          class="input w-24"
+                          class="input placeholder:opacity-50"
                           min="100"
                           step="100"
                           placeholder="minimum interval ms"
@@ -1100,7 +1246,7 @@
                       <textarea
                         id={`parameters-${node.id}`}
                         rows="4"
-                        class="input py-0 font-mono text-xs"
+                        class="input placeholder:opacity-50 py-0 font-mono text-xs"
                         value={isTagBound(node, "parameters")
                           ? tagBindingResult(node, "parameters")
                           : node.parameters
@@ -1148,7 +1294,7 @@
                       <input
                         id={`unit-${node.id}`}
                         type="text"
-                        class="input py-0"
+                        class="input py-0 placeholder:opacity-50"
                         value={isTagBound(node, "unit")
                           ? tagBindingResult(node, "unit")
                           : (node.unit ?? "")}
@@ -1209,27 +1355,41 @@
   <Portal>
     <Menu.Positioner>
       <Menu.Content class="text-xs border-none bg-surface-100-900">
-        <Menu.Item value="Rename">
-          <Menu.ItemText class="flex items-center w-full gap-2">
-            <PencilIcon class="size-4" />
-            <span>Rename</span>
-            <span class="text-xs text-neutral-500 ml-auto">F2</span>
-          </Menu.ItemText>
-        </Menu.Item>
-        <Menu.Item value="newTag">
-          <Menu.ItemText class="flex items-center w-full gap-2">
-            <TagPlus class="size-4" />
-            <span>New Tag</span>
-            <span class="text-xs text-neutral-500 ml-auto">Alt+T</span>
-          </Menu.ItemText>
-        </Menu.Item>
-        <Menu.Item value="newFolder">
-          <Menu.ItemText class="flex items-center w-full gap-2">
-            <FolderPlus class="size-4" />
-            <span>New Folder</span>
-            <span class="text-xs text-neutral-500 ml-auto">Alt+F</span>
-          </Menu.ItemText>
-        </Menu.Item>
+        {#if (contextMenuFolders.length === 1 && contextMenuTags.length === 0) || (contextMenuFolders.length === 0 && contextMenuTags.length === 1)}
+          <Menu.Item value="rename">
+            <Menu.ItemText class="flex items-center w-full gap-2">
+              <PencilIcon class="size-4" />
+              <span>Rename</span>
+              <span class="text-xs text-neutral-500 ml-auto">F2</span>
+            </Menu.ItemText>
+          </Menu.Item>
+        {/if}
+        {#if contextMenuFolders.length === 1 && contextMenuTags.length === 0}
+          <Menu.Item value="newTag">
+            <Menu.ItemText class="flex items-center w-full gap-2">
+              <TagPlus class="size-4" />
+              <span>New Tag</span>
+              <span class="text-xs text-neutral-500 ml-auto">Alt+T</span>
+            </Menu.ItemText>
+          </Menu.Item>
+          <Menu.Item value="newFolder">
+            <Menu.ItemText class="flex items-center w-full gap-2">
+              <FolderPlus class="size-4" />
+              <span>New Folder</span>
+              <span class="text-xs text-neutral-500 ml-auto">Alt+F</span>
+            </Menu.ItemText>
+          </Menu.Item>
+        {/if}
+        {#if contextMenuFolders.length === 0 && contextMenuTags.length === 1}
+          <Menu.Separator />
+          <Menu.Item value="copyPath">
+            <Menu.ItemText class="flex items-center w-full gap-2">
+              <Copy class="size-4" />
+              <span>Copy Path</span>
+              <span class="text-xs text-neutral-500 ml-auto">Ctrl+Q</span>
+            </Menu.ItemText>
+          </Menu.Item>
+        {/if}
         <Menu.Separator />
         <Menu.Item
           value="cut"
@@ -1262,6 +1422,7 @@
           </Menu.ItemText>
         </Menu.Item>
         <Menu.Separator />
+
         <Menu.Item
           value="delete"
           disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
@@ -1276,3 +1437,10 @@
     </Menu.Positioner>
   </Portal>
 </Menu>
+
+<style>
+  :global([data-drop="inside"]) {
+    outline: 2px solid var(--color-primary-500);
+    outline-offset: -2px;
+  }
+</style>

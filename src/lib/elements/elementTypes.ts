@@ -64,13 +64,16 @@ export type ElementShape = Pick<ElementRecord, "kind" | "tag">;
 export function isContainerElement(element: ElementShape | null | undefined) {
   return (
     !!element &&
-    ((element.kind === "html" && element.tag === "div") ||
-      (element.kind === "svg" && element.tag === "svg"))
+    ((element.kind === "html" && element.tag === "div") || isSvgContainer(element))
   );
 }
 
 export function isSvgContainer(element: ElementShape | null | undefined) {
-  return !!element && element.kind === "svg" && element.tag === "svg";
+  return (
+    !!element &&
+    element.kind === "svg" &&
+    (element.tag === "svg" || element.tag === "g")
+  );
 }
 
 export function isSvgDrawingElement(element: ElementShape | null | undefined) {
@@ -116,14 +119,14 @@ export function findContainerInsertionTarget(
 
 export function elementParentError(child: ElementShape, parent: ElementShape | null) {
   if (isSvgDrawingElement(child) && !isSvgContainer(parent)) {
-    return "SVG drawing elements must be inside an <svg> container";
+    return "SVG drawing elements must be inside an <svg> or <g> container";
   }
   if (!parent) return null;
   if (!isContainerElement(parent)) {
-    return "parent element is not a div or svg container";
+    return "parent element is not a div, svg, or g container";
   }
   if (isSvgContainer(parent) && child.kind !== "svg") {
-    return "<svg> containers may only contain SVG elements";
+    return "<svg> and <g> containers may only contain SVG elements";
   }
   return null;
 }
@@ -132,7 +135,7 @@ export function elementContainerTypeError(
   element: ElementShape & { containerType: ContainerType },
 ) {
   if (!isContainerElement(element) && element.containerType !== "none") {
-    return "only div and svg containers can set a container type";
+    return "only div, svg, and g containers can set a container type";
   }
   return null;
 }

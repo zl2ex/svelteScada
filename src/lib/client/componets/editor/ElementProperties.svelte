@@ -2,7 +2,7 @@
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import type { ContainerType } from "$lib/elements/elementTypes";
-  import { isContainerElement } from "$lib/elements/elementTypes";
+  import { containerTypes, isContainerElement } from "$lib/elements/elementTypes";
   import { toast } from "$lib/client/toast.svelte";
   import {
     attributeBindingScope,
@@ -26,17 +26,19 @@
   import ElementBindingRow from "./ElementBindingRow.svelte";
   import ElementBindingSection from "./ElementBindingSection.svelte";
   import ElementEventsEditor from "./ElementEventsEditor.svelte";
+  import ElementStyleClassSection from "./ElementStyleClassSection.svelte";
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
   const tagValueMap = getTagValueMapContext();
-  const containerOptions: ContainerType[] = ["none", "absolute", "flex", "grid", "block"];
+  const containerOptions = containerTypes;
 
-  let name = $state("");
   let containerType = $state<ContainerType>("none");
 
   let selected = $derived(
-    editor.selectedElementId ? editor.elementsCollection?.state[editor.selectedElementId] : null,
+    editor.selectedElementIds.length === 1
+      ? editor.elementsCollection?.state[editor.selectedElementIds[0]]
+      : null,
   );
   let selectedIsContainer = $derived(isContainerElement(selected));
   let showStyle = $derived(!!selected && selected.kind !== "user-component");
@@ -59,7 +61,6 @@
   $effect(() => {
     const element = selected;
     if (!element) return;
-    name = element.name;
     containerType = element.containerType;
   });
 
@@ -124,11 +125,6 @@
       };
     });
   });
-
-  function saveName() {
-    if (!selected) return;
-    editor.elementsCollection?.update(selected.id, { name, updatedAt: Date.now() });
-  }
 
   function saveText(value: string) {
     if (!selected) return;
@@ -226,82 +222,79 @@
 
 <div class="flex flex-col text-xs">
   <fieldset class="contents" disabled={!ability.can("update", "Element")}>
-  {#if !selected}
-    <p class="p-3 opacity-50">Select an element to edit its properties.</p>
-  {:else}
-    <div class="p-3 flex flex-col gap-3">
-      <div class="flex items-center justify-between gap-2">
-        <div class="min-w-0">
-          <div class="font-semibold truncate">{selected.name || selected.id}</div>
-          <div class="opacity-50 truncate">
-            {selected.kind}{selected.tag ? ` · ${selected.tag}` : ""}
+    {#if !selected}
+      <p class="p-3 opacity-50">Select an element to edit its properties.</p>
+    {:else}
+      <div class="p-3 flex flex-col gap-3">
+        <div class="flex items-center justify-between gap-2">
+          <div class="min-w-0">
+            <div class="font-semibold truncate">{selected.name || selected.id}</div>
+            <div class="opacity-50 truncate">
+              {selected.kind}{selected.tag ? ` · ${selected.tag}` : ""}
+            </div>
           </div>
         </div>
-      </div>
 
-      <label class="flex flex-col gap-1">
-        <span class="opacity-60">Name</span>
-        <input class="input h-7 py-0 px-2" bind:value={name} onblur={saveName} />
-      </label>
+        {#if textRow}
+          <ElementBindingRow
+            label="Text"
+            value={textRow.value}
+            binding={textRow.binding}
+            result={textRow.result}
+            multiline
+            onValueCommit={saveText}
+            onBindingSave={(expression) => saveBinding("text", "text", expression)}
+            onBindingRemove={() => saveBinding("text", "text", "")}
+          />
+        {/if}
 
-      {#if textRow}
-        <ElementBindingRow
-          label="Text"
-          value={textRow.value}
-          binding={textRow.binding}
-          result={textRow.result}
-          multiline
-          onValueCommit={saveText}
-          onBindingSave={(expression) => saveBinding("text", "text", expression)}
-          onBindingRemove={() => saveBinding("text", "text", "")}
-        />
-      {/if}
+        {#if selectedIsContainer}
+          <label class="flex flex-col gap-1">
+            <span class="opacity-60">Container</span>
+            <select
+              class="input h-7 py-0 px-1"
+              value={containerType}
+              onchange={(event) => saveContainer(event.currentTarget.value as ContainerType)}
+            >
+              {#each containerOptions as option}
+                <option value={option}>{option}</option>
+              {/each}
+            </select>
+          </label>
+        {:else}
+          <p class="opacity-50">This element is not a container.</p>
+        {/if}
 
-      {#if selectedIsContainer}
-        <label class="flex flex-col gap-1">
-          <span class="opacity-60">Container</span>
-          <select
-            class="input h-7 py-0 px-1"
-            value={containerType}
-            onchange={(event) => saveContainer(event.currentTarget.value as ContainerType)}
-          >
-            {#each containerOptions as option}
-              <option value={option}>{option}</option>
-            {/each}
-          </select>
-        </label>
-      {:else}
-        <p class="opacity-50">This element is not a container.</p>
-      {/if}
-
-      <ElementBindingSection
-        title={attributeScope === "props" ? "Props" : "Attributes"}
-        rows={attributeRows}
-        keyPlaceholder={attributeScope === "props" ? "prop" : "attribute"}
-        valuePlaceholder="value"
-        onAdd={addAttribute}
-        onValueCommit={(row, value) => saveAttributeValue(row.key, value)}
-        onBindingSave={(row, expression) => saveBinding(attributeScope, row.key, expression)}
-        onBindingRemove={(row) => saveBinding(attributeScope, row.key, "")}
-        onRemoveRow={removeAttributeRow}
-      />
-
-      {#if showStyle}
         <ElementBindingSection
-          title="Style"
-          rows={styleRows}
-          keyPlaceholder="property"
+          title={attributeScope === "props" ? "Props" : "Attributes"}
+          rows={attributeRows}
+          keyPlaceholder={attributeScope === "props" ? "prop" : "attribute"}
           valuePlaceholder="value"
-          onAdd={addStyleRow}
-          onValueCommit={(row, value) => saveStyleValue(row.key, value)}
-          onBindingSave={(row, expression) => saveBinding("style", row.key, expression)}
-          onBindingRemove={(row) => saveBinding("style", row.key, "")}
-          onRemoveRow={removeStyle}
+          onAdd={addAttribute}
+          onValueCommit={(row, value) => saveAttributeValue(row.key, value)}
+          onBindingSave={(row, expression) => saveBinding(attributeScope, row.key, expression)}
+          onBindingRemove={(row) => saveBinding(attributeScope, row.key, "")}
+          onRemoveRow={removeAttributeRow}
         />
-      {/if}
 
-      <ElementEventsEditor />
-    </div>
-  {/if}
+        {#if showStyle}
+          <ElementBindingSection
+            title="Style"
+            rows={styleRows}
+            keyPlaceholder="property"
+            valuePlaceholder="value"
+            onAdd={addStyleRow}
+            onValueCommit={(row, value) => saveStyleValue(row.key, value)}
+            onBindingSave={(row, expression) => saveBinding("style", row.key, expression)}
+            onBindingRemove={(row) => saveBinding("style", row.key, "")}
+            onRemoveRow={removeStyle}
+          />
+        {/if}
+
+        <ElementStyleClassSection element={selected} />
+
+        <ElementEventsEditor />
+      </div>
+    {/if}
   </fieldset>
 </div>

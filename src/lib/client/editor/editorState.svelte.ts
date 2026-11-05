@@ -5,14 +5,18 @@ import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
 import { undoManager } from "$lib/client/history/undoManager";
 import { getProjectElements } from "$lib/remote/editor.remote";
 import { applyPageElementPatches, pageElementPatches } from "$live/pages";
-import type { ProjectSelect, UserComponentSelect } from "$lib/sqlite/tables";
+import type { ProjectSelect, UserComponentSelect, UserThemeSelect } from "$lib/sqlite/tables";
 import type {
   ElementRecord,
   ElementKind,
   ElementAttributes,
   ElementStyle,
 } from "$lib/elements/elementTypes";
-import { elementParentError, findContainerInsertionTarget } from "$lib/elements/elementTypes";
+import {
+  elementParentError,
+  findContainerInsertionTarget,
+  sortedChildren,
+} from "$lib/elements/elementTypes";
 import { getDefaultElementConfig } from "$lib/elements/defaults";
 import { pagePath, pageRoute, sortedPages, type PageRecord } from "$lib/elements/pageTypes";
 import { attempt } from "$lib/util/attempt";
@@ -36,31 +40,35 @@ export type EditorLeftPanelTab = "tags" | "udts" | "pages";
 export type EditorFocusSnapshot = {
   projectId: string | null;
   pageId: string | null;
-  selectedElementId: string | null;
+  selectedElementIds: string[];
   tagSelectionIds: string[];
   leftPanelTab: EditorLeftPanelTab;
 };
+
+function stringArraysEqual(a: string[], b: string[]) {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
 
 function focusEquals(a: EditorFocusSnapshot, b: EditorFocusSnapshot) {
   return (
     a.projectId === b.projectId &&
     a.pageId === b.pageId &&
-    a.selectedElementId === b.selectedElementId &&
-    a.tagSelectionIds.length === b.tagSelectionIds.length &&
-    a.tagSelectionIds.every((id, index) => id === b.tagSelectionIds[index]) &&
+    stringArraysEqual(a.selectedElementIds, b.selectedElementIds) &&
+    stringArraysEqual(a.tagSelectionIds, b.tagSelectionIds) &&
     a.leftPanelTab === b.leftPanelTab
   );
 }
 
 export class EditorState {
   pagesCollection: PatchCollection<PageRecord, NeverThrowError>;
+  userThemesCollection: PatchCollection<UserThemeSelect, NeverThrowError>;
   elementsCollection = $state.raw<PatchCollection<ElementRecord, NeverThrowError> | null>(null);
   projects = $state<ProjectSelect[]>([]);
   userComponents = $state<UserComponentDefinition[]>([]);
   activeProjectId = $state<string | null>(null);
   activePageId = $state<string | null>(null);
   openPageIds = $state<string[]>([]);
-  selectedElementId = $state<string | null>(null);
+  selectedElementIds = $state<string[]>([]);
   tagSelectionIds = $state<string[]>([]);
   leftPanelTab = $state<EditorLeftPanelTab>("tags");
   projectLoading = $state(false);
@@ -77,20 +85,39 @@ export class EditorState {
   #lastFocus: EditorFocusSnapshot = {
     projectId: null,
     pageId: null,
-    selectedElementId: null,
+    selectedElementIds: [],
     tagSelectionIds: [],
     leftPanelTab: "tags",
   };
 
   constructor(options: {
     pages: PatchCollection<PageRecord, NeverThrowError>;
+    userThemes: PatchCollection<UserThemeSelect, NeverThrowError>;
     projects: ProjectSelect[];
     userComponents: UserComponentDefinition[];
   }) {
     this.pagesCollection = options.pages;
+    this.userThemesCollection = options.userThemes;
     this.projects = options.projects;
     this.userComponents = options.userComponents;
     this.#loadOpenPages();
+  }
+
+  get activeProject(): ProjectSelect | null {
+    if (!this.activeProjectId) return null;
+    return this.projects.find((project) => project.id === this.activeProjectId) ?? null;
+  }
+
+  get themes(): UserThemeSelect[] {
+    return Object.values(this.userThemesCollection.state).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }
+
+  get activeTheme(): UserThemeSelect | null {
+    const project = this.activeProject;
+    const themes = this.userThemesCollection.state;
+    return (project?.themeId ? themes[project.themeId] : undefined) ?? this.themes[0] ?? null;
   }
 
   get activePage(): PageRecord | null {
@@ -106,11 +133,80 @@ export class EditorState {
     return this.#focusFuture.length > 0;
   }
 
+  get primarySelectedElementId(): string | null {
+    return this.selectedElementIds.at(-1) ?? null;
+  }
+
+  get selectedElements(): ElementRecord[] {
+    const state = this.elementsCollection?.state ?? {};
+    return this.selectedElementIds.map((id) => state[id]).filter(Boolean);
+  }
+
   get insertionTarget(): string | null {
     return findContainerInsertionTarget(
       this.elementsCollection?.state ?? {},
-      this.selectedElementId,
+      this.primarySelectedElementId,
     );
+  }
+
+  isElementSelected(id: string) {
+    return this.selectedElementIds.includes(id);
+  }
+
+  setElementSelection(ids: string[], primaryId: string | null = null) {
+    const unique = [...new Set(ids)].filter((id) => this.elementsCollection?.state[id]);
+    if (primaryId && unique.includes(primaryId)) {
+      this.selectedElementIds = [...unique.filter((id) => id !== primaryId), primaryId];
+      return;
+    }
+    this.selectedElementIds = unique;
+  }
+
+  clearElementSelection() {
+    this.selectedElementIds = [];
+  }
+
+  selectElement(id: string, options: { additive?: boolean; range?: boolean } = {}) {
+    if (options.range) {
+      const order = this.#elementOrder();
+      const targetIndex = order.indexOf(id);
+      const anchor = this.selectedElementIds[0];
+      const anchorIndex = anchor ? order.indexOf(anchor) : -1;
+
+      if (targetIndex < 0) return;
+      if (anchorIndex < 0) {
+        this.setElementSelection([id], id);
+        return;
+      }
+
+      const start = Math.min(anchorIndex, targetIndex);
+      const end = Math.max(anchorIndex, targetIndex);
+      this.setElementSelection(order.slice(start, end + 1), id);
+      return;
+    }
+
+    if (options.additive) {
+      const next = this.selectedElementIds.includes(id)
+        ? this.selectedElementIds.filter((selectedId) => selectedId !== id)
+        : [...this.selectedElementIds, id];
+      this.setElementSelection(next, next.at(-1) ?? null);
+      return;
+    }
+
+    this.setElementSelection([id], id);
+  }
+
+  #elementOrder() {
+    const state = this.elementsCollection?.state ?? {};
+    const order: string[] = [];
+    const visit = (parentId: string | null) => {
+      for (const element of sortedChildren(state, parentId)) {
+        order.push(element.id);
+        visit(element.id);
+      }
+    };
+    visit(null);
+    return order;
   }
 
   get insertionTargetElement(): ElementRecord | null {
@@ -196,7 +292,7 @@ export class EditorState {
         : null;
 
     this.activePageId = nextId;
-    this.selectedElementId = null;
+    this.clearElementSelection();
     this.elementsCollection = collection;
     undoManager.setActiveDocument(nextId ? pageDocumentId(nextId) : null);
 
@@ -313,26 +409,34 @@ export class EditorState {
       containerType: "none",
       attributes: { ...defaults.attributes, ...options.attributes },
       style: { ...defaults.style, ...options.style },
+      styleClass: [],
       bindings: null,
       createdAt: now,
       updatedAt: now,
     };
     if (elementParentError(element, parent)) return null;
     collection.add(element);
-    this.selectedElementId = id;
+    this.setElementSelection([id], id);
     return id;
   }
 
   removeElement(id: string) {
     this.elementsCollection?.remove(id);
-    if (this.selectedElementId === id) this.selectedElementId = null;
+    this.setElementSelection(this.selectedElementIds.filter((selectedId) => selectedId !== id));
+  }
+
+  removeSelectedElements() {
+    const ids = [...this.selectedElementIds];
+    if (ids.length === 0) return;
+    this.elementsCollection?.removeMany(ids);
+    this.clearElementSelection();
   }
 
   snapshotFocus(): EditorFocusSnapshot {
     return {
       projectId: this.activeProjectId,
       pageId: this.activePageId,
-      selectedElementId: this.selectedElementId,
+      selectedElementIds: [...this.selectedElementIds],
       tagSelectionIds: [...this.tagSelectionIds],
       leftPanelTab: this.leftPanelTab,
     };
@@ -395,7 +499,7 @@ export class EditorState {
     this.#disposePageCollections();
     this.activeProjectId = null;
     this.activePageId = null;
-    this.selectedElementId = null;
+    this.clearElementSelection();
     this.leftPanelTab = "tags";
     this.#focusHistory = [];
     this.#focusFuture = [];
@@ -417,12 +521,10 @@ export class EditorState {
     const page = snapshot.pageId ? this.pagesCollection.state[snapshot.pageId] : undefined;
     if (page && (!snapshot.projectId || page.projectId === snapshot.projectId)) {
       this.setActivePage(page.id);
-      if (
-        snapshot.selectedElementId &&
-        this.elementsCollection?.state[snapshot.selectedElementId]
-      ) {
-        this.selectedElementId = snapshot.selectedElementId;
-      }
+      const selectedIds = snapshot.selectedElementIds.filter(
+        (id) => this.elementsCollection?.state[id],
+      );
+      this.setElementSelection(selectedIds, selectedIds.at(-1) ?? null);
     } else {
       this.setActivePage(null);
     }
@@ -483,7 +585,7 @@ export class EditorState {
 
     if (this.elementsCollection === collection) {
       this.elementsCollection = null;
-      this.selectedElementId = null;
+      this.clearElementSelection();
       undoManager.setActiveDocument(null);
     }
   }
@@ -499,7 +601,7 @@ export class EditorState {
     this.#pageCollections = {};
     this.#projectReady = false;
     this.elementsCollection = null;
-    this.selectedElementId = null;
+    this.clearElementSelection();
     undoManager.setActiveDocument(null);
   }
 

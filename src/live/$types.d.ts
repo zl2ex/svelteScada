@@ -84,3 +84,16 @@ declare module '$live/trends' {
   export const getTagTrend: ((tagId: string) => StreamStore<TrendPoint[] | undefined | { error: RpcError }>) & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<TrendPoint[]> };
   export const empty: Readable<undefined>;
 }
+
+declare module '$live/user-theme' {
+  import type { StreamStore, RpcError } from 'svelte-realtime/client';
+  import type { Readable } from 'svelte/store';
+  import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
+  import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
+
+  export const applyUserThemePatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, NeverThrowError>>;
+  export const setProjectTheme: (input: { projectId: string; themeId: string | null }) => Promise<WireResult<{ ok: true }, NeverThrowError>>;
+  export type ErrorCode = 'INVALID_PATCH' | 'UNAUTHENTICATED';
+  export const userThemePatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
+  export const empty: Readable<undefined>;
+}

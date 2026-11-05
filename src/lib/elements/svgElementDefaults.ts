@@ -24,7 +24,13 @@ const defaultPosition = {
 };
 
 export const svgElementDefaults = {
-  svg: {},
+  svg: {
+    attributes: {
+      ...defaultPosition,
+      width: "100%",
+      height: "100%",
+    },
+  },
   g: {},
   defs: {},
   symbol: {
@@ -34,15 +40,18 @@ export const svgElementDefaults = {
   rect: {
     style: {
       ...filledShapeStyle,
-      x: defaultPosition.x,
-      y: defaultPosition.y,
       width: "100px",
       height: "60px",
+    },
+    attributes: {
+      ...defaultPosition,
     },
   },
   circle: {
     style: {
       ...filledShapeStyle,
+    },
+    attributes: {
       cx: defaultPosition.x,
       cy: defaultPosition.y,
       r: "40px",
@@ -51,6 +60,8 @@ export const svgElementDefaults = {
   ellipse: {
     style: {
       ...filledShapeStyle,
+    },
+    attributes: {
       cx: defaultPosition.x,
       cy: defaultPosition.y,
       rx: "50px",
@@ -74,9 +85,16 @@ export const svgElementDefaults = {
     style: { ...filledShapeStyle },
   },
   text: {
+    text: "text",
+    attributes: {
+      ...defaultPosition,
+    },
     style: { ...textStyle },
   },
   tspan: {
+    attributes: {
+      ...defaultPosition,
+    },
     style: { ...textStyle },
   },
   textPath: {

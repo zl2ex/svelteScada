@@ -54,6 +54,7 @@
       binding={row.binding}
       result={row.result}
       savedError={row.error}
+      placeholder={row.placeholder}
       removable
       onValueCommit={(value) => onValueCommit(row, value)}
       onBindingSave={(expression) => onBindingSave(row, expression)}
@@ -64,12 +65,12 @@
 
   <div class="flex items-center gap-1">
     <input
-      class="input h-7 min-w-0 flex-1 py-0 px-2"
+      class="input placeholder:opacity-50 h-7 min-w-0 flex-1 py-0 px-2"
       bind:value={newKey}
       placeholder={keyPlaceholder}
     />
     <input
-      class="input h-7 min-w-0 flex-1 py-0 px-2"
+      class="input placeholder:opacity-50 h-7 min-w-0 flex-1 py-0 px-2"
       bind:value={newValue}
       placeholder={valuePlaceholder}
     />

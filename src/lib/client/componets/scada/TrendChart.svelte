@@ -63,7 +63,7 @@
     stepped?: boolean; // when true values are plotted at the same value till the next point instead of going diagoanlly to the next point
   }
 
-  let { selectedTags, stepped, ...rest }: TrendChartAttributes = $props();
+  let { selectedTags, stepped, class: clazz, ...rest }: TrendChartAttributes = $props();
 
   // static OPC-UA status code table for tooltip display (prerendered build-time)
   const statusCodeNames = await getOpcuaStatusCodeMap();
@@ -761,7 +761,7 @@
   });
 </script>
 
-<div class="flex h-full w-full flex-col gap-2 p-2" {...rest}>
+<div class={`flex h-full w-full flex-col gap-2 p-2 ${clazz}`} {...rest}>
   <div class="flex flex-wrap items-center justify-between gap-x-8 gap-y-2">
     <div>
       <Menu>
@@ -786,7 +786,7 @@
                         <h2 class="text-sm font-semibold">Save current view</h2>
                         <input
                           type="text"
-                          class="input"
+                          class="input placeholder:opacity-50"
                           placeholder="View name"
                           bind:value={saveViewName}
                           onkeydown={(e) => {
@@ -909,7 +909,7 @@
             {#if hasTrendTags}
               <div class="input-group mb-2 grid-cols-[auto_1fr]">
                 <input
-                  class="input"
+                  class="input placeholder:opacity-50"
                   type="search"
                   placeholder="Search tags or /folder/path..."
                   bind:value={tagQuery}
@@ -952,7 +952,9 @@
           <button
             type="button"
             class="btn"
-            class:preset-filled={liveFollow && to - from === preset.ms}
+            style={liveFollow && to - from === preset.ms
+              ? "background-color: var(--color-surface-950-50); color: var(--color-surface-50-950);"
+              : ""}
             onclick={() => applyPreset(preset.ms)}
           >
             {preset.label}

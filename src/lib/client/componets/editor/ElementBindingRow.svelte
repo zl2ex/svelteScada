@@ -8,6 +8,7 @@
     binding,
     result,
     savedError = null,
+    placeholder = "",
     multiline = false,
     removable = false,
     onValueCommit,
@@ -20,6 +21,7 @@
     binding: string;
     result: string;
     savedError?: string | null;
+    placeholder?: string;
     multiline?: boolean;
     removable?: boolean;
     onValueCommit: (value: string) => void;
@@ -40,20 +42,20 @@
   <div class="flex items-stretch gap-1 min-w-0">
     {#if multiline}
       <textarea
-        class="input flex-1 min-w-0 py-1 px-2"
+        class="input placeholder:opacity-50 flex-1 min-w-0 py-1 px-2"
         rows="2"
         value={displayedValue}
         disabled={isBound}
-        placeholder={isBound ? "No result" : ""}
+        placeholder={isBound ? "No result" : placeholder}
         onblur={(event) => {
           if (!isBound) onValueCommit(event.currentTarget.value);
         }}></textarea>
     {:else}
       <input
-        class="input h-7 flex-1 min-w-0 py-0 px-2"
+        class="input placeholder:opacity-50 h-7 flex-1 min-w-0 py-0 px-2"
         value={displayedValue}
         disabled={isBound}
-        placeholder={isBound ? "No result" : ""}
+        placeholder={isBound ? "No result" : placeholder}
         onblur={(event) => {
           if (!isBound) onValueCommit(event.currentTarget.value);
         }}

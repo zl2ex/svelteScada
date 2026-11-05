@@ -12,7 +12,9 @@
   let newEventName = $state("");
 
   let selected = $derived(
-    editor.selectedElementId ? editor.elementsCollection?.state[editor.selectedElementId] : null,
+    editor.selectedElementIds.length === 1
+      ? editor.elementsCollection?.state[editor.selectedElementIds[0]]
+      : null,
   );
 
   $effect(() => {
@@ -116,7 +118,7 @@
 
     <div class="flex gap-1">
       <input
-        class="input h-7 py-0 px-2 min-w-0"
+        class="input placeholder:opacity-50 h-7 py-0 px-2 min-w-0"
         bind:value={newEventName}
         onkeydown={onNewEventKeydown}
         placeholder="click"

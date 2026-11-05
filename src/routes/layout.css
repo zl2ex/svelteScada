@@ -4,7 +4,7 @@
 
 /* Import your chosen theme (e.g., cerberus, seafoam, etc.) */
 /*@import "@skeletonlabs/skeleton/themes/cerberus";*/
-@import "./scada.css";
+@import "./editorTheme.css";
 
 @plugin "@tailwindcss/forms";
 
@@ -23,7 +23,7 @@
 .textarea,
 .input-group {
   background-color: var(--color-surface-100-900);
-  color: var(--color-surface-850-150);
+  color: var(--color-surface-950-50);
 }
 
 html,
@@ -46,11 +46,26 @@ input[type="number"] {
 [data-scope="tree-view"] [data-part="item"][data-selected],
 [data-scope="tree-view"] [data-part="branch-control"][data-selected] {
   /*background-color: light-dark(var(--color-primary-300), var(--color-primary-800));*/
-  color: light-dark(var(--color-neutral-000), var(--color-neutral-900));
+  color: var(--color-surface-950-50);
+  background-color: var(--color-primary-200-800);
+}
 
-  background-color: color-mix(
-    in oklab,
-    light-dark(var(--color-primary-300), var(--color-primary-800)) 80%,
-    transparent
-  );
+[data-scope="toast"] {
+  &[data-type="success"] {
+    border: 1px solid color-mix(in oklab, var(--color-success-500) 50%, transparent);
+    background-color: color-mix(in oklab, var(--color-success-300-700) 20%, transparent);
+    color: var(--color-success-600-400);
+  }
+
+  &[data-type="warning"] {
+    border: 1px solid color-mix(in oklab, var(--color-warning-500) 50%, transparent);
+    background-color: color-mix(in oklab, var(--color-warning-300-700) 20%, transparent);
+    color: var(--color-warning-600-400);
+  }
+
+  &[data-type="error"] {
+    border: 1px solid color-mix(in oklab, var(--color-error-500) 50%, transparent);
+    background-color: color-mix(in oklab, var(--color-error-300-700) 20%, transparent);
+    color: var(--color-error-600-400);
+  }
 }

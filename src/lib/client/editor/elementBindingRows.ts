@@ -7,7 +7,7 @@ import type {
 import { updateBinding } from "$lib/client/editor/bindings";
 
 export type AttributeBindingScope = "attributes" | "props";
-export type BindingScope = AttributeBindingScope | "style" | "text";
+export type BindingScope = AttributeBindingScope | "style" | "text" | "styleClass";
 
 export type ElementBindingRowData = {
   key: string;
@@ -15,6 +15,7 @@ export type ElementBindingRowData = {
   binding: string;
   result: string;
   error: string | null;
+  placeholder?: string;
 };
 
 export function attributeBindingScope(element: ElementRecord): AttributeBindingScope {

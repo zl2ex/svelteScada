@@ -43,7 +43,7 @@
   }
 </script>
 
-<Popover>
+<Popover positioning={{ placement: "left-end" }}>
   <Popover.Trigger
     type="button"
     class="btn btn-sm {hasError
@@ -87,7 +87,7 @@
 
           {#if savedError}
             <div
-              class="rounded-lg border border-error-400-600/40 bg-error-500/10 p-2 text-error-400-600"
+              class="rounded-base border border-error-500/50 bg-error-300-700/20 p-2 text-error-600-400"
               role="alert"
             >
               <p class="font-semibold">Binding error</p>

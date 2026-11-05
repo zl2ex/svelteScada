@@ -1,6 +1,7 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { routeSegmentPattern } from "../../elements/elementTypes";
+import { user_theme } from "./user_theme";
 
 export const projects = sqliteTable("projects", {
   id: text("id")
@@ -9,6 +10,7 @@ export const projects = sqliteTable("projects", {
   name: text("name").notNull().unique(),
   version: text("version").notNull().default("0.0.0"),
   description: text("description"),
+  themeId: text("themeId").references(() => user_theme.id, { onDelete: "set null" }),
   createdAt: integer("createdAt", { mode: "number" })
     .notNull()
     .$defaultFn(() => Date.now()),

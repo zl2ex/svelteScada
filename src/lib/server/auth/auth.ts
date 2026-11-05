@@ -17,7 +17,7 @@ export async function authenticateUser(token: string) {
     } as const satisfies NeverThrowError);
   }
 
-  const jwtUser = verified.data as UserSelect;
+  const jwtUser = verified.data as UserSelect & { exp?: number };
   const user = await attempt(() =>
     db.query.users.findFirst({
       where: {
@@ -49,5 +49,8 @@ export async function authenticateUser(token: string) {
     } as const satisfies NeverThrowError);
   }
 
-  return ok(user.data satisfies SessionUser);
+  return ok({
+    ...user.data,
+    tokenExpiresAt: typeof jwtUser.exp === "number" ? jwtUser.exp * 1000 : undefined,
+  } satisfies SessionUser);
 }

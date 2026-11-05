@@ -1,12 +1,5 @@
 ## Todo
 
-Change the UI of the Bindings to align one to one with Element Attributes, so that for example width has a standard <input> with a bindings button to the right.
-with no binding the user just enters the value for the attribute into the <input>.
-if the user clicks on the binding button open a <Popover> with the binding script to edit, if the binding script exists disable the <input> but show the result of the binding script and show the binding button with color-primary.
-the only thing i want to check is if it is better to keep a seperate binding and attributes row in the database or type the attribures row like {value, binding:? } so if the binding exists it overrides the value in the render stage.
-
-add back button for going back through focused items
-
 ## Developing
 
 Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:

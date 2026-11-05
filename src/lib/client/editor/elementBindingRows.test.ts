@@ -21,6 +21,7 @@ function element(overrides: Partial<ElementRecord> = {}): ElementRecord {
     containerType: "none",
     attributes: { id: "box", title: "Box" },
     style: { color: "red" },
+    styleClass: [],
     bindings: { style: { color: 'tagValue("color")?.value' } },
     createdAt: 0,
     updatedAt: 0,

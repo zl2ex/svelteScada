@@ -5,6 +5,7 @@ import {
 import { projectManager } from "$lib/server/project/projectManager";
 import { pageManager } from "$lib/server/page/pageManager";
 import { userComponentManager } from "$lib/server/page/userComponentManager";
+import { userThemeManager } from "$lib/server/theme/userThemeManager";
 import type { PageRecord } from "$lib/elements/pageTypes";
 import { assertCan } from "$lib/server/auth/authorize";
 
@@ -20,6 +21,8 @@ export async function load({ locals }) {
   if (pages.isErr()) throw pages.error;
   const userComponents = userComponentManager.getDefinitions();
   if (userComponents.isErr()) throw userComponents.error;
+  const themes = userThemeManager.getAll();
+  if (themes.isErr()) throw themes.error;
 
   return {
     tagFolders: folderRows.reduce(
@@ -41,5 +44,7 @@ export async function load({ locals }) {
     ),
 
     userComponents: userComponents.value,
+
+    themes: themes.value,
   };
 }

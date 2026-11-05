@@ -20,6 +20,7 @@ export type ScriptElementBindings = ScriptBindings<{
   style: Record<string, string>;
   props: Record<string, string>;
   events: Record<string, string>;
+  styleClass: Record<string, string>;
 }>;
 
 export type ScriptTagBindings = ScriptBindings<{
@@ -102,6 +103,7 @@ export type ScriptElement = {
   containerType: ScriptContainerType;
   attributes: ScriptElementAttributes;
   style: ScriptElementStyle;
+  styleClass: string[];
   bindings?: ScriptElementBindings | null;
   sortIndex: number;
   createdAt: number;

@@ -37,6 +37,10 @@ export const elements = sqliteTable(
       .notNull()
       .default({}),
     style: text("style", { mode: "json" }).$type<ElementStyle>().notNull().default({}),
+    styleClass: text("styleClass", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     bindings: text("bindings", { mode: "json" }).$type<ElementBindings>(),
     createdAt: integer("createdAt", { mode: "number" })
       .notNull()

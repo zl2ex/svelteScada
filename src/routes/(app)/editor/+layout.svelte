@@ -23,13 +23,16 @@
   import { EditorState, type EditorLeftPanelTab } from "$lib/client/editor/editorState.svelte.js";
   import { setEditorContext } from "$lib/client/editor/editorContext.js";
   import type { PageRecord } from "$lib/elements/pageTypes.js";
+  import type { UserThemeSelect } from "$lib/sqlite/tables";
   import { page } from "$app/state";
   import { pagePatches, applyPagePatches } from "$live/pages";
+  import { userThemePatches, applyUserThemePatches } from "$live/user-theme";
   import TagsTab from "$lib/client/componets/editor/TagsTab.svelte";
   import PagesTab from "$lib/client/componets/editor/PagesTab.svelte";
   import PageOpenTabs from "$lib/client/componets/editor/PageOpenTabs.svelte";
   import PageProperties from "$lib/client/componets/editor/PageProperties.svelte";
   import ElementProperties from "$lib/client/componets/editor/ElementProperties.svelte";
+  import MultiElementProperties from "$lib/client/componets/editor/MultiElementProperties.svelte";
   import ElementsInsert from "$lib/client/componets/editor/ElementsInsert.svelte";
   import { attempt } from "$lib/util/attempt.js";
   import { logout } from "$lib/remote/user.remote.js";
@@ -122,8 +125,35 @@
     }),
   );
 
+  let userThemePatchesCollection = $state(
+    new PatchCollection<UserThemeSelect, NeverThrowError>({
+      initial: data.themes.reduce(
+        (map, theme) => {
+          map[theme.id] = theme;
+          return map;
+        },
+        {} as Record<string, UserThemeSelect>,
+      ),
+      applyPatch: applyUserThemePatches,
+      subscribePatches: (notify) => {
+        const unsubscribe = userThemePatches.subscribe((payload) => {
+          if (!payload || "error" in payload) {
+            notify(null);
+            return;
+          }
+          notify(payload);
+        });
+        return unsubscribe;
+      },
+      maxHistory: 50,
+      onMutation: () => undoManager.recordMutation("themes"),
+      onError: (error) => console.error("Theme sync error:", error),
+    }),
+  );
+
   const editor = new EditorState({
     pages: pagePatchesCollection,
+    userThemes: userThemePatchesCollection,
     projects: data.projects,
     userComponents: data.userComponents,
   });
@@ -163,6 +193,7 @@
   }
 
   undoManager.register("pages", pagePatchesCollection);
+  undoManager.register("themes", userThemePatchesCollection);
 
   onMount(() => {
     void import("$lib/client/editor/script/monaco").then((module) => {
@@ -177,7 +208,9 @@
     // unmount
     return () => {
       undoManager.unregister("pages");
+      undoManager.unregister("themes");
       pagePatchesCollection.dispose();
+      userThemePatchesCollection.dispose();
       editor.dispose();
     };
   });
@@ -201,6 +234,7 @@
                   </Popover.CloseTrigger>
                   <div class="flex flex-col gap-2 w-1/2">
                     <a class="btn preset-tonal" href="/editor">Editor</a>
+                    <a class="btn preset-tonal" href="/editor/themes">Themes</a>
                     <a class="btn preset-tonal" href="/editor/devices">Devices</a>
                     {#if ability.can("manage", "User")}
                       <a class="btn preset-tonal" href="/editor/users">Users</a>
@@ -374,21 +408,21 @@
       </svelte:boundary>
     </aside>
     <button
-      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400"
+      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400 hover:px-1.5 hover:-mx-0.75"
       onpointerdown={() => {
         panelLayout.dragging.left = true;
       }}
       title="drag to resize left panel"
     ></button>
 
-    <main id="center-panel" class="grow min-w-0 flex flex-col">
+    <main id="center-panel" class="grow min-w-0 flex flex-col overflow-scroll">
       <PageOpenTabs />
       <div class="grow min-h-0">
         {@render children?.()}
       </div>
     </main>
     <button
-      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400"
+      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400 hover:px-1.5 hover:-mx-0.75"
       onpointerdown={() => {
         panelLayout.dragging.right = true;
       }}
@@ -403,7 +437,9 @@
       {#if editor.activePage}
         <ElementsInsert />
         <div class="border-t border-surface-200-800">
-          {#if editor.selectedElementId}
+          {#if editor.selectedElementIds.length > 1}
+            <MultiElementProperties />
+          {:else if editor.selectedElementIds.length === 1}
             <ElementProperties />
           {:else}
             <PageProperties />

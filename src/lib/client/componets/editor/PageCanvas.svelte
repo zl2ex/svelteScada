@@ -1,8 +1,9 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
-  import { handleEditorKeydown, isEditableTarget } from "$lib/client/editor/editorKeyboard";
-  import type { EditorMode } from "$lib/client/editor/editorState.svelte";
+  import { handleEditorKeyup, isEditableTarget } from "$lib/client/editor/editorKeyboard";
+  import type { EditorMode, UserComponentDefinition } from "$lib/client/editor/editorState.svelte";
   import type { ContainerType, ElementRecord } from "$lib/elements/elementTypes";
+  import { attempt } from "$lib/util/attempt";
   import {
     containerTypeStyle,
     elementStyleToString,
@@ -16,17 +17,23 @@
     elements: Record<string, ElementRecord>;
     containerType?: ContainerType;
     mode?: EditorMode;
+    userComponents?: UserComponentDefinition[];
+    themeName?: string;
   };
 
-  let { elements, containerType = "absolute", mode = "edit" }: Props = $props();
-  const editor = getEditorContext();
+  let { elements, containerType = "absolute", mode, userComponents, themeName }: Props = $props();
+
+  const editorResult = attempt(() => getEditorContext());
+  const editor = editorResult.isOk ? editorResult.data : undefined;
   let canvasElement: HTMLDivElement | undefined = $state();
 
+  let activeMode = $derived(mode ?? editor?.mode ?? "preview");
+  let componentDefinitions = $derived(userComponents ?? editor?.userComponents ?? []);
   let roots = $derived(sortedChildren(elements, null));
   let canvasStyle = $derived(elementStyleToString(containerTypeStyle(containerType)));
 
   $effect(() => {
-    if (mode === "preview") canvasElement?.focus({ preventScroll: true });
+    if (activeMode === "preview") canvasElement?.focus({ preventScroll: true });
   });
 </script>
 
@@ -45,12 +52,14 @@
         if (isEditableTarget(event.target)) return;
         canvasElement?.focus({ preventScroll: true });
       }}
-      onkeydown={(event) => handleEditorKeydown(editor, event)}
+      onkeydown={(event) => {
+        if (editor) handleEditorKeyup(editor, event);
+      }}
       onclick={() => {
-        if (mode === "edit") editor.selectedElementId = null;
+        if (activeMode === "edit") editor?.clearElementSelection();
       }}
     >
-      <div class="page-canvas" style={canvasStyle}>
+      <div class="page-canvas" style={canvasStyle} data-theme={themeName}>
         {#if roots.length === 0}
           <div class="absolute inset-0 flex items-center justify-center text-sm text-surface-500">
             Empty page — add an element from the Elements tab.
@@ -58,7 +67,12 @@
         {/if}
         {#each roots as element (element.id)}
           <PageElementEditWrapper {element}>
-            <PageElement {element} {elements} {mode} />
+            <PageElement
+              {element}
+              {elements}
+              mode={activeMode}
+              userComponents={componentDefinitions}
+            />
           </PageElementEditWrapper>
         {/each}
       </div>

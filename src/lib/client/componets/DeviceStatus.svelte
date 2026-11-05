@@ -40,7 +40,7 @@
       {#if stream.value.isErr}
         <Tooltip positioning={{ placement: "top" }}>
           <Tooltip.Trigger>
-            <span class="text-error-400-600">{stream.value.error.reason}</span>
+            <span class="text-error-500">{stream.value.error.reason}</span>
           </Tooltip.Trigger>
           <Portal>
             <Tooltip.Positioner>

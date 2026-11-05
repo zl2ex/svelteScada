@@ -18,24 +18,44 @@
 
   // default to preview or normal render if no editor context is found
   let activeMode = $derived(editor?.mode ?? "preview");
-  let isSelected = $derived(activeMode === "edit" && editor?.selectedElementId === element.id);
+  let isSelected = $derived(
+    activeMode === "edit" && editor?.selectedElementIds.includes(element.id),
+  );
 
   function select(event: MouseEvent) {
     if (!editor) return;
     if (activeMode !== "edit") return;
     event.stopPropagation();
-    editor.selectedElementId = element.id;
+    editor.selectElement(element.id, {
+      additive: event.ctrlKey || event.metaKey,
+      range: event.shiftKey,
+    });
   }
 
   function selectOnEnter(event: KeyboardEvent) {
     if (!editor) return;
     if (activeMode !== "edit") return;
-    if (event.key === "Enter") editor.selectedElementId = element.id;
+    if (event.key === "Enter") {
+      editor.selectElement(element.id, {
+        additive: event.ctrlKey || event.metaKey,
+      });
+    }
   }
   let coords = $state({ top: 0, left: 0, width: 0, height: 0 });
 
+  // The outline is positioned with fixed viewport coordinates, so it must live
+  // outside transformed/positioned canvas ancestors.
+  function teleport(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   // Action to monitor the size and position of children
-  function trackBounds(node: HTMLElement) {
+  function trackBounds(node: HTMLElement | SVGGElement) {
     let resizeObserver: ResizeObserver;
 
     function update() {
@@ -50,29 +70,21 @@
         maxY = -Infinity;
 
       childElements.forEach((child) => {
-        console.debug(child);
         const rect = child.getBoundingClientRect();
         // Skip elements with no physical dimensions
         if (rect.width === 0 && rect.height === 0) return;
 
-        // 2. Find the nearest offset parent (an ancestor with position: relative, absolute, or fixed)
-        // If no positioned ancestor exists, it defaults to the <body>
-        const offsetParent = node.offsetParent || document.body;
-        const parentRect = offsetParent.getBoundingClientRect();
-
-        console.debug(offsetParent);
-
-        minX = Math.min(minX, rect.left - parentRect.left);
-        minY = Math.min(minY, rect.top - parentRect.top);
-        maxX = Math.max(maxX, rect.right - parentRect.left);
-        maxY = Math.max(maxY, rect.bottom - parentRect.top);
+        minX = Math.min(minX, rect.left);
+        minY = Math.min(minY, rect.top);
+        maxX = Math.max(maxX, rect.right);
+        maxY = Math.max(maxY, rect.bottom);
       });
 
       if (minX === Infinity) return;
 
       coords = {
-        top: minY + window.scrollY,
-        left: minX + window.scrollX,
+        top: minY,
+        left: minX,
         width: maxX - minX,
         height: maxY - minY,
       };
@@ -83,7 +95,8 @@
       resizeObserver = new ResizeObserver(update);
       Array.from(node.children).forEach((c) => resizeObserver.observe(c));
       window.addEventListener("resize", update);
-      window.addEventListener("scroll", update, { passive: true });
+      // Capture scroll from the internally scrolling canvas as well as window.
+      window.addEventListener("scroll", update, true);
     }
 
     // Re-run calculation if props change
@@ -98,21 +111,33 @@
         if (resizeObserver) resizeObserver.disconnect();
         if (typeof window !== "undefined") {
           window.removeEventListener("resize", update);
-          window.removeEventListener("scroll", update);
+          window.removeEventListener("scroll", update, true);
         }
       },
     };
   }
 </script>
 
-<div class="contents" use:trackBounds onclick={select} onkeydown={selectOnEnter}>
-  {@render children?.()}
-</div>
-
+{#if insideSvg}
+  <g role="presentation" use:trackBounds onclick={select} onkeydown={selectOnEnter}>
+    {@render children?.()}
+  </g>
+{:else}
+  <div
+    class="contents"
+    role="presentation"
+    use:trackBounds
+    onclick={select}
+    onkeydown={selectOnEnter}
+  >
+    {@render children?.()}
+  </div>
+{/if}
 <!-- Teleport the border out to the body so it never clashes with SVG/Z-index scopes -->
 {#if isSelected && coords.width > 0}
   <div
     class="edit-selection-outline"
+    use:teleport
     style:top="{coords.top}px"
     style:left="{coords.left}px"
     style:width="{coords.width}px"
@@ -189,7 +214,7 @@
 
 <style>
   :global(.edit-selection-outline) {
-    position: absolute;
+    position: fixed;
     border: 2px solid #0076ff;
     pointer-events: none; /* Let clicks pass directly through to HTML/SVG */
     z-index: 99999;

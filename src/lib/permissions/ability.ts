@@ -27,6 +27,7 @@ export type AbilityUser = {
 export type SessionUser = AbilityUser & {
   name: string;
   email: string;
+  tokenExpiresAt?: number;
 };
 
 const roleRules: Record<UserRole, AppRawRule[]> = {

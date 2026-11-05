@@ -25,7 +25,14 @@ export const z_ElementBindings = z.object({
   style: z_BindingExpressionMap.optional(),
   props: z_BindingExpressionMap.optional(),
   events: z_BindingExpressionMap.optional(),
+  styleClass: z_BindingExpressionMap.optional(),
 });
+
+const z_ElementStyleClass = z
+  .array(z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_-]*$/, "invalid CSS class name"))
+  .max(50)
+  .refine((values) => new Set(values).size === values.length, "duplicate CSS class name")
+  .default([]);
 
 export const z_ElementWrite = z.object({
   id: z.string().min(1),
@@ -40,6 +47,7 @@ export const z_ElementWrite = z.object({
   containerType: z_ContainerType,
   attributes: z_ElementAttributes,
   style: z_ElementStyle,
+  styleClass: z_ElementStyleClass,
   bindings: z_ElementBindings.nullable(),
 });
 
@@ -180,6 +188,7 @@ export function toElementRecord(value: ElementRecord): ElementRecord {
     containerType: value.containerType,
     attributes: value.attributes,
     style: value.style,
+    styleClass: value.styleClass,
     bindings: value.bindings,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
