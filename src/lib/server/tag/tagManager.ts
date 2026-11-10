@@ -200,8 +200,7 @@ export class TagManager {
 
   #expandOptions(root: TagOptionsInput, preserved: Map<string, PreservedTag> = new Map()) {
     const rows: TagOptionsInput[] = [root];
-    const definition =
-      udtManager.getUdtById(root.udtDefinitionId ?? "") ?? udtManager.getUdt(root.dataType);
+    const definition = udtManager.getUdtById(root.udtDefinitionId ?? "");
     if (!definition) return rows;
 
     const overridesByChildId: Record<string, UdtTagOverrides> = {};
@@ -212,6 +211,8 @@ export class TagManager {
     }
 
     for (const childOptions of definition.buildInstanceOptions(root, overridesByChildId)) {
+      const childDefinition = udtManager.getUdt(childOptions.dataType);
+      childOptions.udtDefinitionId = childDefinition?.id ?? null;
       const saved = preserved.get(childOptions.id);
       if (saved) {
         childOptions.udtOverrides = saved.overrides ?? {};
@@ -323,7 +324,7 @@ export class TagManager {
 
     const definition = udtManager.getUdt(opts.dataType);
     if (definition) {
-      opts = { ...opts, udtDefinitionId: definition.id, type: "udtTag" };
+      opts = { ...opts, udtDefinitionId: definition.id };
     }
 
     const rows = this.#expandOptions(opts);
@@ -366,11 +367,16 @@ export class TagManager {
     const nextDefinition = udtManager.getUdt(next.dataType);
     if (nextDefinition) {
       next.udtDefinitionId = nextDefinition.id;
-      next.type = "udtTag";
+    } else {
+      next.udtDefinitionId = null;
     }
 
     if (oldOptions.udtDefinitionChildId) {
-      const definition = udtManager.getUdtById(oldOptions.udtDefinitionId ?? "");
+      const parent = oldOptions.parentTagId ? this.#tags.get(oldOptions.parentTagId) : undefined;
+      const parentOptions = parent ? this.#optionsOf(parent) : undefined;
+      const definition = parentOptions
+        ? udtManager.getUdtById(parentOptions.udtDefinitionId ?? "")
+        : undefined;
       const child = definition?.getChild(oldOptions.udtDefinitionChildId);
       if (definition && child) {
         const oldOverrides = oldOptions.udtOverrides ?? {};
@@ -395,7 +401,6 @@ export class TagManager {
               "udtDefinitionId",
               "udtDefinitionChildId",
               "udtOverrides",
-              "type",
             ].includes(key)
           )
             continue;

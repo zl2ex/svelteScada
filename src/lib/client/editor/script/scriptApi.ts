@@ -62,7 +62,6 @@ export type ScriptTagOptions = {
   name: string;
   folderId?: string | null;
   dataType?: string;
-  type?: "tag" | "udtTag";
   initalValue?: string | null;
   nodeId?: string | null;
   writeable?: boolean | null;

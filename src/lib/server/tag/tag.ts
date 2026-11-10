@@ -255,40 +255,37 @@ export class Tag {
     // type without array size or brackets
     const baseDataType = arrayMatch ? arrayMatch[1] : options.dataType.replace("[]", "");
 
-    const dataType = Object.entries(DataType);
-    // is a opcua primative datatype
-    if (baseDataType in DataType) {
-      tag.opcuaDataType = dataType.find(([key]) => {
-        return key == baseDataType;
-      })?.[1] as unknown as DataType;
-
-      const schema = getSchema(options.dataType);
-
-      if (schema.isErr()) {
-        logger.error(schema.error);
-        return err({ ...schema.error, options } as const satisfies FailedTag);
-      }
-
-      tag.schema = schema.value;
-    }
-
-    // is a user defined datatype and therfore a opcua ExtentionObject
-    else {
-      options.type = "udtTag";
+    // is a user defined datatype and therefore an opcua ExtensionObject
+    if (options.udtDefinitionId) {
       tag.opcuaDataType = DataType.ExtensionObject;
-      const udtDefinition = udtManager.udts.get(options.dataType);
+      const udtDefinition = udtManager.getUdtById(options.udtDefinitionId);
       if (!udtDefinition) {
         logger.error(
-          `[Tag] error while creating tag ${tag.id} dataType ${options.dataType} does not exist in udtDefinitions`,
+          `[Tag] error while creating tag ${tag.id} udtDefinitionId ${options.udtDefinitionId} does not exist`,
         );
         return err({
           reason: "UDT_NOT_FOUND",
-          cause: `[Tag] error while creating tag ${tag.id} ${tag.name} dataType ${options.dataType} does not exist in udtDefinitions`,
+          cause: `[Tag] error while creating tag ${tag.id} ${tag.name} udtDefinitionId ${options.udtDefinitionId} does not exist`,
           options,
         } as const satisfies FailedTag);
       }
 
       tag.schema = z.object({});
+    }
+
+    // is an opcua primitive datatype
+    else {
+      const schema = getSchema(options.dataType);
+      if (schema.isErr()) {
+        logger.error(schema.error);
+        return err({ ...schema.error, options } as const satisfies FailedTag);
+      }
+
+      const dataType = Object.entries(DataType);
+      tag.opcuaDataType = dataType.find(([key]) => {
+        return key === baseDataType;
+      })?.[1] as unknown as DataType;
+      tag.schema = schema.value;
     }
 
     // try load inital value fron database
@@ -304,7 +301,7 @@ export class Tag {
     // failed to parse initalValue or it was not provided
     if (!tag.value) {
       // parse undefined for primatives like z.number() or parse empty object for object type
-      const emptyParse = options.type === "tag" ? undefined : {};
+      const emptyParse = options.udtDefinitionId ? {} : undefined;
       // get intial value defaults from schema
       const result = tag.schema.safeParse(emptyParse);
 

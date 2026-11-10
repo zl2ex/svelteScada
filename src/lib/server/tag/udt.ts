@@ -63,7 +63,7 @@ export class UdtDefinition {
         id: `${parentTagOptions.id}:${child.id}`,
         folderId: null,
         parentTagId: parentTagOptions.id,
-        udtDefinitionId: this.id,
+        udtDefinitionId: null,
         udtDefinitionChildId: child.id,
         udtOverrides: overrides,
       };

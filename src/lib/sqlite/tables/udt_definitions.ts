@@ -2,7 +2,6 @@ import { sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import z from "zod";
 import { z_TagInsert } from "./tags";
-import type { UdtDefinitionChild } from "../tagOptions";
 
 const z_ElementAttributes = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 
@@ -31,6 +30,8 @@ export const z_UdtDefinitionChild = z_TagInsert
     udtOverrides: true,
   })
   .extend({ id: z.string().min(1) });
+
+export type UdtDefinitionChild = z.infer<typeof z_UdtDefinitionChild>;
 
 export const z_UdtDefinitionInsert = createInsertSchema(udt_definitions, {
   name: (schema) => schema.min(1),

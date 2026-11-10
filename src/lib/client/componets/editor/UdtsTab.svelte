@@ -41,7 +41,6 @@
       id: newId(),
       name: "NewChild",
       dataType: "Double",
-      type: "tag",
       initalValue: null,
       nodeId: null,
       writeable: true,
