@@ -3,7 +3,7 @@ import { err, ok } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
-const PANEL_LAYOUT_KEY = "PANEL_LAYOUT";
+const PANEL_LAYOUT_KEY = "panel:layout";
 
 export type PanelLayoutStorage = {
   left: number | undefined;

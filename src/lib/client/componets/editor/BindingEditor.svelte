@@ -59,7 +59,9 @@
 
   <Portal>
     <Popover.Positioner>
-      <Popover.Content class="bg-surface-100-900 rounded-lg p-2">
+      <Popover.Content
+        class="bg-surface-100-900 dark:border-1 border-surface-200-800 card shadow p-2"
+      >
         <div class="flex flex-col gap-2 p-1">
           <div class="flex items-center justify-between gap-2">
             <span class="font-semibold truncate">{label} binding</span>

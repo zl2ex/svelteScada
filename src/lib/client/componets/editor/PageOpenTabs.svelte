@@ -36,35 +36,33 @@
   }
 </script>
 
-{#if openPages.length > 0}
-  <div
-    class="flex items-stretch gap-px overflow-x-auto border-b border-surface-200-800 bg-surface-100-900 text-xs"
-  >
-    {#each openPages as page (page.id)}
-      <button
-        class="group flex items-center gap-2 px-3 py-1.5 border-surface-100-900 hover:bg-surface-200-800"
-        class:border-b-primary-400-600={editor.activePageId === page.id}
-        class:border-b-4={editor.activePageId === page.id}
-        onclick={() => activate(page.id)}
-      >
-        <span class="truncate max-w-48">{page.name}</span>
-        {#if editor.activePageId === page.id}
-          <span class="truncate max-w-48 opacity-60">
-            {`/${editor.projectForPage(page)?.name}${editor.pagePath(page.id)}`}
-          </span>
-        {/if}
-        <span
-          class="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-surface-300-700"
-          role="button"
-          tabindex="-1"
-          onclick={(event) => close(event, page.id)}
-          onkeydown={(event) => {
-            if (event.key === "Enter") close(event as unknown as MouseEvent, page.id);
-          }}
-        >
-          <X class="size-3" />
+<div
+  class="flex shrink-0 gap-px overflow-x-auto border-b border-surface-200-800 bg-surface-100-900 text-xs"
+>
+  {#each openPages as page (page.id)}
+    <button
+      class="group flex items-center gap-2 px-3 py-1.5 border-surface-100-900 hover:bg-surface-200-800"
+      class:border-b-primary-400-600={editor.activePageId === page.id}
+      class:border-b-4={editor.activePageId === page.id}
+      onclick={() => activate(page.id)}
+    >
+      <span class="truncate max-w-48">{page.name}</span>
+      {#if editor.activePageId === page.id}
+        <span class="truncate max-w-48 opacity-60">
+          {`/${editor.projectForPage(page)?.name}${editor.pagePath(page.id)}`}
         </span>
-      </button>
-    {/each}
-  </div>
-{/if}
+      {/if}
+      <span
+        class="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-surface-300-700"
+        role="button"
+        tabindex="-1"
+        onclick={(event) => close(event, page.id)}
+        onkeydown={(event) => {
+          if (event.key === "Enter") close(event as unknown as MouseEvent, page.id);
+        }}
+      >
+        <X class="size-3" />
+      </span>
+    </button>
+  {/each}
+</div>

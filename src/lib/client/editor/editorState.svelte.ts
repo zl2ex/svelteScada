@@ -35,6 +35,11 @@ export type UserComponentDefinition = {
 
 export type EditorMode = "edit" | "preview";
 
+export type EditorGrid = {
+  spacing: number;
+  enabled: boolean;
+};
+
 export type EditorLeftPanelTab = "tags" | "udts" | "pages";
 
 export type EditorFocusSnapshot = {
@@ -43,6 +48,7 @@ export type EditorFocusSnapshot = {
   selectedElementIds: string[];
   tagSelectionIds: string[];
   leftPanelTab: EditorLeftPanelTab;
+  path: string;
 };
 
 function stringArraysEqual(a: string[], b: string[]) {
@@ -55,7 +61,8 @@ function focusEquals(a: EditorFocusSnapshot, b: EditorFocusSnapshot) {
     a.pageId === b.pageId &&
     stringArraysEqual(a.selectedElementIds, b.selectedElementIds) &&
     stringArraysEqual(a.tagSelectionIds, b.tagSelectionIds) &&
-    a.leftPanelTab === b.leftPanelTab
+    a.leftPanelTab === b.leftPanelTab &&
+    a.path === b.path
   );
 }
 
@@ -74,6 +81,7 @@ export class EditorState {
   projectLoading = $state(false);
   projectError = $state<string | null>(null);
   mode = $state<EditorMode>("edit");
+  grid = $state<EditorGrid>({ spacing: 20, enabled: false });
 
   #pageCollections = $state.raw<Record<string, PatchCollection<ElementRecord, NeverThrowError>>>(
     {},
@@ -88,6 +96,7 @@ export class EditorState {
     selectedElementIds: [],
     tagSelectionIds: [],
     leftPanelTab: "tags",
+    path: "/editor",
   };
 
   constructor(options: {
@@ -95,11 +104,13 @@ export class EditorState {
     userThemes: PatchCollection<UserThemeSelect, NeverThrowError>;
     projects: ProjectSelect[];
     userComponents: UserComponentDefinition[];
+    initialPath: string;
   }) {
     this.pagesCollection = options.pages;
     this.userThemesCollection = options.userThemes;
     this.projects = options.projects;
     this.userComponents = options.userComponents;
+    this.#lastFocus = { ...this.#lastFocus, path: options.initialPath };
     this.#loadOpenPages();
   }
 
@@ -432,18 +443,19 @@ export class EditorState {
     this.clearElementSelection();
   }
 
-  snapshotFocus(): EditorFocusSnapshot {
+  snapshotFocus(path: string = this.#lastFocus.path): EditorFocusSnapshot {
     return {
       projectId: this.activeProjectId,
       pageId: this.activePageId,
       selectedElementIds: [...this.selectedElementIds],
       tagSelectionIds: [...this.tagSelectionIds],
       leftPanelTab: this.leftPanelTab,
+      path,
     };
   }
 
-  trackFocus() {
-    const next = this.snapshotFocus();
+  trackFocus(path: string) {
+    const next = this.snapshotFocus(path);
     if (this.#suppressFocusRecord) {
       this.#lastFocus = next;
       return;
@@ -455,11 +467,11 @@ export class EditorState {
     this.#lastFocus = next;
   }
 
-  async backFocus() {
+  async backFocus(currentPath: string) {
     const target = this.#focusHistory.at(-1);
     if (!target) return ok(null);
 
-    const current = this.snapshotFocus();
+    const current = this.snapshotFocus(currentPath);
     this.#suppressFocusRecord = true;
     const applied = await this.#applyFocus(target);
     if (applied.isErr()) {
@@ -470,16 +482,16 @@ export class EditorState {
     this.#focusHistory = this.#focusHistory.slice(0, -1);
     this.#focusFuture = [...this.#focusFuture, current];
     await tick();
-    this.#lastFocus = this.snapshotFocus();
+    this.#lastFocus = this.snapshotFocus(target.path);
     this.#suppressFocusRecord = false;
-    return ok(null);
+    return ok({ path: target.path });
   }
 
-  async forwardFocus() {
+  async forwardFocus(currentPath: string) {
     const target = this.#focusFuture.at(-1);
     if (!target) return ok(null);
 
-    const current = this.snapshotFocus();
+    const current = this.snapshotFocus(currentPath);
     this.#suppressFocusRecord = true;
     const applied = await this.#applyFocus(target);
     if (applied.isErr()) {
@@ -490,9 +502,9 @@ export class EditorState {
     this.#focusFuture = this.#focusFuture.slice(0, -1);
     this.#focusHistory = [...this.#focusHistory, current].slice(-MAX_FOCUS_HISTORY);
     await tick();
-    this.#lastFocus = this.snapshotFocus();
+    this.#lastFocus = this.snapshotFocus(target.path);
     this.#suppressFocusRecord = false;
-    return ok(null);
+    return ok({ path: target.path });
   }
 
   dispose() {

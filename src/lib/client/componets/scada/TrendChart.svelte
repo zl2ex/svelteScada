@@ -16,7 +16,6 @@
   } from "@skeletonlabs/skeleton-svelte";
   import { getTagTrend } from "$live/trends";
   import { getTrendHistory } from "$lib/remote/trend.remote";
-  import { newId } from "$lib/util/newId";
   import { attempt } from "$lib/util/attempt";
   import {
     deleteView,
@@ -59,11 +58,12 @@
   export type TrendChartOptions = {};
 
   export interface TrendChartAttributes extends HTMLAttributes<HTMLDivElement> {
+    id: string; // id of element in database for localStorage and popovers
     selectedTags?: SelectedTag[];
     stepped?: boolean; // when true values are plotted at the same value till the next point instead of going diagoanlly to the next point
   }
 
-  let { selectedTags, stepped, class: clazz, ...rest }: TrendChartAttributes = $props();
+  let { id, selectedTags, stepped, class: clazz, ...rest }: TrendChartAttributes = $props();
 
   // static OPC-UA status code table for tooltip display (prerendered build-time)
   const statusCodeNames = await getOpcuaStatusCodeMap();
@@ -142,7 +142,7 @@
   let tagQuery = $state("");
 
   const tagPopover = usePopover({
-    id: `trending-tags-popover-${newId()}`,
+    id: `trending-tags-popover-${id}`,
     positioning: { placement: "bottom-start", offset: { mainAxis: 50 } },
     onOpenChange: (details) => {
       if (!details.open) tagQuery = "";
@@ -904,7 +904,7 @@
         </Popover.Trigger>
         <Popover.Positioner>
           <Popover.Content
-            class="card max-h-96 overflow-y-auto p-2 preset-filled-surface-100-900 z-10"
+            class="card max-h-96 overflow-y-auto p-2 bg-surface-100-900 shadow dark:border-1 border-surface-200-800 z-10"
           >
             {#if hasTrendTags}
               <div class="input-group mb-2 grid-cols-[auto_1fr]">

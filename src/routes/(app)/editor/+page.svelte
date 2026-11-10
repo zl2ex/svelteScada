@@ -2,6 +2,7 @@
   import { FilePlus2 } from "@lucide/svelte";
   import PageCanvasEditor from "$lib/client/componets/editor/PageCanvasEditor.svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import PageOpenTabs from "$lib/client/componets/editor/PageOpenTabs.svelte";
 
   const editor = getEditorContext();
 
@@ -10,6 +11,7 @@
   );
 </script>
 
+<PageOpenTabs />
 {#if editor.activePage}
   <PageCanvasEditor />
 {:else if activeProject}

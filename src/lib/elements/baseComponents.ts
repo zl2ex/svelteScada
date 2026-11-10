@@ -27,6 +27,7 @@ export const baseComponents = {
     name: "TrendChart",
     label: "Trend Chart",
     defaultAttributes: {
+      id: "",
       stepped: false,
     } satisfies TrendChartAttributes,
   },

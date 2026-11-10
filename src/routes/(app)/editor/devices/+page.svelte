@@ -192,199 +192,204 @@
 
 <div id="devices" class="m-8 grow">
   <fieldset class="contents" disabled={!ability.can("update", "Device")}>
-  <button
-    class="btn preset-outlined mx-2"
-    onclick={async () => {
-      popoverDeviceId = newId();
-      newDevice.id = popoverDeviceId;
-      // user must select driver type
-      newDevice.driverName = "";
-      popover().setOpen(true);
-    }}
-  >
-    <PlusIcon></PlusIcon>
-    Add
-  </button>
-  <Popover.Provider value={popover}>
-    <table class="w-full">
-      <thead>
-        <tr class="*:py-4 *:px-8 opacity-70 border-b-1 border-b-surface-300-700">
-          <th></th>
-          <th class="text-left">Name</th>
-          <th class="text-left">Driver</th>
-          <th class="text-right">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each Object.values(devicesPatchesCollection.state).sort( (a, b) => a.name.localeCompare(b.name) ) as device (device.id)}
-          <tr
-            class="*:py-4 *:px-8 border-b-1 border-b-surface-300-700 hover:bg-surface-100-900 data-[state=open]:bg-surface-150-850"
-          >
-            <td>
-              <Popover.Trigger
-                class="hover:bg-surface-200-800 rounded-lg"
-                onclick={() => (popoverDeviceId = device.id)}
-              >
-                <EllipsisVerticalIcon class="size-6 m-4" />
-              </Popover.Trigger>
-            </td>
-            <td class="font-bold text-lg">{device.name}</td>
-            <td class="flex items-center gap-2">
-              <img src={availableDrivers[device.driverName]?.logo} alt="" class="w-24" />
-              {availableDrivers[device.driverName]?.displayName}
-            </td>
-            <td>
-              <DeviceStatus id={device.id} class="flex-row-reverse gap-6" />
-            </td>
+    <button
+      class="btn preset-outlined mx-2"
+      onclick={async () => {
+        popoverDeviceId = newId();
+        newDevice.id = popoverDeviceId;
+        // user must select driver type
+        newDevice.driverName = "";
+        popover().setOpen(true);
+      }}
+    >
+      <PlusIcon></PlusIcon>
+      Add
+    </button>
+    <Popover.Provider value={popover}>
+      <table class="w-full">
+        <thead>
+          <tr class="*:py-4 *:px-8 opacity-70 border-b-1 border-b-surface-300-700">
+            <th></th>
+            <th class="text-left">Name</th>
+            <th class="text-left">Driver</th>
+            <th class="text-right">Status</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
-
-    <Portal>
-      <Popover.Positioner>
-        <Popover.Content class="card p-4 preset-filled-surface-100-900">
-          {#if devicesPatchesCollection.state[popoverDeviceId] || newDevice.id == popoverDeviceId}
-            {@const device = devicesPatchesCollection.state[popoverDeviceId] ?? newDevice}
-            <div>
-              <div class="flex gap-8 justify-between py-4">
-                <div class="">
-                  <label
-                    class="shrink-0 whitespace-nowrap opacity-80"
-                    for={`device-${device.id}-name`}
-                  >
-                    Name
-                  </label>
-                  <input
-                    id={`device-${device.id}-name`}
-                    type="text"
-                    class="input"
-                    value={device.name}
-                    onblur={(ev) => {
-                      const name = String(ev.currentTarget.value);
-                      if (popoverDeviceId == newDevice.id) {
-                        newDevice.name = name;
-                        return;
-                      }
-                      devicesPatchesCollection.update(popoverDeviceId, {
-                        name,
-                      });
-                    }}
-                    onkeydown={(ev) => {
-                      if (ev.key === "Enter") {
-                        ev.currentTarget.blur();
-                      }
-                      if (ev.key === "Escape") {
-                        ev.currentTarget.value = device.name;
-                        ev.currentTarget.blur();
-                      }
-                    }}
-                  />
-                </div>
-
-                <div class="flex gap-4 items-center">
-                  <label class=" whitespace-nowrap opacity-60" for={`device-${device.id}-enabled`}>
-                    Enabled
-                  </label>
-                  <input
-                    id={`device-${device.id}-enabled`}
-                    type="checkbox"
-                    class="checkbox"
-                    checked={device.enabled}
-                    onchange={(ev) => {
-                      const enabled = Boolean(ev.currentTarget.checked);
-                      if (popoverDeviceId == newDevice.id) {
-                        newDevice.enabled = enabled;
-                        return;
-                      }
-                      devicesPatchesCollection.update(popoverDeviceId, {
-                        enabled,
-                      });
-                    }}
-                  />
-                </div>
-              </div>
-
-              <hr />
-
-              <div class="py-4 flex items-center justify-between">
-                <label
-                  class="shrink-0 whitespace-nowrap opacity-60"
-                  for={`device-${device.id}-driverName`}
+        </thead>
+        <tbody>
+          {#each Object.values(devicesPatchesCollection.state).sort( (a, b) => a.name.localeCompare(b.name) ) as device (device.id)}
+            <tr
+              class="*:py-4 *:px-8 border-b-1 border-b-surface-300-700 hover:bg-surface-100-900 data-[state=open]:bg-surface-150-850"
+            >
+              <td>
+                <Popover.Trigger
+                  class="hover:bg-surface-200-800 rounded-lg"
+                  onclick={() => (popoverDeviceId = device.id)}
                 >
-                  Driver
-                </label>
-                <select
-                  id={`device-${device.id}-driverName`}
-                  class="select w-60"
-                  value={device.driverName}
-                  onchange={(ev) => {
-                    const driverName = String(ev.currentTarget.value);
-                    if (!isDriverName(driverName)) return;
-                    if (popoverDeviceId == newDevice.id) {
-                      newDevice.driverName = driverName;
-                      newDevice.options = availableDrivers[driverName].defaultOptions;
-                      return;
-                    }
+                  <EllipsisVerticalIcon class="size-6 m-4" />
+                </Popover.Trigger>
+              </td>
+              <td class="font-bold text-lg">{device.name}</td>
+              <td class="flex items-center gap-2">
+                <img src={availableDrivers[device.driverName]?.logo} alt="" class="w-24" />
+                {availableDrivers[device.driverName]?.displayName}
+              </td>
+              <td>
+                <DeviceStatus id={device.id} class="flex-row-reverse gap-6" />
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
 
-                    // The two drivers' options are unrelated shapes, so a
-                    // driver change cannot carry the old options across - send
-                    // the new driver's defaults with it. The server resets to
-                    // the same defaults and drops the stale rows in a
-                    // transaction, so both sides agree on what the device is.
-                    devicesPatchesCollection.update(popoverDeviceId, {
-                      driverName,
-                      options: availableDrivers[driverName].defaultOptions,
-                    });
-                  }}
-                >
-                  {#each Object.values(availableDrivers) as driver (driver.id)}
-                    <option value={driver.id}>{driver.displayName}</option>
-                  {/each}
-                </select>
-              </div>
-
-              <!-- the selected driver's own options, whatever they turn out to be -->
-              {#if isDriverName(device.driverName)}
-                {@const optionFields = availableDrivers[device.driverName].optionFields}
-                <div class="flex flex-col gap-2 pt-2">
-                  {#each Object.entries(optionFields) as [key, field] (key)}
-                    <div
-                      class="flex items-center justify-between [&>*:not([type='checkbox'])]:w-60"
+      <Portal>
+        <Popover.Positioner>
+          <Popover.Content
+            class="card p-4 bg-surface-100-900 shadow dark:border-1 border-surface-200-800"
+          >
+            {#if devicesPatchesCollection.state[popoverDeviceId] || newDevice.id == popoverDeviceId}
+              {@const device = devicesPatchesCollection.state[popoverDeviceId] ?? newDevice}
+              <div>
+                <div class="flex gap-8 justify-between py-4">
+                  <div class="">
+                    <label
+                      class="shrink-0 whitespace-nowrap opacity-80"
+                      for={`device-${device.id}-name`}
                     >
-                      <label
-                        class="shrink-0 whitespace-nowrap opacity-60"
-                        for={`device-${device.id}-${key}`}
-                      >
-                        {field.label}
-                      </label>
-                      {@render optionField(field, key, device)}
-                    </div>
-                  {/each}
-                </div>
-              {/if}
+                      Name
+                    </label>
+                    <input
+                      id={`device-${device.id}-name`}
+                      type="text"
+                      class="input"
+                      value={device.name}
+                      onblur={(ev) => {
+                        const name = String(ev.currentTarget.value);
+                        if (popoverDeviceId == newDevice.id) {
+                          newDevice.name = name;
+                          return;
+                        }
+                        devicesPatchesCollection.update(popoverDeviceId, {
+                          name,
+                        });
+                      }}
+                      onkeydown={(ev) => {
+                        if (ev.key === "Enter") {
+                          ev.currentTarget.blur();
+                        }
+                        if (ev.key === "Escape") {
+                          ev.currentTarget.value = device.name;
+                          ev.currentTarget.blur();
+                        }
+                      }}
+                    />
+                  </div>
 
-              <div class="flex justify-end pt-2">
-                <button
-                  type="button"
-                  class="btn preset-filled-error-400-600 text-xs"
-                  onclick={() => {
-                    if (!popoverDeviceId) return;
-                    devicesPatchesCollection.remove(popoverDeviceId);
-                    const pop = popover();
-                    pop.setOpen(false);
-                    popoverDeviceId = "";
-                  }}
-                >
-                  <Trash2 class="size-4" />
-                  Delete Device
-                </button>
+                  <div class="flex gap-4 items-center">
+                    <label
+                      class=" whitespace-nowrap opacity-60"
+                      for={`device-${device.id}-enabled`}
+                    >
+                      Enabled
+                    </label>
+                    <input
+                      id={`device-${device.id}-enabled`}
+                      type="checkbox"
+                      class="checkbox"
+                      checked={device.enabled}
+                      onchange={(ev) => {
+                        const enabled = Boolean(ev.currentTarget.checked);
+                        if (popoverDeviceId == newDevice.id) {
+                          newDevice.enabled = enabled;
+                          return;
+                        }
+                        devicesPatchesCollection.update(popoverDeviceId, {
+                          enabled,
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <hr />
+
+                <div class="py-4 flex items-center justify-between">
+                  <label
+                    class="shrink-0 whitespace-nowrap opacity-60"
+                    for={`device-${device.id}-driverName`}
+                  >
+                    Driver
+                  </label>
+                  <select
+                    id={`device-${device.id}-driverName`}
+                    class="select w-60"
+                    value={device.driverName}
+                    onchange={(ev) => {
+                      const driverName = String(ev.currentTarget.value);
+                      if (!isDriverName(driverName)) return;
+                      if (popoverDeviceId == newDevice.id) {
+                        newDevice.driverName = driverName;
+                        newDevice.options = availableDrivers[driverName].defaultOptions;
+                        return;
+                      }
+
+                      // The two drivers' options are unrelated shapes, so a
+                      // driver change cannot carry the old options across - send
+                      // the new driver's defaults with it. The server resets to
+                      // the same defaults and drops the stale rows in a
+                      // transaction, so both sides agree on what the device is.
+                      devicesPatchesCollection.update(popoverDeviceId, {
+                        driverName,
+                        options: availableDrivers[driverName].defaultOptions,
+                      });
+                    }}
+                  >
+                    {#each Object.values(availableDrivers) as driver (driver.id)}
+                      <option value={driver.id}>{driver.displayName}</option>
+                    {/each}
+                  </select>
+                </div>
+
+                <!-- the selected driver's own options, whatever they turn out to be -->
+                {#if isDriverName(device.driverName)}
+                  {@const optionFields = availableDrivers[device.driverName].optionFields}
+                  <div class="flex flex-col gap-2 pt-2">
+                    {#each Object.entries(optionFields) as [key, field] (key)}
+                      <div
+                        class="flex items-center justify-between [&>*:not([type='checkbox'])]:w-60"
+                      >
+                        <label
+                          class="shrink-0 whitespace-nowrap opacity-60"
+                          for={`device-${device.id}-${key}`}
+                        >
+                          {field.label}
+                        </label>
+                        {@render optionField(field, key, device)}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+
+                <div class="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    class="btn preset-filled-error-400-600 text-xs"
+                    onclick={() => {
+                      if (!popoverDeviceId) return;
+                      devicesPatchesCollection.remove(popoverDeviceId);
+                      const pop = popover();
+                      pop.setOpen(false);
+                      popoverDeviceId = "";
+                    }}
+                  >
+                    <Trash2 class="size-4" />
+                    Delete Device
+                  </button>
+                </div>
               </div>
-            </div>
-          {/if}
-        </Popover.Content>
-      </Popover.Positioner>
-    </Portal>
-  </Popover.Provider>
+            {/if}
+          </Popover.Content>
+        </Popover.Positioner>
+      </Portal>
+    </Popover.Provider>
   </fieldset>
 </div>

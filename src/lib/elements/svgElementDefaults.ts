@@ -85,9 +85,9 @@ export const svgElementDefaults = {
     style: { ...filledShapeStyle },
   },
   text: {
-    text: "text",
     attributes: {
       ...defaultPosition,
+      "text-anchor": "center",
     },
     style: { ...textStyle },
   },

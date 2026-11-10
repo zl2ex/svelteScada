@@ -2,14 +2,22 @@
   import {
     ArrowLeftIcon,
     ArrowRightIcon,
-    CircleUserIcon,
-    LoaderIcon,
+    ChevronRightIcon,
+    HomeIcon,
+    KeyboardMusicIcon,
+    LogOutIcon,
     MenuIcon,
+    MonitorCogIcon,
+    MoonIcon,
+    PaletteIcon,
+    PenIcon,
     Redo2Icon,
+    SunIcon,
     Undo2Icon,
+    UserIcon,
     XIcon,
   } from "@lucide/svelte";
-  import { AppBar, Popover, Portal, Tabs } from "@skeletonlabs/skeleton-svelte";
+  import { AppBar, Menu, Popover, Portal, Tabs } from "@skeletonlabs/skeleton-svelte";
 
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import { onMount } from "svelte";
@@ -29,20 +37,21 @@
   import { userThemePatches, applyUserThemePatches } from "$live/user-theme";
   import TagsTab from "$lib/client/componets/editor/TagsTab.svelte";
   import PagesTab from "$lib/client/componets/editor/PagesTab.svelte";
-  import PageOpenTabs from "$lib/client/componets/editor/PageOpenTabs.svelte";
   import PageProperties from "$lib/client/componets/editor/PageProperties.svelte";
   import ElementProperties from "$lib/client/componets/editor/ElementProperties.svelte";
   import MultiElementProperties from "$lib/client/componets/editor/MultiElementProperties.svelte";
   import ElementsInsert from "$lib/client/componets/editor/ElementsInsert.svelte";
+  import GridControls from "$lib/client/componets/editor/GridControls.svelte";
   import { attempt } from "$lib/util/attempt.js";
   import { logout } from "$lib/remote/user.remote.js";
   import { toast } from "$lib/client/toast.svelte.js";
   import { err, ok } from "neverthrow";
   import { goto } from "$app/navigation";
-  import { themeManager } from "$lib/client/theme.svelte.js";
+  import { lightDarkManager } from "$lib/client/lightDark.svelte.js";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
   import type * as ScriptMonaco from "$lib/client/editor/script/monaco";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
+  import type { SelectionDetails } from "@zag-js/menu";
 
   let { data, children } = $props();
 
@@ -89,14 +98,6 @@
     }
 
     return ok(null);
-  }
-
-  function setTheme(theme: (typeof themeManager.themes)[number]) {
-    const result = attempt(() => themeManager.setTheme(theme));
-    if (result.isErr) {
-      const cause = errorToString(result.error);
-      console.error(cause);
-    }
   }
 
   const leftPanelTabs: EditorLeftPanelTab[] = ["tags", "udts", "pages"];
@@ -156,6 +157,7 @@
     userThemes: userThemePatchesCollection,
     projects: data.projects,
     userComponents: data.userComponents,
+    initialPath: page.url.pathname + page.url.search,
   });
 
   if (!ability.can("update", "Page")) {
@@ -165,11 +167,29 @@
   setEditorContext(editor);
 
   $effect(() => {
-    editor.trackFocus();
+    editor.trackFocus(page.url.pathname + page.url.search);
   });
 
+  function currentPath() {
+    return page.url.pathname + page.url.search;
+  }
+
+  async function navigateFocus(targetPath: string | undefined) {
+    if (!targetPath || targetPath === currentPath()) return;
+
+    const navigated = await attempt(() => goto(targetPath, { keepFocus: true }));
+    if (navigated.isErr) {
+      toast({
+        kind: "error",
+        title: "Navigation Error",
+        description: errorToString(navigated.error),
+        duration: 3000,
+      });
+    }
+  }
+
   async function focusBack() {
-    const result = await editor.backFocus();
+    const result = await editor.backFocus(currentPath());
     if (result.isErr()) {
       toast({
         kind: "error",
@@ -177,11 +197,13 @@
         description: neverThrowErrorToString(result.error),
         duration: 3000,
       });
+      return;
     }
+    await navigateFocus(result.value?.path);
   }
 
   async function focusForward() {
-    const result = await editor.forwardFocus();
+    const result = await editor.forwardFocus(currentPath());
     if (result.isErr()) {
       toast({
         kind: "error",
@@ -189,7 +211,9 @@
         description: neverThrowErrorToString(result.error),
         duration: 3000,
       });
+      return;
     }
+    await navigateFocus(result.value?.path);
   }
 
   undoManager.register("pages", pagePatchesCollection);
@@ -214,6 +238,37 @@
       editor.dispose();
     };
   });
+
+  async function handleUserMenuSelect(details: SelectionDetails) {
+    const action = details.value;
+
+    console.debug(action);
+    switch (action) {
+      case "logout":
+        const result = await logoutAndGotoLogin();
+        if (result.isErr()) {
+          console.error(`logout() ${neverThrowErrorToString(result.error)}`);
+        }
+        break;
+    }
+  }
+
+  async function handleUserLightDarkMenuSelect(details: SelectionDetails) {
+    const action = details.value;
+    console.debug(action);
+
+    switch (action) {
+      case "light-dark:light":
+        lightDarkManager.setLightDark("light");
+        break;
+      case "light-dark:dark":
+        lightDarkManager.setLightDark("dark");
+        break;
+      case "light-dark:system":
+        lightDarkManager.setLightDark("system");
+        break;
+    }
+  }
 </script>
 
 <div id="app" class="flex flex-col h-svh">
@@ -228,16 +283,103 @@
 
             <Portal>
               <Popover.Positioner>
-                <Popover.Content class="flex flex-col gap-4 bg-surface-200-800 card p-4 w-80">
-                  <Popover.CloseTrigger class="btn btn-sm w-fit preset-tonal">
-                    <XIcon class="size-3.5" />
-                  </Popover.CloseTrigger>
-                  <div class="flex flex-col gap-2 w-1/2">
-                    <a class="btn preset-tonal" href="/editor">Editor</a>
-                    <a class="btn preset-tonal" href="/editor/themes">Themes</a>
-                    <a class="btn preset-tonal" href="/editor/devices">Devices</a>
+                <Popover.Content
+                  class="flex flex-col gap-4 bg-surface-100-900 card shadow dark:border-1 border-surface-200-800 p-4 w-80"
+                >
+                  <header class="flex gap-2 items-center">
+                    <Menu onSelect={(details) => handleUserMenuSelect(details)}>
+                      <Menu.Trigger
+                        class="btn rounded-full size-8 text-center text-lg bg-secondary-400-600"
+                      >
+                        {data.user?.name.at(0)?.toUpperCase()}
+                      </Menu.Trigger>
+                      <Portal>
+                        <Menu.Positioner>
+                          <Menu.Content class="text-sm bg-surface-100-900">
+                            <Menu.ItemGroup>
+                              <Menu.ItemGroupLabel>Appearance</Menu.ItemGroupLabel>
+                              <Menu onSelect={(details) => handleUserLightDarkMenuSelect(details)}>
+                                <Menu.TriggerItem class="justify-start gap-2" value="light-dark">
+                                  {#if lightDarkManager.current == "dark"}
+                                    <MoonIcon class="size-4" />
+                                  {:else if lightDarkManager.current == "light"}
+                                    <SunIcon class="size-4" />
+                                  {:else if lightDarkManager.current == "system"}
+                                    <MonitorCogIcon class="size-4" />
+                                  {/if}
+                                  <Menu.ItemText>{lightDarkManager.current}</Menu.ItemText>
+                                  <Menu.ItemIndicator class="ml-auto">
+                                    <ChevronRightIcon class=" size-4" />
+                                  </Menu.ItemIndicator>
+                                </Menu.TriggerItem>
+                                <Portal>
+                                  <Menu.Positioner>
+                                    <Menu.Content class="text-sm bg-surface-100-900">
+                                      <Menu.Item value="light-dark:light">
+                                        <SunIcon class="size-4" />
+                                        <Menu.ItemText>Light</Menu.ItemText>
+                                      </Menu.Item>
+                                      <Menu.Item value="light-dark:dark">
+                                        <MoonIcon class="size-4" />
+                                        <Menu.ItemText>Dark</Menu.ItemText>
+                                      </Menu.Item>
+                                      <Menu.Item value="light-dark:system">
+                                        <MonitorCogIcon class="size-4" />
+                                        <Menu.ItemText>System</Menu.ItemText>
+                                      </Menu.Item>
+                                    </Menu.Content>
+                                  </Menu.Positioner>
+                                </Portal>
+                              </Menu>
+                            </Menu.ItemGroup>
+                            <Menu.Separator />
+                            <Menu.Item value="logout">
+                              <LogOutIcon class="size-3.5" />
+                              <Menu.ItemText>Logout</Menu.ItemText>
+                            </Menu.Item>
+                          </Menu.Content>
+                        </Menu.Positioner>
+                      </Portal>
+                    </Menu>
+                    <Popover.Title class="text-lg font-bold">{data.user?.name}</Popover.Title>
+                    <span class="opacity-70 text-xs">{data.user?.role}</span>
+                    <Popover.CloseTrigger class="ml-auto btn-icon hover:preset-tonal self-start">
+                      <XIcon class="size-4" />
+                    </Popover.CloseTrigger>
+                  </header>
+
+                  <div class="mt-6 flex flex-col gap-2 mr-20">
+                    <div
+                      class="flex items-center gap-2 p-2 rounded-sm hover:bg-surface-200-800 active:bg-surface-200-800"
+                    >
+                      <HomeIcon class="size-4" />
+                      <a href="/">Home</a>
+                    </div>
+                    <div
+                      class="flex items-center gap-2 p-2 rounded-sm hover:bg-surface-200-800 active:bg-surface-200-800"
+                    >
+                      <PenIcon class="size-4" />
+                      <a href="/editor">Editor</a>
+                    </div>
+                    <div
+                      class="flex items-center gap-2 p-2 rounded-sm hover:bg-surface-200-800 active:bg-surface-200-800"
+                    >
+                      <PaletteIcon class="size-4" />
+                      <a href="/editor/themes">Themes</a>
+                    </div>
+                    <div
+                      class="flex items-center gap-2 p-2 rounded-sm hover:bg-surface-200-800 active:bg-surface-200-800"
+                    >
+                      <KeyboardMusicIcon class="size-4" />
+                      <a href="/editor/devices">Devices</a>
+                    </div>
                     {#if ability.can("manage", "User")}
-                      <a class="btn preset-tonal" href="/editor/users">Users</a>
+                      <div
+                        class="flex items-center gap-2 p-2 rounded-sm hover:bg-surface-200-800 active:bg-surface-200-800"
+                      >
+                        <UserIcon class="size-4" />
+                        <a href="/editor/users">Users</a>
+                      </div>
                     {/if}
                   </div>
                 </Popover.Content>
@@ -247,6 +389,7 @@
         </AppBar.Lead>
         <AppBar.Headline></AppBar.Headline>
         <AppBar.Trail class="items-center">
+          <GridControls />
           <div class="btn-group bg-surface-200-800">
             <button
               class="btn btn-sm {editor.mode === 'edit' ? 'preset-filled' : 'preset-tonal'}"
@@ -298,58 +441,6 @@
               <ArrowRightIcon class="size-3.5" />
             </button>
           </div>
-
-          <Popover>
-            <Popover.Trigger class="btn-icon hover:preset-tonal">
-              <CircleUserIcon class="size-8" />
-            </Popover.Trigger>
-            <Portal>
-              <Popover.Positioner>
-                <Popover.Content class="card p-4 bg-surface-100-900 shadow-xl">
-                  <header class="flex justify-between">
-                    <Popover.Title class="text-lg font-bold">{data.user?.name}</Popover.Title>
-                    <Popover.CloseTrigger class="btn-icon hover:preset-tonal self-start">
-                      <XIcon class="size-4" />
-                    </Popover.CloseTrigger>
-                  </header>
-
-                  <Popover.Description></Popover.Description>
-                  <div class="">
-                    <p>{data.user?.role}</p>
-                    <div>
-                      <button
-                        onclick={async () => {
-                          const result = await logoutAndGotoLogin();
-                          if (result.isErr()) {
-                            console.error(`logout() ${neverThrowErrorToString(result.error)}`);
-                          }
-                        }}
-                        class="btn preset-filled"
-                      >
-                        logout
-                      </button>
-
-                      <a class="anchor block" href="/editor">editor</a>
-                      <a class="anchor block" href="/trending">trending</a>
-                      <nav class="btn-group preset-outlined-surface-300-700">
-                        {#each themeManager.themes as theme}
-                          <button
-                            type="button"
-                            class="btn capitalize"
-                            class:preset-filled={theme == themeManager.theme}
-                            data-theme-picker
-                            onclick={() => setTheme(theme)}
-                          >
-                            {theme}
-                          </button>
-                        {/each}
-                      </nav>
-                    </div>
-                  </div>
-                </Popover.Content>
-              </Popover.Positioner>
-            </Portal>
-          </Popover>
         </AppBar.Trail>
       </AppBar.Toolbar>
     </AppBar>
@@ -416,10 +507,7 @@
     ></button>
 
     <main id="center-panel" class="grow min-w-0 flex flex-col overflow-scroll">
-      <PageOpenTabs />
-      <div class="grow min-h-0">
-        {@render children?.()}
-      </div>
+      {@render children?.()}
     </main>
     <button
       class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400 hover:px-1.5 hover:-mx-0.75"

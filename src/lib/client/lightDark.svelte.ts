@@ -3,17 +3,19 @@ import { err, ok } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
-export type Theme = (typeof themeManager.themes)[number];
-export class ThemeManager {
+const LIGHT_DARK_KEY = "light-dark";
+
+export type LightDark = (typeof lightDarkManager.themes)[number];
+export class LightDarkManager {
   themes = ["system", "light", "dark"] as const;
-  theme: Theme = $state("system");
+  current: LightDark = $state("system");
   constructor() {}
 
-  loadTheme() {
-    if (!browser) return ok(this.theme);
+  loadLightDark() {
+    if (!browser) return ok(this.current);
 
     // On load, restore saved preference for light or dark theme
-    const stored = attempt(() => localStorage.getItem("theme"));
+    const stored = attempt(() => localStorage.getItem(LIGHT_DARK_KEY));
     if (stored.isErr) {
       return err({
         reason: "THEME_LOAD_FAILED",
@@ -21,12 +23,12 @@ export class ThemeManager {
       } as const satisfies NeverThrowError);
     }
 
-    const localStorageTheme = (stored.data as Theme | null) ?? "system";
-    return this.setTheme(localStorageTheme);
+    const localStorageTheme = (stored.data as LightDark | null) ?? "system";
+    return this.setLightDark(localStorageTheme);
   }
 
-  setTheme(newTheme: Theme) {
-    this.theme = newTheme;
+  setLightDark(newTheme: LightDark) {
+    this.current = newTheme;
 
     const applied = attempt(() => {
       if (newTheme === "system") {
@@ -37,15 +39,15 @@ export class ThemeManager {
     });
     if (applied.isErr) {
       return err({
-        reason: "THEME_APPLY_FAILED",
+        reason: "LIGHT_DARK_APPLY_FAILED",
         cause: errorToString(applied.error),
       } as const satisfies NeverThrowError);
     }
 
-    const saved = attempt(() => localStorage.setItem("theme", newTheme));
+    const saved = attempt(() => localStorage.setItem(LIGHT_DARK_KEY, newTheme));
     if (saved.isErr) {
       return err({
-        reason: "THEME_SAVE_FAILED",
+        reason: "LIGHT_DARK_SAVE_FAILED",
         cause: errorToString(saved.error),
       } as const satisfies NeverThrowError);
     }
@@ -54,4 +56,4 @@ export class ThemeManager {
   }
 }
 
-export let themeManager = new ThemeManager();
+export let lightDarkManager = new LightDarkManager();

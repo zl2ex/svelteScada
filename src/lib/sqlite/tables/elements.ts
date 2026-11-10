@@ -10,7 +10,9 @@ import {
   type ElementBindings,
   type ElementStyle,
 } from "../../elements/elementTypes";
-import { BaseComponentNames } from "$lib/elements/baseComponents";
+import { type BaseComponentNames } from "$lib/elements/baseComponents";
+import type { SvgTag } from "$lib/elements/svgTags";
+import type { HtmlTag } from "$lib/elements/htmlTags";
 
 export const elements = sqliteTable(
   "elements",
@@ -24,7 +26,7 @@ export const elements = sqliteTable(
     }),
     sortIndex: integer("sortIndex").notNull().default(0),
     kind: text("kind", { enum: elementKinds }).notNull(),
-    tag: text("tag"),
+    tag: text("tag").$type<SvgTag | HtmlTag>(),
     baseComponent: text("baseComponent").$type<BaseComponentNames>(),
     referencedComponentId: text("referencedComponentId").references(() => user_components.id, {
       onDelete: "restrict",
@@ -37,10 +39,7 @@ export const elements = sqliteTable(
       .notNull()
       .default({}),
     style: text("style", { mode: "json" }).$type<ElementStyle>().notNull().default({}),
-    styleClass: text("styleClass", { mode: "json" })
-      .$type<string[]>()
-      .notNull()
-      .default([]),
+    styleClass: text("styleClass", { mode: "json" }).$type<string[]>().notNull().default([]),
     bindings: text("bindings", { mode: "json" }).$type<ElementBindings>(),
     createdAt: integer("createdAt", { mode: "number" })
       .notNull()

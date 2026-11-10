@@ -29,7 +29,6 @@
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
   import PageElement from "./PageElement.svelte";
-  import PageElementEditWrapper from "./PageElementEditWrapper.svelte";
   import TrendChart from "../scada/TrendChart.svelte";
 
   type Props = {
@@ -203,13 +202,13 @@
     SVG element {element.tag} must be inside an svg container.
   </p>
 {:else if element.kind === "base-component"}
-  <div use:eventScripts={eventAction}>
+  <div data-element-id={element.id} use:eventScripts={eventAction}>
     {#if element.baseComponent === "TagInput"}
       <TagInput {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
     {:else if element.baseComponent === "DeviceStatus"}
       <DeviceStatus id="" {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
     {:else if element.baseComponent === "TrendChart"}
-      <TrendChart {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
+      <TrendChart id={element.id} {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
     {:else}
       <span class="text-xs opacity-50">
         Unknown component: {element.baseComponent satisfies null}
@@ -218,19 +217,17 @@
   </div>
 {:else if element.kind === "user-component"}
   {#if definition}
-    <div class={resolvedClass} use:eventScripts={eventAction}>
+    <div class={resolvedClass} data-element-id={element.id} use:eventScripts={eventAction}>
       {#each sortedChildren(definition.elements, null) as child (child.id)}
-        <PageElementEditWrapper element={child}>
-          <PageElement
-            element={child}
-            elements={definition.elements}
-            propValues={resolvedProps}
-            {insideSvg}
-            depth={depth + 1}
-            mode={activeMode}
-            userComponents={componentDefinitions}
-          />
-        </PageElementEditWrapper>
+        <PageElement
+          element={child}
+          elements={definition.elements}
+          propValues={resolvedProps}
+          {insideSvg}
+          depth={depth + 1}
+          mode={activeMode}
+          userComponents={componentDefinitions}
+        />
       {/each}
     </div>
   {:else}
@@ -239,28 +236,28 @@
 {:else if element.kind === "svg" && element.tag === "svg"}
   <svg
     {...resolvedAttributes}
+    data-element-id={element.id}
     class={`overflow-visible ${resolvedClass}`}
     style={resolvedStyle}
     use:eventScripts={eventAction}
   >
     {#each children as child (child.id)}
-      <PageElementEditWrapper element={child} insideSvg={true}>
-        <PageElement
-          element={child}
-          {elements}
-          {propValues}
-          insideSvg={true}
-          depth={depth + 1}
-          mode={activeMode}
-          userComponents={componentDefinitions}
-        />
-      </PageElementEditWrapper>
+      <PageElement
+        element={child}
+        {elements}
+        {propValues}
+        insideSvg={true}
+        depth={depth + 1}
+        mode={activeMode}
+        userComponents={componentDefinitions}
+      />
     {/each}
   </svg>
 {:else if element.tag}
   <svelte:element
     this={element.tag}
     {...resolvedAttributes}
+    data-element-id={element.id}
     class={resolvedClass}
     xmlns={element.kind === "svg" ? svgNamespace : undefined}
     style={resolvedStyle}
@@ -268,25 +265,18 @@
   >
     {text}
     {#each children as child (child.id)}
-      <PageElementEditWrapper element={child} {insideSvg}>
-        <PageElement
-          element={child}
-          {elements}
-          {propValues}
-          {insideSvg}
-          depth={depth + 1}
-          mode={activeMode}
-          userComponents={componentDefinitions}
-        />
-      </PageElementEditWrapper>
+      <PageElement
+        element={child}
+        {elements}
+        {propValues}
+        {insideSvg}
+        depth={depth + 1}
+        mode={activeMode}
+        userComponents={componentDefinitions}
+      />
     {/each}
   </svelte:element>
 {:else}
   <pre class="text-error-400-600">{JSON.stringify(element, null, 2)}</pre>
 {/if}
 
-<style>
-  .edit-disable-pointer :global(:is(input, textarea, select, button, a[href])) {
-    pointer-events: none;
-  }
-</style>

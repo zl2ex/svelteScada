@@ -1050,7 +1050,9 @@
 
             <Portal>
               <Popover.Positioner>
-                <Popover.Content class="bg-surface-100-900 rounded-lg p-2">
+                <Popover.Content
+                  class="bg-surface-100-900 card shadow dark:border-1 border-surface-200-800 p-2"
+                >
                   <fieldset class="flex flex-col gap-2" disabled={!ability.can("update", "Tag")}>
                     <label class="opacity-60" for={`dataType-${node.id}`}>Data Type</label>
                     <div class="flex items-center gap-2">
