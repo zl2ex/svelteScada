@@ -10,10 +10,9 @@ export async function load({ locals }) {
     return tag.value.options;
   });
 
-  const tagPaths = tagRows.reduce(
+  const tagPaths = tagManager.getAllTagInstances().reduce(
     (map, tag) => {
-      const path = tagManager.idToPath(tag.id);
-      if (path) map[tag.id] = path;
+      map[tag.id] = tag.path;
       return map;
     },
     {} as Record<string, string>,

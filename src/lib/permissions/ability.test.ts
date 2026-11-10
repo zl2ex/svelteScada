@@ -27,6 +27,7 @@ describe("CASL role abilities", () => {
     expect(ability.can("update", "Page")).toBe(true);
     expect(ability.can("update", "Device")).toBe(true);
     expect(ability.can("update", "Tag")).toBe(true);
+    expect(ability.can("manage", "UdtDefinition")).toBe(true);
     expect(ability.can("manage", "User")).toBe(false);
   });
 
@@ -37,6 +38,7 @@ describe("CASL role abilities", () => {
     expect(canWriteTag(ability, "engineer")).toBe(true);
     expect(canWriteTag(ability, "admin")).toBe(false);
     expect(ability.can("update", "Device")).toBe(false);
+    expect(ability.can("manage", "UdtDefinition")).toBe(false);
   });
 
   it("lets operator write operator tags only", () => {
@@ -75,5 +77,6 @@ describe("CASL role abilities", () => {
     );
 
     expect(ability.can("manage", "User")).toBe(true);
+    expect(ability.can("manage", "UdtDefinition")).toBe(true);
   });
 });

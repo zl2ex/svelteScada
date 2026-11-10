@@ -35,7 +35,9 @@
   import { onMount, untrack } from "svelte";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
-  import { getDataTypeStrings } from "$lib/remote/tag.remote";
+  import { baseTypeKeys } from "$lib/validation/baseTypes";
+  import type { UdtDefinitionInput } from "$lib/sqlite/tables/udt_definitions";
+  import { getUdtDefinitionsContext } from "$lib/client/editor/udtDefinitionContext";
   import {
     errorToString,
     neverThrowErrorToString,
@@ -67,6 +69,21 @@
   const editor = getEditorContext();
   const ability = getAbilityContext();
   const tagValueMap = getTagValueMapContext();
+  const udtDefinitionsCollection = getUdtDefinitionsContext();
+
+  let udtDefinitionsByName = $derived(
+    Object.fromEntries(
+      Object.values(udtDefinitionsCollection.state).map((definition) => [
+        definition.name,
+        definition,
+      ]),
+    ) as Record<string, UdtDefinitionInput>,
+  );
+  let tagDataTypes = $derived(
+    [...baseTypeKeys, ...Object.keys(udtDefinitionsByName)].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+    ),
+  );
 
   let tagFolderPatchesCollection = $state(
     new PatchCollection<ClosureTableNode, NeverThrowError>({
@@ -162,6 +179,16 @@
 
   function saveTagBinding(node: TagOptionsInput, key: TagBindingKey, expression: string) {
     saveTagConfig(node, { bindings: updateBinding(node.bindings, key, null, expression) });
+  }
+
+  function hasOverride(node: TagOptionsInput, key: string) {
+    return !!node.udtOverrides && Object.prototype.hasOwnProperty.call(node.udtOverrides, key);
+  }
+
+  function clearOverride(node: TagOptionsInput, key: string) {
+    const udtOverrides = { ...(node.udtOverrides ?? {}) };
+    delete (udtOverrides as Record<string, unknown>)[key];
+    saveTagConfig(node, { udtOverrides });
   }
 
   let dragging = $state<TreeDragPayload | null>(null);
@@ -274,6 +301,12 @@
       nodeToValue: (node) => node.id,
       nodeToString: (node) => node.name,
       nodeToChildren: (node) => {
+        if (isTagOptions(node)) {
+          return Object.values({
+            ...tagPatchesCollection.state,
+            ...stagingTags,
+          }).filter((tag) => tag.parentTagId === node.id);
+        }
         if (!isClosureTableNode(node)) return [];
         const allFolders = {
           ...tagFolderPatchesCollection.state,
@@ -391,6 +424,10 @@
     return (
       Object.hasOwn(node, "id") && Object.hasOwn(node, "name") && Object.hasOwn(node, "dataType")
     );
+  }
+
+  function isUdtTag(node: TagOptionsInput) {
+    return node.type?.toLowerCase() === "udttag";
   }
 
   function collectItems(values: string[]) {
@@ -751,7 +788,7 @@
       }
 
       // check tagResult first as folderResult also has id and name feilds
-      if (tagResult.data) tags.push(tagResult.data);
+      if (tagResult.data) tags.push(tagResult.data as TagOptionsInput);
       else if (folderResult.data) folders.push(folderResult.data);
     }
 
@@ -917,6 +954,21 @@
   }
 </script>
 
+{#snippet overrideIndicator(node: TagOptionsInput, key: string)}
+  {#if hasOverride(node, key)}
+    <button
+      type="button"
+      class="size-2 shrink-0 rounded-full bg-primary-500"
+      title="Instance override - click to remove"
+      aria-label="Remove instance override"
+      onclick={(event) => {
+        event.stopPropagation();
+        clearOverride(node, key);
+      }}
+    ></button>
+  {/if}
+{/snippet}
+
 {#snippet tagBindingEditor(node: TagOptionsInput, key: TagBindingKey, label: string)}
   <BindingEditor
     {label}
@@ -927,6 +979,70 @@
     onBindingSave={(expression) => saveTagBinding(node, key, expression)}
     onBindingRemove={() => saveTagBinding(node, key, "")}
   />
+{/snippet}
+
+{#snippet tagTrigger(node: TagOptionsInput, openEditor: () => void)}
+  <Popover.Trigger>
+    {#snippet element(attributes)}
+      <button
+        {...attributes}
+        onclick={(ev) => {
+          // stop opening on click
+          ev.preventDefault();
+        }}
+        ondblclick={openEditor}
+        tabindex={-1}
+        class="w-full flex items-center justify-between gap-4 min-w-0 focus-visible:outline-none"
+      >
+        <div class="flex items-center gap-2 min-w-0 w-full">
+          <TagIcon class="size-4 shrink-0 opacity-60" />
+          {#if renamingId === node.id}
+            <input
+              type="text"
+              class="input p-1 text-xs grow"
+              value={node.name}
+              use:focusOnMount
+              onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
+              onkeydown={(e) => {
+                if (e.key === "Enter") finalizeTagRename(node.id, e.currentTarget.value);
+                if (e.key === "Escape") cancelTagRename(node.id);
+              }}
+            />
+          {:else}
+            <span class="truncate" title={node.dataType}>{node.name}</span>
+            {#if node.bindings}
+              <Link2Icon class="size-5 shrink-0 opacity-85" />
+            {/if}
+          {/if}
+        </div>
+        {#if renamingId !== node.id}
+          <TagInput
+            id={node.id}
+            label=""
+            class="py-0  border-none max-w-40 rounded-sm"
+            onclick={(ev) => ev.stopPropagation()}
+            onkeydown={(ev) => ev.stopPropagation()}
+          />
+        {/if}
+      </button>
+    {/snippet}
+  </Popover.Trigger>
+{/snippet}
+
+{#snippet udtChildTagLabel(node: TagOptionsInput)}
+  <div class="flex items-center gap-2 min-w-0 w-full">
+    <TagIcon class="size-4 shrink-0 opacity-60" />
+    <span class="truncate" title={tagValueMap.tagValue(node.id)?.path ?? node.name}>
+      {node.name}
+    </span>
+    <TagInput
+      id={node.id}
+      label=""
+      class="py-0 border-none max-w-40 rounded-sm"
+      onclick={(ev) => ev.stopPropagation()}
+      onkeydown={(ev) => ev.stopPropagation()}
+    />
+  </div>
 {/snippet}
 
 {#snippet treeNode(node: ClosureTableNode | TagOptionsInput, indexPath: number[])}
@@ -992,61 +1108,41 @@
       <Popover positioning={{ placement: "right-end", offset: { mainAxis: 48 } }}>
         <Popover.Context>
           {#snippet children(tagEditPopover)}
-            <TreeView.Item
-              data-tag-id={node.id}
-              draggable="true"
-              ondragstart={(ev) => handleTagDragStart(ev, node)}
-              ondragend={clearTagDrag}
-            >
-              <Popover.Trigger>
-                {#snippet element(attributes)}
-                  <button
-                    {...attributes}
-                    onclick={(ev) => {
-                      // stop opening on click
-                      ev.preventDefault();
-                    }}
-                    ondblclick={() => {
-                      tagEditPopover().setOpen(true);
-                    }}
-                    tabindex={-1}
-                    class="w-full flex items-center justify-between gap-4 min-w-0 focus-visible:outline-none"
-                  >
-                    <div class="flex items-center gap-2 min-w-0 w-full">
-                      <TagIcon class="size-4 shrink-0 opacity-60" />
-                      {#if renamingId === node.id}
-                        <input
-                          type="text"
-                          class="input p-1 text-xs grow"
-                          value={node.name}
-                          use:focusOnMount
-                          onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
-                          onkeydown={(e) => {
-                            if (e.key === "Enter")
-                              finalizeTagRename(node.id, e.currentTarget.value);
-                            if (e.key === "Escape") cancelTagRename(node.id);
-                          }}
-                        />
-                      {:else}
-                        <span class="truncate" title={node.name}>{node.name}</span>
-                        {#if node.bindings}
-                          <Link2Icon class="size-5 shrink-0 opacity-85" />
-                        {/if}
-                      {/if}
-                    </div>
-                    {#if renamingId !== node.id}
-                      <TagInput
-                        id={node.id}
-                        label=""
-                        class="py-0  border-none max-w-40 rounded-sm"
-                        onclick={(ev) => ev.stopPropagation()}
-                        onkeydown={(ev) => ev.stopPropagation()}
-                      />
-                    {/if}
-                  </button>
-                {/snippet}
-              </Popover.Trigger>
-            </TreeView.Item>
+            {@const childTags = Object.values({
+              ...tagPatchesCollection.state,
+              ...stagingTags,
+            }).filter((tag) => tag.parentTagId === node.id)}
+
+            {#if isUdtTag(node) || childTags.length > 0}
+              <TreeView.Branch>
+                <TreeView.BranchControl
+                  data-tag-id={node.id}
+                  draggable="true"
+                  ondragstart={(ev) => handleTagDragStart(ev, node)}
+                  ondragend={clearTagDrag}
+                >
+                  <TreeView.BranchIndicator />
+                  <TreeView.BranchText class="truncate w-full">
+                    {@render tagTrigger(node, () => tagEditPopover().setOpen(true))}
+                  </TreeView.BranchText>
+                </TreeView.BranchControl>
+                <TreeView.BranchContent>
+                  <TreeView.BranchIndentGuide />
+                  {#each childTags as child, childIndex (child.id)}
+                    {@render treeNode(child, [...indexPath, childIndex])}
+                  {/each}
+                </TreeView.BranchContent>
+              </TreeView.Branch>
+            {:else}
+              <TreeView.Item
+                data-tag-id={node.id}
+                draggable="true"
+                ondragstart={(ev) => handleTagDragStart(ev, node)}
+                ondragend={clearTagDrag}
+              >
+                {@render tagTrigger(node, () => tagEditPopover().setOpen(true))}
+              </TreeView.Item>
+            {/if}
 
             <Portal>
               <Popover.Positioner>
@@ -1054,7 +1150,10 @@
                   class="bg-surface-100-900 card shadow dark:border-1 border-surface-200-800 p-2"
                 >
                   <fieldset class="flex flex-col gap-2" disabled={!ability.can("update", "Tag")}>
-                    <label class="opacity-60" for={`dataType-${node.id}`}>Data Type</label>
+                    <div class="flex items-center gap-2">
+                      <label class="opacity-60" for={`dataType-${node.id}`}>Data Type</label>
+                      {@render overrideIndicator(node, "dataType")}
+                    </div>
                     <div class="flex items-center gap-2">
                       {#if isTagBound(node, "dataType")}
                         <input
@@ -1074,7 +1173,7 @@
                               dataType: e.currentTarget.value as BaseTypeStrings,
                             })}
                         >
-                          {#each await getDataTypeStrings() as dataType}
+                          {#each tagDataTypes as dataType (dataType)}
                             <option value={dataType}>{dataType}</option>
                           {/each}
                         </select>
@@ -1082,9 +1181,12 @@
                       {@render tagBindingEditor(node, "dataType", "Data Type")}
                     </div>
 
-                    <label class="opacity-60" for={`nodeId-${node.id}`}>
-                      Driver connection path
-                    </label>
+                    <div class="flex items-center gap-2">
+                      <label class="opacity-60" for={`nodeId-${node.id}`}>
+                        Driver connection path
+                      </label>
+                      {@render overrideIndicator(node, "nodeId")}
+                    </div>
                     <div class="flex gap-2">
                       <input
                         id={`nodeId-${node.id}`}
@@ -1116,6 +1218,7 @@
                       <label class="opacity-60 mr-auto" for={`writeable-${node.id}`}>
                         Writeable
                       </label>
+                      {@render overrideIndicator(node, "writeable")}
                       <input
                         id={`writeable-${node.id}`}
                         type="checkbox"
@@ -1132,7 +1235,10 @@
                       {@render tagBindingEditor(node, "writeable", "Writeable")}
                     </div>
 
-                    <label class="opacity-60" for={`writeLevel-${node.id}`}>Write Level</label>
+                    <div class="flex items-center gap-2">
+                      <label class="opacity-60" for={`writeLevel-${node.id}`}>Write Level</label>
+                      {@render overrideIndicator(node, "writeLevel")}
+                    </div>
                     <div class="flex items-center gap-2">
                       <select
                         id={`writeLevel-${node.id}`}
@@ -1157,6 +1263,7 @@
                       <label class="opacity-60 mr-auto" for={`exposeOverOpcua-${node.id}`}>
                         Expose Tag On OPCUA Server
                       </label>
+                      {@render overrideIndicator(node, "exposeOverOpcua")}
                       <input
                         id={`exposeOverOpcua-${node.id}`}
                         type="checkbox"
@@ -1179,6 +1286,7 @@
                       <label class="opacity-60 mr-auto" for={`trendEnabled-${node.id}`}>
                         Enabled
                       </label>
+                      {@render overrideIndicator(node, "trendEnabled")}
                       {#if isTagBound(node, "trendEnabled")}
                         <input
                           id={`trendEnabled-${node.id}`}
@@ -1208,6 +1316,7 @@
                       >
                         Minimum interval
                       </label>
+                      {@render overrideIndicator(node, "trendMinimumSamplingIntervalMs")}
                       {#if isTagBound(node, "trendMinimumSamplingIntervalMs")}
                         <input
                           id={`trendMinimumSamplingIntervalMs-${node.id}`}
@@ -1245,6 +1354,7 @@
                       <label class="opacity-60 pt-1" for={`parameters-${node.id}`}>
                         Parameters
                       </label>
+                      {@render overrideIndicator(node, "parameters")}
                       <textarea
                         id={`parameters-${node.id}`}
                         rows="4"
@@ -1292,7 +1402,10 @@
 
                     <div class="flex items-center gap-2">
                       <Settings2Icon class="size-4 shrink-0 opacity-60" />
-                      <label class="opacity-60" for={`unit-${node.id}`}>Unit</label>
+                      <div class="flex items-center gap-2">
+                        <label class="opacity-60" for={`unit-${node.id}`}>Unit</label>
+                        {@render overrideIndicator(node, "unit")}
+                      </div>
                       <input
                         id={`unit-${node.id}`}
                         type="text"

@@ -1,6 +1,7 @@
 import { type ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
 import { guard, live, LiveError } from "svelte-realtime/server";
 import { folderManager, tagManager } from "../hooks.server";
+import { tagFoldersClosureTable } from "$lib/server/sqlite/util/tagClosureTable";
 import { logger } from "$lib/server/pino/logger";
 import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.svelte";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
@@ -48,10 +49,20 @@ export const applyTagFolderPatches = live(
       }
     }
     if (patch.op == "remove") {
+      const subtree = tagFoldersClosureTable.getSubtree(id);
+      const folderIds = subtree.isErr() ? [id] : subtree.value.map((node) => node.id);
+
       const result = folderManager.deleteFolder(id);
       if (result.isErr()) {
         console.error(result.error);
         return wireErr(result.error);
+      }
+
+      const removedTagIds = tagManager.removeTagsInFolders(folderIds);
+      if (removedTagIds.length > 0) {
+        ctx.publish("tag-patches", "created", {
+          patches: removedTagIds.map((tagId) => ({ op: "remove", path: [tagId] })),
+        });
       }
     }
     if (patch.op == "replace") {

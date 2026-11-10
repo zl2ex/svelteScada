@@ -15,6 +15,7 @@ export const permissionSubjects = [
   "UserComponent",
   "Device",
   "Tag",
+  "UdtDefinition",
   "TagFolder",
   "TagValue",
   "Trend",

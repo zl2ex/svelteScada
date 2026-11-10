@@ -85,6 +85,18 @@ declare module '$live/trends' {
   export const empty: Readable<undefined>;
 }
 
+declare module '$live/udts' {
+  import type { StreamStore, RpcError } from 'svelte-realtime/client';
+  import type { Readable } from 'svelte/store';
+  import type { PatchOp, PatchPayload } from '$lib/client/live/patchCollection.svelte';
+  import type { NeverThrowError, WireResult } from '$lib/util/neverThrow';
+
+  export const applyUdtPatches: (patch: PatchOp) => Promise<WireResult<{ ok: true }, NeverThrowError>>;
+  export type ErrorCode = 'INVALID_PATCH' | 'UNAUTHENTICATED';
+  export const udtPatches: StreamStore<PatchPayload | undefined | { error: RpcError }> & { load(platform: any, options?: { args?: any[]; user?: any }): Promise<PatchPayload> };
+  export const empty: Readable<undefined>;
+}
+
 declare module '$live/user-theme' {
   import type { StreamStore, RpcError } from 'svelte-realtime/client';
   import type { Readable } from 'svelte/store';

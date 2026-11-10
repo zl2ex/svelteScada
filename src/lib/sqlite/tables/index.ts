@@ -14,6 +14,7 @@ import { device_modbus_tcp_options } from "./device_modbus_tcp_options";
 import { device_modbus_rtu_options } from "./device_modbus_rtu_options";
 import { device_opcua_client_options } from "./device_opcua_client_options";
 import { trends } from "./trends";
+import { udt_definitions } from "./udt_definitions";
 
 export {
   users,
@@ -32,6 +33,7 @@ export {
   device_modbus_rtu_options,
   device_opcua_client_options,
   trends,
+  udt_definitions,
 };
 
 export const tables = {
@@ -51,6 +53,7 @@ export const tables = {
   device_modbus_rtu_options,
   device_opcua_client_options,
   trends,
+  udt_definitions,
 } as const;
 
 export type { UserSelect, UserInsert } from "./users";
@@ -81,6 +84,12 @@ export type {
   DeviceOpcuaClientOptionsConfig,
 } from "./device_opcua_client_options";
 export type { TrendSelect, TrendInsert } from "./trends";
+export type {
+  UdtDefinitionSelect,
+  UdtDefinitionInsert,
+  UdtDefinitionInput,
+  UdtDefinitionTagInput,
+} from "./udt_definitions";
 
 export { z_UserSelect, z_UserInsert, z_UserLogin } from "./users";
 export { z_UserPermissionSelect, z_UserPermissionInsert } from "./user_permissions";
@@ -107,6 +116,12 @@ export {
   z_DeviceOpcuaClientOptionsInsert,
 } from "./device_opcua_client_options";
 export { z_TrendSelect, z_TrendInsert } from "./trends";
+export {
+  z_UdtDefinitionSelect,
+  z_UdtDefinitionInsert,
+  z_UdtDefinitionInput,
+  z_UdtDefinitionChild,
+} from "./udt_definitions";
 
 export { driverNames } from "./devices";
 export type { DriverName } from "./devices";

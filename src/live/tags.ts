@@ -64,6 +64,11 @@ export const applyTagPatches = live(
       }
     }
 
+    let childIdsBefore: string[] = [];
+    if (patch.op !== "add") {
+      childIdsBefore = tagManager.getSubtreeOptions(id).map((options) => options.id);
+    }
+
     if (patch.op === "add") {
       const result = tagManager.createTag(value);
       if (result.isErr()) {
@@ -80,7 +85,7 @@ export const applyTagPatches = live(
             publishTagValue(err(result.error));
             break;
           default:
-            logger.error(reason satisfies never);
+            logger.error(reason);
             throw new LiveError("SERVER_ERROR");
         }
       }
@@ -95,7 +100,7 @@ export const applyTagPatches = live(
             return wireErr(result.error);
 
           default:
-            logger.error(reason satisfies never);
+            logger.error(reason);
             throw new LiveError("SERVER_ERROR");
         }
       }
@@ -114,13 +119,40 @@ export const applyTagPatches = live(
             break;
 
           default:
-            logger.error(reason satisfies never);
+            logger.error(reason);
             throw new LiveError("SERVER_ERROR");
         }
       }
     }
 
-    ctx.publish("tag-patches", "created", { patches: [patch] });
+    const subtreeAfter = tagManager.getSubtreeOptions(id);
+    const childIdsAfter = new Set(subtreeAfter.map((options) => options.id));
+    const childPatches: PatchOp[] = [];
+
+    if (patch.op === "add") {
+      for (const childOptions of subtreeAfter) {
+        childPatches.push({ op: "add", path: [childOptions.id], value: childOptions });
+      }
+    } else if (patch.op === "replace") {
+      for (const childId of childIdsBefore) {
+        if (!childIdsAfter.has(childId)) {
+          childPatches.push({ op: "remove", path: [childId] });
+        }
+      }
+      for (const childOptions of subtreeAfter) {
+        childPatches.push({
+          op: childIdsBefore.includes(childOptions.id) ? "replace" : "add",
+          path: [childOptions.id],
+          value: childOptions,
+        });
+      }
+    } else {
+      for (const childId of childIdsBefore) {
+        childPatches.push({ op: "remove", path: [childId] });
+      }
+    }
+
+    ctx.publish("tag-patches", "created", { patches: [patch, ...childPatches] });
 
     return wireOk({ ok: true });
   },

@@ -3,7 +3,7 @@ import { baseComponents } from "./baseComponents";
 import { htmlElementDefaults } from "./htmlElementDefaults";
 import type { HtmlTag } from "./htmlTags";
 import { svgElementDefaults } from "./svgElementDefaults";
-import type { SvgTag } from "./svgTags";
+import { svgTags, type SvgTag } from "./svgTags";
 
 export type ElementFingerprint = {
   tag?: string | null;
@@ -69,4 +69,35 @@ export function getDefaultElementAttributes(kind: ElementKind, options: ElementF
 
 export function getDefaultElementStyle(kind: ElementKind, options: ElementFingerprint) {
   return getDefaultElementConfig(kind, options).style;
+}
+
+/**
+ *  looks through the svgElementDefaults to get the position attributes for the specific tag and if they should be on the .style attribute or a direct attribute
+ * @param tag
+ * @returns
+ */
+export function toPositionAttributes(tag: SvgTag | HtmlTag | null): {
+  attributes: {
+    left: "x" | "cx" | "left";
+    top: "y" | "yx" | "top";
+  } | null;
+  style: ElementStyle | null;
+} {
+  if (tag && svgTags.includes(tag)) {
+    if ("attributes" in svgElementDefaults[tag]) {
+      if ("x" in svgElementDefaults[tag].attributes || "y" in svgElementDefaults[tag].attributes) {
+        return { attributes: { left: "x", top: "y" }, style: null };
+      }
+
+      if (
+        "cx" in svgElementDefaults[tag].attributes ||
+        "cy" in svgElementDefaults[tag].attributes
+      ) {
+        return { attributes: { left: "cx", top: "cy" }, style: null };
+      }
+    }
+  }
+
+  // all html uses style not attributes
+  return { style: { left: "left", top: "top" }, attributes: null };
 }

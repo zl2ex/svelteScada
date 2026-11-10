@@ -143,7 +143,7 @@
               disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
-          {:else if typeof tag.value === "number"}
+          {:else if typeof tag.value === "number" || typeof tag.value === "bigint"}
             <input
               type="number"
               name="input"
@@ -174,7 +174,7 @@
               disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
-          {:else}
+          {:else if typeof tag.value === "string"}
             <input
               type="text"
               name="input"
@@ -203,6 +203,15 @@
                 isFocus = true;
               }}
               disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
+              {...rest}
+            />
+          {:else}
+            <input
+              type="text"
+              name="input"
+              class={classWithError("input")}
+              value="object"
+              disabled
               {...rest}
             />
           {/if}

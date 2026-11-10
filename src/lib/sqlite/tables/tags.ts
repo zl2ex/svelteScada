@@ -1,36 +1,26 @@
-import { check, sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { check, sqliteTable, text, type AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import z from "zod";
 import { tag_folders } from "./tag_folders";
-import { baseTypeKeys } from "../../validation/baseTypes";
-import { z_TagBindings, type TagBindings } from "../../tagBindings";
+import { z_TagBindings } from "../../tagBindings";
 import { tagWriteLevels } from "../../permissions/constants";
 import { sqlEnumList } from "./enums";
+import { tagColumns } from "./tagColumns";
 
 export const tags = sqliteTable(
   "tags",
   {
-    id: text("id").primaryKey(),
+    ...tagColumns(),
     folderId: text("folderId").references(() => tag_folders.id, {
       onDelete: "set null",
     }),
-    name: text("name").notNull(),
-    dataType: text("dataType", { enum: baseTypeKeys }).notNull(),
-    type: text("type", { enum: ["tag", "udtTag"] })
-      .notNull()
-      .default("tag"),
-    initalValue: text("intialValue"),
-    nodeId: text("nodeId"),
-    writeable: integer("writeable", { mode: "boolean" }).default(true),
-    exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).default(true),
-    parameters: text("parameters", { mode: "json" }),
-    unit: text("unit").notNull().default(""),
-    bindings: text("bindings", { mode: "json" }).$type<TagBindings>(),
-    writeLevel: text("writeLevel", { enum: tagWriteLevels }).notNull().default("operator"),
-    trendEnabled: integer("trend_enabled", { mode: "boolean" }).notNull().default(false),
-    trendMinimumSamplingIntervalMs: integer("trend_minimumSamplingIntervalMs")
-      .notNull()
-      .default(1000),
+    parentTagId: text("parentTagId").references((): AnySQLiteColumn => tags.id, {
+      onDelete: "cascade",
+    }),
+    udtDefinitionId: text("udtDefinitionId"),
+    udtDefinitionChildId: text("udtDefinitionChildId"),
+    udtOverrides: text("udtOverrides", { mode: "json" }).$type<Record<string, unknown>>(),
   },
   (t) => [check("tags_writeLevel_check", sql`${t.writeLevel} in (${sqlEnumList(tagWriteLevels)})`)],
 );

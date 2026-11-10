@@ -12,7 +12,11 @@ import z from "zod";
 import { OpcuaFolder } from "$lib/server/tag/opcuaFolder";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
 import { trends } from "$lib/sqlite/tables";
-import { z_TagOptionsInsert } from "$lib/sqlite/tagOptions";
+import {
+  z_TagOptionsInsert,
+  type TagOptionsInput,
+  type UdtTagOverrides,
+} from "$lib/sqlite/tagOptions";
 import { db } from "$lib/server/sqlite/db";
 import { err, ok, type Result } from "neverthrow";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
@@ -22,7 +26,7 @@ import type { DriverVariable } from "$lib/server/drivers/driver";
 import { toTrendValue } from "$lib/util/trend";
 import { publishTrend } from "../trend/trend";
 
-export type TagOptionsInput = z.input<typeof z_TagOptionsInsert>;
+export type { TagOptionsInput, UdtTagOverrides } from "$lib/sqlite/tagOptions";
 
 export async function getAllDataTypeStrings() {
   const udtNames = udtManager.getAllUdts().map((udt) => {
@@ -80,7 +84,13 @@ export const baseTypeMap: {
   [K in keyof typeof z_BaseTypes]: PrimitiveKind<(typeof z_BaseTypes)[K]>;
 };
 
-export type TagValue = string | number | boolean | Array<string | number | boolean>;
+export type TagPrimitive = string | number | boolean;
+
+export type TagValue = TagPrimitive | TagValue[] | { [key: string]: TagValue };
+
+export type TagCreateContext = {
+  parent?: Tag;
+};
 
 export type UpdateSource = "WebClient" | "GatewayOpcua" | "TagInternal" | "TagDriver";
 
@@ -145,6 +155,7 @@ export type StatusCodeName = Exclude<keyof typeof StatusCodes, "prototype">;
 // the client-facing representation of a healthy tag
 export type ClientTagValue = Pick<Tag, "id" | "name" | "value" | "options" | "path"> & {
   statusString: StatusCodeName;
+  children?: ClientTagValue[];
 };
 
 // a tag that failed to load or be created - the map stores the neverthrow
@@ -164,7 +175,7 @@ export class Tag {
   opcuaDataType: DataType = DataType.Null; // TD WIP Datatype check
   isArray: boolean = false;
   arrayLength: number = 0;
-  value: TagValue;
+  value!: TagValue;
   statusCode: StatusCode = StatusCodes.UncertainConfigurationError;
   schema:
     | z.ZodObject
@@ -180,11 +191,13 @@ export class Tag {
       >
     | undefined;
   //exposeOverOpcua: boolean = false;
-  childTags: Map<string, Tag>; // array of chaildren tags that make up a udt, undeinfed if it is a base tag
+  children: Record<string, Tag>;
   exposeOpcuaVarible?: UAVariable; // varible used to expose over opcua if exposeOverOpcua is true
   driverVarible?: DriverVariable<TagValue>; // driver subscription varible
   driverUnsubscribe?: () => void; // driver cleanup function
   onChange?: ChangeListener; // on change event for listeners
+  #parent?: Tag;
+  #suppressParentNotify = false;
   #lastTrendWriteMs = 0;
   #disposed = false; // disposed flag
 
@@ -193,6 +206,7 @@ export class Tag {
     opcuaFolder: OpcuaFolder,
     options: TagOptionsInput,
     onChange?: ChangeListener,
+    parent?: Tag,
   ) {
     this.id = options.id;
     this.name = options.name;
@@ -200,7 +214,8 @@ export class Tag {
     this.opcuaFolder = opcuaFolder;
     this.options = options;
     this.onChange = onChange;
-    this.childTags = new Map();
+    this.children = {};
+    this.#parent = parent;
   }
 
   /**
@@ -215,6 +230,7 @@ export class Tag {
     opcuaFolder: OpcuaFolder,
     opts: TagOptionsInput,
     onChange?: ChangeListener,
+    context: TagCreateContext = {},
   ): Result<Tag, FailedTag> {
     // parse for any errors but also to get default values
     const parsed = z_TagOptionsInsert.safeParse(opts);
@@ -226,9 +242,9 @@ export class Tag {
       } as const satisfies FailedTag);
     }
 
-    const options = parsed.data;
+    const options = parsed.data as TagOptionsInput;
 
-    const tag = new Tag(opcuaServer, opcuaFolder, options, onChange);
+    const tag = new Tag(opcuaServer, opcuaFolder, options, onChange, context.parent);
 
     // pull out the base datatype and the array size if an array is defined
     // eg input Double[2]  =>   ["Double[2], "Double", 2]
@@ -272,16 +288,7 @@ export class Tag {
         } as const satisfies FailedTag);
       }
 
-      for (const tagOptions of udtDefinition.buildTagFeilds(options, options.children).values()) {
-        const childResult = Tag.create(tag.opcuaServer, tag.opcuaFolder, tagOptions);
-        if (childResult.isErr()) return err(childResult.error);
-        tag.childTags.set(childResult.value.name, childResult.value);
-      }
-
-      tag.schema = z.object();
-      for (const [key, childTag] of tag.childTags.entries()) {
-        tag.schema = tag.schema.extend({ [key]: childTag.schema });
-      }
+      tag.schema = z.object({});
     }
 
     // try load inital value fron database
@@ -291,13 +298,15 @@ export class Tag {
 
       if (validated.isOk()) {
         tag.statusCode = StatusCodes.Good;
-        tag.value = validated.value;
+        tag.value = validated.value as TagValue;
       }
     }
     // failed to parse initalValue or it was not provided
     if (!tag.value) {
+      // parse undefined for primatives like z.number() or parse empty object for object type
+      const emptyParse = options.type === "tag" ? undefined : {};
       // get intial value defaults from schema
-      const result = tag.schema.safeParse(undefined);
+      const result = tag.schema.safeParse(emptyParse);
 
       if (!result.success) {
         logger.error(result.error);
@@ -312,7 +321,7 @@ export class Tag {
       if (tag.isArray) {
         tag.value = Array(tag.arrayLength).fill(result.data);
       } else {
-        tag.value = result.data;
+        tag.value = result.data as TagValue;
       }
     }
 
@@ -364,7 +373,7 @@ export class Tag {
                   case "SCHEMA_UNDEFINED":
                     return StatusCodes.BadInternalError;
                   default:
-                    logger.error(reason satisfies never);
+                    logger.error(reason);
                     return StatusCodes.BadUnexpectedError;
                 }
               }
@@ -416,6 +425,41 @@ export class Tag {
     return ok(tag);
   }
 
+  attachRuntimeChild(child: Tag) {
+    child.#parent = this;
+    this.children[child.name] = child;
+    if (child.schema) {
+      this.schema = (this.schema as z.ZodObject).extend({ [child.name]: child.schema });
+    }
+  }
+
+  detachRuntimeChild(name: string) {
+    const child = this.children[name];
+    if (child) child.#parent = undefined;
+    delete this.children[name];
+    this.rebuildSchemaFromChildren();
+  }
+
+  detachRuntimeChildren() {
+    for (const child of Object.values(this.children)) {
+      child.#parent = undefined;
+    }
+    this.children = {};
+    this.rebuildSchemaFromChildren();
+  }
+
+  rebuildSchemaFromChildren() {
+    let schema = z.object({});
+    for (const child of Object.values(this.children)) {
+      if (child.schema) schema = schema.extend({ [child.name]: child.schema });
+    }
+    this.schema = schema;
+  }
+
+  recomputeFromChildren(source: UpdateSource = "TagInternal") {
+    this.#onChildChange(source, StatusCodes.Good);
+  }
+
   // parse intialValue string stored in database into one of the required datatypes
   #stringToTagValue(value: string): TagValue {
     // Handle arrays stored in json format
@@ -455,6 +499,7 @@ export class Tag {
   }
 
   getClientValueTag(): ClientTagValue {
+    const children = Object.values(this.children).map((child) => child.getClientValueTag());
     return {
       id: this.id,
       name: this.name,
@@ -462,6 +507,7 @@ export class Tag {
       path: this.path,
       statusString: this.statusCode.name as StatusCodeName,
       options: this.options,
+      ...(children.length > 0 ? { children } : {}),
     };
   }
 
@@ -489,7 +535,10 @@ export class Tag {
 
     const device = deviceManager.getDeviceByName(resolvedPath.deviceName);
     if (device.isErr()) return err(device.error);
-    const variableResult = device.value.subscribe(resolvedPath.driverPath, this.options.dataType);
+    const variableResult = device.value.subscribe(
+      resolvedPath.driverPath,
+      this.options.dataType as BaseTypeStrings,
+    );
     if (variableResult.isErr()) return err(variableResult.error);
     const driverVariable = variableResult.value;
 
@@ -529,13 +578,17 @@ export class Tag {
    * @example
    * const statusCode = await update(50.1, "TagInternal", StatusCodes.Good);
    */
-  async #update(value: TagValue, source: UpdateSource, statusCode: StatusCode = StatusCodes.Good) {
+  async #update(
+    value: TagValue,
+    source: UpdateSource,
+    statusCode: StatusCode = StatusCodes.Good,
+  ): Promise<Result<StatusCode, FailedTag>> {
     const validated = this.#validate(value);
     if (validated.isErr()) {
       this.statusCode = StatusCodes.BadTypeMismatch;
       return err(validated.error);
     }
-    const newValue = validated.value;
+    const newValue = validated.value as TagValue;
     if (this.isArray !== Array.isArray(newValue))
       return err({
         reason: "ARRAY_TYPE_MISMATCH",
@@ -549,6 +602,28 @@ export class Tag {
         options: this.options,
       } as const satisfies FailedTag);
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
+
+    if (Object.keys(this.children).length > 0) {
+      if (typeof newValue !== "object" || newValue === null || Array.isArray(newValue)) {
+        return err({
+          reason: "UDT_VALUE_INVALID",
+          cause: `[Tag] update() ${this.id} expected a structured UDT value`,
+          options: this.options,
+        } as const satisfies FailedTag);
+      }
+
+      this.#suppressParentNotify = true;
+      for (const [name, child] of Object.entries(this.children)) {
+        const childValue = (newValue as Record<string, TagValue>)[name];
+        if (childValue === undefined) continue;
+        const updated = await child.#update(childValue, source, statusCode);
+        if (updated.isErr()) {
+          this.#suppressParentNotify = false;
+          return err(updated.error);
+        }
+      }
+      this.#suppressParentNotify = false;
+    }
 
     if (this.driverVarible && source !== "TagDriver") {
       const write = await this.driverVarible.write(newValue);
@@ -605,7 +680,29 @@ export class Tag {
       logger.error(`[Tag] update() onChange() threw with error ${changed.error}`);
     }
 
+    if (this.#parent && !this.#parent.#suppressParentNotify) {
+      this.#parent.#onChildChange(source, statusCode);
+    }
+
     return ok(this.statusCode);
+  }
+
+  #onChildChange(source: UpdateSource, statusCode: StatusCode) {
+    const value: Record<string, TagValue> = {};
+    for (const [name, child] of Object.entries(this.children)) {
+      value[name] = child.value;
+    }
+    this.value = value;
+    this.statusCode = statusCode;
+
+    const changed = attempt(() => this.onChange?.(this.value, source, statusCode));
+    if (changed.isErr) {
+      logger.error(`[Tag] onChildChange() onChange() threw with error ${changed.error}`);
+    }
+
+    if (this.#parent && !this.#parent.#suppressParentNotify) {
+      this.#parent.#onChildChange(source, statusCode);
+    }
   }
 
   [Symbol.dispose]() {
@@ -701,12 +798,12 @@ export class Tag {
       this.exposeOpcuaVarible = undefined;
     }
 
-    this.childTags.forEach((child) => {
+    for (const child of Object.values(this.children)) {
       const disposed = child.dispose();
       if (disposed.isErr()) {
         logger.error(disposed.error);
       }
-    });
+    }
 
     return ok(true);
   }

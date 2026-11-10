@@ -55,11 +55,14 @@ export class TagValueMap {
   #lookupToId = new Map<string, string>();
   #pathById = new Map<string, string>();
   #subscriptions = new Map<string, () => void>();
+  #childIds = new Map<string, Set<string>>();
+  #parentId = new Map<string, string>();
   #tagPatchesUnsubscribe?: () => void;
   #disposed = false;
 
   constructor(options: { tagIds: string[]; tagPaths?: Record<string, string> }) {
-    for (const id of options.tagIds) {
+    const tagIds = new Set([...options.tagIds, ...Object.keys(options.tagPaths ?? {})]);
+    for (const id of tagIds) {
       this.#lookupToId.set(id, id);
       const path = options.tagPaths?.[id];
       if (path) this.#setPath(id, path);
@@ -73,11 +76,12 @@ export class TagValueMap {
         if (!Array.isArray(op.path) || op.path.length !== 1) continue;
         const id = String(op.path[0]);
         if (op.op === "add") this.#subscribe(id);
-        if (op.op === "remove") this.#unsubscribe(id);
+        if (op.op === "replace" && !this.#subscriptions.has(id)) this.#subscribe(id);
+        if (op.op === "remove") this.#unsubscribeTree(id);
       }
     });
 
-    for (const id of options.tagIds) this.#subscribe(id);
+    for (const id of tagIds) this.#subscribe(id);
   }
 
   get(lookup: string): TagMapEntry | undefined {
@@ -142,6 +146,8 @@ export class TagValueMap {
     this.tagPaths.clear();
     this.#lookupToId.clear();
     this.#pathById.clear();
+    this.#childIds.clear();
+    this.#parentId.clear();
   }
 
   #subscribe(id: string) {
@@ -169,6 +175,7 @@ export class TagValueMap {
 
       if ((entry.status === "connected" || entry.status === "reconnecting") && entry.value.isOk) {
         this.#setPath(id, entry.value.value.path);
+        this.#syncChildren(id, entry.value.value.children ?? []);
       }
       this.entries.set(id, entry);
     };
@@ -199,10 +206,54 @@ export class TagValueMap {
     publish();
   }
 
-  #unsubscribe(id: string) {
+  #syncChildren(parentId: string, children: ClientTagValue[]) {
+    const nextIds = new Set(children.map((child) => child.id));
+    const previousIds = this.#childIds.get(parentId) ?? new Set<string>();
+
+    for (const previousId of previousIds) {
+      if (!nextIds.has(previousId)) this.#unsubscribeTree(previousId);
+    }
+
+    this.#childIds.set(parentId, nextIds);
+
+    for (const child of children) {
+      this.#parentId.set(child.id, parentId);
+      this.#setPath(child.id, child.path);
+      if (!this.#subscriptions.has(child.id)) this.#subscribe(child.id);
+      this.#syncChildren(child.id, child.children ?? []);
+    }
+  }
+
+  #unsubscribeTree(id: string, seen = new Set<string>()) {
+    if (seen.has(id)) return;
+    seen.add(id);
+
+    const path = this.#pathById.get(id);
+    const childIds = new Set(this.#childIds.get(id) ?? []);
+
+    // The parent value may not have loaded yet, so also catch descendants by path.
+    if (path) {
+      for (const [otherId, otherPath] of this.#pathById) {
+        if (otherPath.startsWith(`${path}.`)) childIds.add(otherId);
+      }
+    }
+
+    for (const childId of childIds) {
+      this.#unsubscribeTree(childId, seen);
+    }
+
+    this.#unsubscribeSelf(id);
+  }
+
+  #unsubscribeSelf(id: string) {
     this.#subscriptions.get(id)?.();
     this.#subscriptions.delete(id);
     this.entries.delete(id);
+
+    const parentId = this.#parentId.get(id);
+    if (parentId) this.#childIds.get(parentId)?.delete(id);
+    this.#parentId.delete(id);
+    this.#childIds.delete(id);
 
     const path = this.#pathById.get(id);
     if (path) {

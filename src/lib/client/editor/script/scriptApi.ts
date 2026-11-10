@@ -1,4 +1,5 @@
-export type ScriptValue = string | number | boolean | Array<string | number | boolean>;
+export type ScriptValue =
+  string | number | boolean | ScriptValue[] | { [key: string]: ScriptValue };
 
 export type ScriptElementKind = "html" | "svg" | "base-component" | "user-component";
 

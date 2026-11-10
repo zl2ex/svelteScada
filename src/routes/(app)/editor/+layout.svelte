@@ -35,7 +35,11 @@
   import { page } from "$app/state";
   import { pagePatches, applyPagePatches } from "$live/pages";
   import { userThemePatches, applyUserThemePatches } from "$live/user-theme";
+  import { udtPatches, applyUdtPatches } from "$live/udts";
+  import type { UdtDefinitionInput } from "$lib/sqlite/tables/udt_definitions";
+  import { setUdtDefinitionsContext } from "$lib/client/editor/udtDefinitionContext";
   import TagsTab from "$lib/client/componets/editor/TagsTab.svelte";
+  import UdtsTab from "$lib/client/componets/editor/UdtsTab.svelte";
   import PagesTab from "$lib/client/componets/editor/PagesTab.svelte";
   import PageProperties from "$lib/client/componets/editor/PageProperties.svelte";
   import ElementProperties from "$lib/client/componets/editor/ElementProperties.svelte";
@@ -152,6 +156,28 @@
     }),
   );
 
+  let udtDefinitionPatchesCollection = $state(
+    new PatchCollection<UdtDefinitionInput, NeverThrowError>({
+      initial: Object.fromEntries(data.udts.map((udt) => [udt.id, udt])),
+      applyPatch: applyUdtPatches,
+      subscribePatches: (notify) => {
+        const unsubscribe = udtPatches.subscribe((payload) => {
+          if (!payload || "error" in payload) {
+            notify(null);
+            return;
+          }
+          notify(payload);
+        });
+        return unsubscribe;
+      },
+      maxHistory: 50,
+      onMutation: () => undoManager.recordMutation("udts"),
+      onError: (error) => console.error("UDT sync error:", error),
+    }),
+  );
+
+  setUdtDefinitionsContext(udtDefinitionPatchesCollection);
+
   const editor = new EditorState({
     pages: pagePatchesCollection,
     userThemes: userThemePatchesCollection,
@@ -218,6 +244,7 @@
 
   undoManager.register("pages", pagePatchesCollection);
   undoManager.register("themes", userThemePatchesCollection);
+  undoManager.register("udts", udtDefinitionPatchesCollection);
 
   onMount(() => {
     void import("$lib/client/editor/script/monaco").then((module) => {
@@ -233,8 +260,10 @@
     return () => {
       undoManager.unregister("pages");
       undoManager.unregister("themes");
+      undoManager.unregister("udts");
       pagePatchesCollection.dispose();
       userThemePatchesCollection.dispose();
+      udtDefinitionPatchesCollection.dispose();
       editor.dispose();
     };
   });
@@ -478,7 +507,7 @@
             <TagsTab tagFolders={data.tagFolders} tags={data.tags} />
           </Tabs.Content>
           <Tabs.Content value="udts" class="flex-1 min-h-0 overflow-y-auto">
-            User Defined data types
+            <UdtsTab />
           </Tabs.Content>
           <Tabs.Content value="pages" class="flex-1 min-h-0 overflow-y-auto">
             <PagesTab />

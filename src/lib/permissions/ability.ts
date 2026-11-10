@@ -43,6 +43,7 @@ const roleRules: Record<UserRole, AppRawRule[]> = {
         "UserComponent",
         "Device",
         "Tag",
+        "UdtDefinition",
         "TagFolder",
         "TagValue",
       ],

@@ -30,6 +30,7 @@
   import { getSvgCreatePointRoot, getSvgScreenCTM } from "$lib/client/editor/svgGeometryControls";
   import { createSvgGeometryControlsAble } from "$lib/client/editor/svgGeometryControlsAble";
   import { reorderIds } from "$lib/client/util/dragging";
+  import { toPositionAttributes } from "$lib/elements/defaults";
 
   let {
     canvasElement,
@@ -398,14 +399,11 @@
 
     setTempStyle(state, "width", `${event.width}px`);
     setTempStyle(state, "height", `${event.height}px`);
-    let x = "left";
-    let y = "top";
 
-    if (state.element.kind === "svg") {
-      ((x = "x"), (y = "y"));
-    }
-    setTempStyle(state, x, `${event.drag.left}px`);
-    setTempStyle(state, y, `${event.drag.top}px`);
+    const attrNames = toPositionAttributes(state.element.tag);
+    console.debug(attrNames);
+    setTempStyle(state, attrNames.left, `${event.drag.left}px`);
+    setTempStyle(state, attrNames.top, `${event.drag.top}px`);
   }
 
   function onResize(event: OnResize) {
@@ -421,30 +419,20 @@
     const changes = new Map<string, Partial<ElementRecord>>();
     for (const state of gesture.states) {
       if (state.element.kind === "svg") {
-        const attributes = svgScaleAttributes(
-          state.element,
-          state.startWidth,
-          state.startHeight,
-          state.startWidth === 0 ? 1 : state.width / state.startWidth,
-          state.startHeight === 0 ? 1 : state.height / state.startHeight,
-        );
-        if (attributes) {
-          const hasStyledSize =
-            state.element.style.width !== undefined || state.element.style.height !== undefined;
-          changes.set(state.element.id, {
-            attributes,
-            ...(hasStyledSize
-              ? {
-                  style: mergeStyle(state.element, {
-                    width: `${state.width}px`,
-                    height: `${state.height}px`,
-                  }),
-                }
-              : {}),
-          });
-          continue;
-        }
+        const attrNames = toPositionAttributes(state.element.tag);
+        changes.set(state.element.id, {
+          /*attributes: {
+            [attrNames.left]: `${state.dragX}px`,
+            [attrNames.top]: `${state.dragY}px`,
+          },*/
+          style: mergeStyle(state.element, {
+            width: `${state.width}px`,
+            height: `${state.height}px`,
+          }),
+        });
+        continue;
       }
+
       changes.set(state.element.id, {
         style: mergeStyle(state.element, {
           width: `${state.width}px`,

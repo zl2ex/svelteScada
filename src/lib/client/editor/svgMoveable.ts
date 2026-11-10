@@ -145,6 +145,11 @@ export function svgDragAttributes(element: ElementRecord, dx: number, dy: number
   return attributes;
 }
 
+/***
+
+change svgDragAttributes() and svgScaleAttributes() to use a lookup toPositionAttributes()  instead of switch statement's. also fix the type errors in toPositionAttributes and sujjest changes to the implimentation
+ */
+
 export function svgScaleAttributes(
   element: ElementRecord,
   startWidth: number,

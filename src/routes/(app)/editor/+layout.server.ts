@@ -8,6 +8,7 @@ import { userComponentManager } from "$lib/server/page/userComponentManager";
 import { userThemeManager } from "$lib/server/theme/userThemeManager";
 import type { PageRecord } from "$lib/elements/pageTypes";
 import { assertCan } from "$lib/server/auth/authorize";
+import { udtManager } from "../../../hooks.server";
 
 export async function load({ locals }) {
   assertCan(locals.ability, "manage", "Project");
@@ -23,6 +24,7 @@ export async function load({ locals }) {
   if (userComponents.isErr()) throw userComponents.error;
   const themes = userThemeManager.getAll();
   if (themes.isErr()) throw themes.error;
+  const udts = udtManager.getAllUdts().map((udt) => udt.toInput());
 
   return {
     tagFolders: folderRows.reduce(
@@ -46,5 +48,7 @@ export async function load({ locals }) {
     userComponents: userComponents.value,
 
     themes: themes.value,
+
+    udts,
   };
 }
