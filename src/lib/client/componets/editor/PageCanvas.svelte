@@ -4,7 +4,7 @@
   import type { EditorMode, UserComponentDefinition } from "$lib/client/editor/editorState.svelte";
   import type { ContainerType, ElementRecord } from "$lib/elements/elementTypes";
   import { attempt } from "$lib/util/attempt";
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
   import {
     containerTypeStyle,
     elementStyleToString,
@@ -35,6 +35,62 @@
   let moveableTargets = $state<Array<HTMLElement | SVGElement>>([]);
   let selectedElements = $derived(editor?.selectedElements ?? []);
 
+  function handleZoomKeydown(event: KeyboardEvent) {
+    if (activeMode !== "edit" || !editor) return;
+    if (!(event.ctrlKey || event.metaKey) || isEditableTarget(event.target)) return;
+
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      editor.zoomIn();
+      return true;
+    }
+    if (event.key === "-") {
+      event.preventDefault();
+      editor.zoomOut();
+      return true;
+    }
+    if (event.key === "0") {
+      event.preventDefault();
+      editor.resetCanvasZoom();
+      return true;
+    }
+    return false;
+  }
+
+  onMount(() => {
+    if (!canvasElement) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (activeMode !== "edit" || !editor) return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (!canvasElement) return;
+
+      event.preventDefault();
+
+      const oldZoom = editor.canvasZoom;
+      const rect = canvasElement.getBoundingClientRect();
+      const cursorX = event.clientX - rect.left;
+      const cursorY = event.clientY - rect.top;
+      const contentX = (canvasElement.scrollLeft + cursorX) / oldZoom;
+      const contentY = (canvasElement.scrollTop + cursorY) / oldZoom;
+
+      if (event.deltaY < 0) editor.zoomIn();
+      else editor.zoomOut();
+
+      const newZoom = editor.canvasZoom;
+      if (newZoom === oldZoom) return;
+
+      void tick().then(() => {
+        if (!canvasElement) return;
+        canvasElement.scrollLeft = contentX * newZoom - cursorX;
+        canvasElement.scrollTop = contentY * newZoom - cursorY;
+      });
+    };
+
+    canvasElement.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvasElement?.removeEventListener("wheel", handleWheel);
+  });
+
   $effect(() => {
     if (activeMode === "preview") canvasElement?.focus({ preventScroll: true });
   });
@@ -61,76 +117,58 @@
   });
 </script>
 
-<Menu
-  onSelect={(details) => {
-    console.debug(details.value);
+<div
+  bind:this={canvasElement}
+  class="relative min-h-full w-full overflow-auto bg-surface-50-950 outline-none"
+  role="presentation"
+  tabindex="-1"
+  onpointerdowncapture={(event) => {
+    if (isEditableTarget(event.target)) return;
+    canvasElement?.focus({ preventScroll: true });
+  }}
+  onkeydown={(event) => {
+    if (handleZoomKeydown(event)) return;
+    if (editor) handleEditorKeyup(editor, event);
+  }}
+  onclick={(event) => {
+    if (activeMode !== "edit") return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (
+      target?.closest(
+        ".moveable-control-box, .moveable-line, .moveable-control, .moveable-area, .moveable-origin",
+      )
+    ) {
+      return;
+    }
+    const element = target?.closest<HTMLElement>("[data-element-id]");
+    const id = element?.dataset.elementId;
+    if (id) {
+      editor?.selectElement(id, {
+        additive: event.ctrlKey || event.metaKey,
+        range: event.shiftKey,
+      });
+      return;
+    }
+    editor?.clearElementSelection();
   }}
 >
-  <Menu.ContextTrigger>
-    <div
-      bind:this={canvasElement}
-      class="relative min-h-full w-full overflow-auto bg-surface-50-950 outline-none"
-      role="presentation"
-      tabindex="-1"
-      onpointerdowncapture={(event) => {
-        if (isEditableTarget(event.target)) return;
-        canvasElement?.focus({ preventScroll: true });
-      }}
-      onkeydown={(event) => {
-        if (editor) handleEditorKeyup(editor, event);
-      }}
-      onclick={(event) => {
-        if (activeMode !== "edit") return;
-        const target = event.target instanceof Element ? event.target : null;
-        if (
-          target?.closest(
-            ".moveable-control-box, .moveable-line, .moveable-control, .moveable-area, .moveable-origin",
-          )
-        ) {
-          return;
-        }
-        const element = target?.closest<HTMLElement>("[data-element-id]");
-        const id = element?.dataset.elementId;
-        if (id) {
-          editor?.selectElement(id, {
-            additive: event.ctrlKey || event.metaKey,
-            range: event.shiftKey,
-          });
-          return;
-        }
-        editor?.clearElementSelection();
-      }}
-    >
-      <div
-        class="page-canvas"
-        class:page-grid={editor?.grid.enabled}
-        style="{canvasStyle};--grid-spacing:{editor?.grid.spacing ?? 20}px"
-        data-theme={themeName}
-      >
-        {#if roots.length === 0}
-          <div class="absolute inset-0 flex items-center justify-center text-sm text-surface-500">
-            Empty page — add an element from the Elements tab.
-          </div>
-        {/if}
-        {#each roots as element (element.id)}
-          <PageElement
-            {element}
-            {elements}
-            mode={activeMode}
-            userComponents={componentDefinitions}
-          />
-        {/each}
+  <div
+    class="page-canvas"
+    class:page-grid={editor?.grid.enabled}
+    style="{canvasStyle};--grid-spacing:{editor?.grid.spacing ?? 20}px"
+    style:zoom={editor?.canvasZoom ?? 1}
+    data-theme={themeName}
+  >
+    {#if roots.length === 0}
+      <div class="absolute inset-0 flex items-center justify-center text-sm text-surface-500">
+        Empty page — add an element from the Elements tab.
       </div>
-    </div>
-  </Menu.ContextTrigger>
-  <Portal>
-    <Menu.Positioner>
-      <Menu.Content>
-        <Menu.Item value="insert">Insert</Menu.Item>
-      </Menu.Content>
-    </Menu.Positioner>
-  </Portal>
-</Menu>
+    {/if}
+    {#each roots as element (element.id)}
+      <PageElement {element} {elements} mode={activeMode} userComponents={componentDefinitions} />
+    {/each}
+  </div>
+</div>
 
 {#if activeMode === "edit" && canvasElement && moveableTargets.length > 0}
   <PageCanvasMoveable {canvasElement} targets={moveableTargets} {selectedElements} />

@@ -26,7 +26,7 @@ export const svgMoveableSupport: Record<SvgTag, MoveableSupport> = {
   polyline: { resizable: false, scalable: false, controls: ["point"] },
   polygon: { resizable: false, scalable: false, controls: ["point"] },
   path: scalable,
-  text: scalable,
+  text: none,
   tspan: scalable,
   textPath: scalable,
   title: none,
@@ -98,7 +98,12 @@ function shiftPoints(value: AttributeValue | undefined, dx: number, dy: number) 
   return shifted.join(" ");
 }
 
-export function svgDragAttributes(element: ElementRecord, dx: number, dy: number) {
+export function svgDragAttributes(
+  element: ElementRecord,
+  dx: number,
+  dy: number,
+  isNestedSvg = false,
+) {
   const tag = element.tag as SvgTag;
   if (!tag) return null;
 
@@ -112,6 +117,10 @@ export function svgDragAttributes(element: ElementRecord, dx: number, dy: number
   };
 
   switch (tag) {
+    case "svg":
+      if (!isNestedSvg) return null;
+      if (!set("x", dx) || !set("y", dy)) return null;
+      break;
     case "rect":
     case "foreignObject":
     case "use":

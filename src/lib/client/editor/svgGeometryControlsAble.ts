@@ -6,14 +6,19 @@ import {
   getSvgCreatePointRoot,
   getSvgGeometryControls,
   getSvgScreenCTM,
-  readSvgAttributes,
   type SvgGeometryControl,
 } from "./svgGeometryControls";
 
 export type SvgGeometryControlCommit = (
   element: ElementRecord,
   attributes: ElementAttributes,
+  baseAttributes: ElementAttributes,
 ) => void;
+
+export type SvgGeometryControlHandlers = {
+  preview: SvgGeometryControlCommit;
+  commit: SvgGeometryControlCommit;
+};
 
 type ActiveDrag = {
   target: SVGElement;
@@ -23,9 +28,10 @@ type ActiveDrag = {
   previewAttributes: ElementAttributes | null;
 };
 
-export function createSvgGeometryControlsAble(commit: SvgGeometryControlCommit) {
-  let active: ActiveDrag | null = null;
-
+export function createSvgGeometryControlsAble({
+  preview,
+  commit,
+}: SvgGeometryControlHandlers) {
   return {
     name: "svgGeometryControls",
     always: true,
@@ -47,21 +53,22 @@ export function createSvgGeometryControlsAble(commit: SvgGeometryControlCommit) 
         return false;
       }
 
-      const control = getSvgGeometryControls(element, readSvgAttributes(target)).find(
+      const control = getSvgGeometryControls(element, element.attributes, target).find(
         (item) => item.key === key,
       );
       if (!control) return false;
 
-      active = {
+      e.datas.svgControl = {
         target,
         element,
         control,
         baseAttributes: { ...element.attributes },
         previewAttributes: null,
-      };
+      } satisfies ActiveDrag;
       return true;
     },
     dragControl(_moveable: any, e: any) {
+      const active = e.datas.svgControl as ActiveDrag | undefined;
       if (!active) return false;
 
       const point = clientPointToSvg(active.target, e.clientX, e.clientY);
@@ -72,22 +79,21 @@ export function createSvgGeometryControlsAble(commit: SvgGeometryControlCommit) 
         active.baseAttributes,
         active.control,
         point,
+        active.target,
       );
       if (!attributes) return false;
 
       active.previewAttributes = attributes;
-      for (const [name, value] of Object.entries(attributes)) {
-        active.target.setAttribute(name, String(value));
-      }
+      preview(active.element, attributes, active.baseAttributes);
       return true;
     },
-    dragControlEnd(moveable: any) {
-      const dragged = active;
-      active = null;
+    dragControlEnd(moveable: any, e: any) {
+      const dragged = e.datas.svgControl as ActiveDrag | undefined;
+      delete e.datas.svgControl;
 
       if (!dragged?.previewAttributes) return false;
 
-      commit(dragged.element, dragged.previewAttributes);
+      commit(dragged.element, dragged.previewAttributes, dragged.baseAttributes);
       moveable.updateRect?.();
       return true;
     },
@@ -97,7 +103,7 @@ export function createSvgGeometryControlsAble(commit: SvgGeometryControlCommit) 
 
       if (!element || element.kind !== "svg" || !(target instanceof SVGElement)) return [];
 
-      const controls = getSvgGeometryControls(element, readSvgAttributes(target));
+      const controls = getSvgGeometryControls(element, element.attributes, target);
       if (controls.length === 0) return [];
 
       const svg = getSvgCreatePointRoot(target);

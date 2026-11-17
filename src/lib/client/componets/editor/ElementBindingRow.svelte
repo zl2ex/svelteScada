@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Trash2Icon } from "@lucide/svelte";
   import BindingEditor from "./BindingEditor.svelte";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   let {
     label,
@@ -56,6 +57,7 @@
         value={displayedValue}
         disabled={isBound}
         placeholder={isBound ? "No result" : placeholder}
+        //use:commitOrRevert(this, onValueCommit, () => {})
         onblur={(event) => {
           if (!isBound) onValueCommit(event.currentTarget.value);
         }}

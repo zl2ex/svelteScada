@@ -6,6 +6,7 @@ import { tag_folders } from "./tag_folders";
 import { z_TagBindings, type TagBindings } from "../../tagBindings";
 import { tagWriteLevels } from "../../permissions/constants";
 import { sqlEnumList } from "./enums";
+import { z_TagProperties, type TagProperties } from "../tagProperties";
 
 export const tags = sqliteTable(
   "tags",
@@ -14,10 +15,10 @@ export const tags = sqliteTable(
     name: text("name").notNull(),
     dataType: text("dataType").notNull(),
     initalValue: text("intialValue"),
-    nodeId: text("nodeId"),
-    writeable: integer("writeable", { mode: "boolean" }).default(true),
+    driverPath: text("driverPath"),
+    readonly: integer("readonly", { mode: "boolean" }).default(false),
     exposeOverOpcua: integer("exposeOverOpcua", { mode: "boolean" }).default(true),
-    parameters: text("parameters", { mode: "json" }),
+    properties: text("properties", { mode: "json" }).$type<TagProperties>(),
     unit: text("unit").notNull().default(""),
     bindings: text("bindings", { mode: "json" }).$type<TagBindings>(),
     writeLevel: text("writeLevel", { enum: tagWriteLevels }).notNull().default("operator"),
@@ -45,7 +46,8 @@ export const z_TagSelect = createSelectSchema(tags);
 
 export const z_TagInsert = createInsertSchema(tags, {
   bindings: () => z_TagBindings.nullable().optional(),
-  writeable: (s) => s.default(true),
+  properties: () => z_TagProperties.nullable().optional(),
+  readonly: (s) => s.default(false),
   exposeOverOpcua: (s) => s.default(true),
   unit: (s) => s.default(""),
   writeLevel: (s) => s.default("operator"),

@@ -21,15 +21,17 @@
     <p class="mt-6 opacity-70">No projects found.</p>
   {:else}
     {#each data.projects as project (project.id)}
-      <div
+      <a
+        href={`/${project.name}`}
         class="flex items-center gap-4 p-2 rounded-sm hover:bg-surface-200-800 active:bg-surface-200-800"
       >
         <BlocksIcon class="size-4 opacity-70" />
-        <a class="" href={`/${project.name}`}>{project.name}</a>
+        {project.name}
+
         {#if project.description}
           <span class="ml-2 text-sm opacity-60">{project.description}</span>
         {/if}
-      </div>
+      </a>
     {/each}
   {/if}
 </div>

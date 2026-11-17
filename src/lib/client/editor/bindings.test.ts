@@ -18,12 +18,12 @@ describe("generic binding helpers", () => {
   });
 
   it("supports scalar bindings for tags and collapses empty collections to null", () => {
-    const original: TagBindings = { nodeId: '"ns=1;s=old"' };
+    const original: TagBindings = { driverPath: '"ns=1;s=old"' };
     const withUnit = updateBinding(original, "unit", null, '"V"');
 
-    expect(withUnit).toEqual({ nodeId: '"ns=1;s=old"', unit: '"V"' });
+    expect(withUnit).toEqual({ driverPath: '"ns=1;s=old"', unit: '"V"' });
     expect(updateBinding(withUnit, "unit", null, "")).toEqual({
-      nodeId: '"ns=1;s=old"',
+      driverPath: '"ns=1;s=old"',
     });
     expect(updateBinding(withUnit, "unit", null, "")).not.toBe(withUnit);
     expect(updateBinding({ unit: '"V"' } as TagBindings, "unit", null, "")).toBeNull();

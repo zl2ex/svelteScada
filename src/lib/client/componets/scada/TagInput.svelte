@@ -140,7 +140,7 @@
                   ev.target.checked = Boolean(tag.value);
                 }
               }}
-              disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
+              disabled={tag.options.readonly || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
           {:else if typeof tag.value === "number" || typeof tag.value === "bigint"}
@@ -171,7 +171,7 @@
               onfocusin={() => {
                 isFocus = true;
               }}
-              disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
+              disabled={tag.options.readonly || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
           {:else if typeof tag.value === "string"}
@@ -202,7 +202,7 @@
               onfocusin={() => {
                 isFocus = true;
               }}
-              disabled={!tag.options.writeable || !canWrite(tag.options.writeLevel)}
+              disabled={tag.options.readonly || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
           {:else}

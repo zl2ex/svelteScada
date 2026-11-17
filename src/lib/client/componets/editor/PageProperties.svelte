@@ -1,10 +1,6 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
-  import { toast } from "$lib/client/toast.svelte";
-  import { setProjectTheme } from "$live/user-theme";
-  import { attempt } from "$lib/util/attempt";
-  import { errorToString, neverThrowErrorToString } from "$lib/util/neverThrow";
   import type { ContainerType } from "$lib/elements/elementTypes";
 
   const editor = getEditorContext();
@@ -29,31 +25,13 @@
     containerType = activePage.containerType;
   });
 
-  async function saveProjectTheme(value: string) {
+  function saveProjectTheme(value: string) {
     if (!activeProject) return;
     projectThemeId = value;
-    const saved = await attempt(() =>
-      setProjectTheme({ projectId: activeProject.id, themeId: value || null }),
-    );
-    if (saved.isErr) {
-      toast({
-        kind: "error",
-        title: "Theme save failed",
-        description: errorToString(saved.error),
-        duration: 4000,
-      });
-      return;
-    }
-    if (saved.data.isErr) {
-      toast({
-        kind: "error",
-        title: "Theme save failed",
-        description: neverThrowErrorToString(saved.data.error),
-        duration: 4000,
-      });
-      return;
-    }
-    activeProject.themeId = value || null;
+    editor.projects.update(activeProject.id, {
+      themeId: value || null,
+      updatedAt: Date.now(),
+    });
   }
 
   function saveName() {

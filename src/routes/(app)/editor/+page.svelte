@@ -6,9 +6,7 @@
 
   const editor = getEditorContext();
 
-  let activeProject = $derived(
-    editor.projects.find((project) => project.id === editor.activeProjectId),
-  );
+  let activeProject = $derived(editor.activeProject);
 </script>
 
 <PageOpenTabs />

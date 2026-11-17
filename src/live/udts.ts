@@ -56,19 +56,6 @@ export const applyUdtPatches = live(
         if (previousName !== definition.name) {
           tagManager.renameUdtDataType(previousName, definition.name);
         }
-
-        const rebuild = tagManager.rebuildAllUdtInstances();
-        const tagPatches: PatchOp[] = [
-          ...rebuild.removed.map((tagId): PatchOp => ({ op: "remove", path: [tagId] })),
-          ...rebuild.upserted.map((options): PatchOp => ({
-            op: "replace",
-            path: [options.id],
-            value: options,
-          })),
-        ];
-        if (tagPatches.length > 0) {
-          ctx.publish("tag-patches", "created", { patches: tagPatches });
-        }
       }
     } else {
       const definition = udtManager.getUdtById(id);

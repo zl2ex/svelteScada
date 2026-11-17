@@ -63,6 +63,17 @@ describe("svgMoveable helpers", () => {
     expect(svgDragAttributes(element("svg", { x: "0", y: "0" }), 5, 5)).toBeNull();
   });
 
+  it("shifts nested svg x/y", () => {
+    expect(svgDragAttributes(element("svg", { x: "10", y: "20" }), 5, -3, true)).toEqual({
+      x: "15",
+      y: "17",
+    });
+    expect(svgDragAttributes(element("svg"), 5, -3, true)).toEqual({
+      x: "5",
+      y: "-3",
+    });
+  });
+
   it("updates geometry for SVG scale where supported", () => {
     expect(
       svgScaleAttributes(element("rect", { width: "10", height: "20" }), 10, 20, 2, 3),

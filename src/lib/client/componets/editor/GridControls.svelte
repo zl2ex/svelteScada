@@ -4,10 +4,19 @@
 
   const editor = getEditorContext();
 
+  $effect(() => {
+    const project = editor.activeProject;
+    if (!project) return;
+    editor.grid = {
+      enabled: project.grid_enabled,
+      spacing: project.grid_spacing,
+    };
+  });
+
   function setSpacing(value: string) {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isFinite(parsed)) return;
-    editor.grid.spacing = Math.max(1, Math.min(200, parsed));
+    editor.setGrid({ spacing: Math.max(1, Math.min(200, parsed)) });
   }
 </script>
 
@@ -19,7 +28,7 @@
     title="Toggle snapping grid"
     aria-label="Toggle snapping grid"
     aria-pressed={editor.grid.enabled}
-    onclick={() => (editor.grid.enabled = !editor.grid.enabled)}
+    onclick={() => editor.setGrid({ enabled: !editor.grid.enabled })}
   >
     <Grid3X3Icon class="size-4" />
   </button>

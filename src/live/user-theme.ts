@@ -60,15 +60,3 @@ export const applyUserThemePatches = live(
     return wireOk({ ok: true });
   },
 );
-
-export const setProjectTheme = live(
-  async (
-    ctx,
-    input: { projectId: string; themeId: string | null },
-  ): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
-    assertLiveCan(ctx.user, "update", "Project");
-    const result = userThemeManager.setProjectTheme(input.projectId, input.themeId);
-    if (result.isErr()) return wireErr(result.error);
-    return wireOk({ ok: true });
-  },
-);

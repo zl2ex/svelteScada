@@ -1,0 +1,42 @@
+diff --git a/node_modules/croact-moveable/dist/moveable.cjs.js b/node_modules/croact-moveable/dist/moveable.cjs.js
+index d696e2c..0fac87a 100644
+--- a/node_modules/croact-moveable/dist/moveable.cjs.js
++++ b/node_modules/croact-moveable/dist/moveable.cjs.js
+@@ -6393,8 +6393,14 @@ function getOffsetPosInfo(el, target) {
+         targetOrigin = origin.slice();
+         hasOffset = true;
+         if (tagName === "svg") {
+-            offsetLeft = 0;
+-            offsetTop = 0;
++            if (el.ownerSVGElement) {
++                offsetLeft = el.x.baseVal.value;
++                offsetTop = el.y.baseVal.value;
++            }
++            else {
++                offsetLeft = 0;
++                offsetTop = 0;
++            }
+         }
+         else {
+             _a = __read(getSVGGraphicsOffset(el, origin, el === target && target.tagName.toLowerCase() === "g"), 4), offsetLeft = _a[0], offsetTop = _a[1], origin[0] = _a[2], origin[1] = _a[3];
+diff --git a/node_modules/croact-moveable/dist/moveable.esm.js b/node_modules/croact-moveable/dist/moveable.esm.js
+index 918f2ea..565b88d 100644
+--- a/node_modules/croact-moveable/dist/moveable.esm.js
++++ b/node_modules/croact-moveable/dist/moveable.esm.js
+@@ -6373,8 +6373,14 @@ function getOffsetPosInfo(el, target) {
+         targetOrigin = origin.slice();
+         hasOffset = true;
+         if (tagName === "svg") {
+-            offsetLeft = 0;
+-            offsetTop = 0;
++            if (el.ownerSVGElement) {
++                offsetLeft = el.x.baseVal.value;
++                offsetTop = el.y.baseVal.value;
++            }
++            else {
++                offsetLeft = 0;
++                offsetTop = 0;
++            }
+         }
+         else {
+             _a = __read(getSVGGraphicsOffset(el, origin, el === target && target.tagName.toLowerCase() === "g"), 4), offsetLeft = _a[0], offsetTop = _a[1], origin[0] = _a[2], origin[1] = _a[3];

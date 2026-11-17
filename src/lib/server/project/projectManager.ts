@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { err, ok } from "neverthrow";
 import { db } from "$lib/server/sqlite/db";
-import { projects } from "$lib/sqlite/tables";
+import { projects, z_ProjectInsert, type ProjectSelect } from "$lib/sqlite/tables";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
@@ -53,6 +53,89 @@ export class ProjectManager {
       } as const satisfies NeverThrowError);
     }
     return ok(result.data);
+  }
+
+  create(value: ProjectSelect) {
+    const parsed = z_ProjectInsert.safeParse(value);
+    if (!parsed.success) {
+      return err({
+        reason: "INVALID_PROJECT",
+        cause: parsed.error.message,
+      } as const satisfies NeverThrowError);
+    }
+
+    const now = Date.now();
+    const inserted = attempt(() =>
+      db
+        .insert(projects)
+        .values({
+          ...parsed.data,
+          id: value.id,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run(),
+    );
+    if (inserted.isErr) {
+      return err({
+        reason: "DB_ERROR",
+        cause: `create() insert failed: ${errorToString(inserted.error)}`,
+      } as const satisfies NeverThrowError);
+    }
+
+    return this.getById(value.id);
+  }
+
+  replace(id: string, value: ProjectSelect) {
+    const parsed = z_ProjectInsert.safeParse(value);
+    if (!parsed.success) {
+      return err({
+        reason: "INVALID_PROJECT",
+        cause: parsed.error.message,
+      } as const satisfies NeverThrowError);
+    }
+
+    const existing = this.getById(id);
+    if (existing.isErr()) return err(existing.error);
+
+    const updated = attempt(() =>
+      db
+        .update(projects)
+        .set({
+          name: parsed.data.name,
+          version: parsed.data.version,
+          description: parsed.data.description ?? null,
+          themeId: parsed.data.themeId ?? null,
+          grid_enabled: parsed.data.grid_enabled,
+          grid_spacing: parsed.data.grid_spacing,
+          updatedAt: Date.now(),
+        })
+        .where(eq(projects.id, id))
+        .run(),
+    );
+    if (updated.isErr) {
+      return err({
+        reason: "DB_ERROR",
+        cause: `replace() update failed: ${errorToString(updated.error)}`,
+      } as const satisfies NeverThrowError);
+    }
+
+    return this.getById(id);
+  }
+
+  delete(id: string) {
+    const existing = this.getById(id);
+    if (existing.isErr()) return err(existing.error);
+
+    const deleted = attempt(() => db.delete(projects).where(eq(projects.id, id)).run());
+    if (deleted.isErr) {
+      return err({
+        reason: "DB_ERROR",
+        cause: `delete() failed: ${errorToString(deleted.error)}`,
+      } as const satisfies NeverThrowError);
+    }
+
+    return ok({ id });
   }
 }
 

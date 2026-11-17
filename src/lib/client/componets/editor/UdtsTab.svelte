@@ -12,12 +12,17 @@
   } from "$lib/sqlite/tables/udt_definitions";
   import { baseTypeKeys } from "$lib/validation/baseTypes";
   import { tagWriteLevels, type TagWriteLevel } from "$lib/permissions/constants";
+  import BindingEditor from "./BindingEditor.svelte";
+  import { formatBindingResult, updateBinding } from "$lib/client/editor/bindings";
+  import type { TagBindingKey } from "$lib/tagBindings";
+  import { evaluateTagBinding } from "$lib/client/editor/tagExpressions";
+  import type { TagOptionsInput } from "$lib/server/tag/tag";
 
   const ability = getAbilityContext();
   const collection = getUdtDefinitionsContext();
 
   let selectedId = $state<string | null>(null);
-  let propsText = $state("{}");
+  let propertiesText = $state("{}");
   let formError = $state<string | null>(null);
 
   let selectedDefinition = $derived(
@@ -42,10 +47,10 @@
       name: "NewChild",
       dataType: "Double",
       initalValue: null,
-      nodeId: null,
-      writeable: true,
+      driverPath: null,
+      readonly: false,
       exposeOverOpcua: true,
-      parameters: null,
+      properties: null,
       unit: "",
       bindings: null,
       writeLevel: "operator",
@@ -58,7 +63,7 @@
     const definition = collection.state[id];
     if (!definition) return;
     selectedId = id;
-    propsText = JSON.stringify(definition.props, null, 2);
+    propertiesText = JSON.stringify(definition.properties, null, 2);
     formError = null;
   }
 
@@ -67,7 +72,7 @@
     const definition: UdtDefinitionInput = {
       id,
       name: uniqueName("NewUdt"),
-      props: {},
+      properties: {},
       children: [],
     };
     collection.add(definition);
@@ -116,21 +121,56 @@
     });
   }
 
+  function saveChildBinding(child: UdtDefinitionTagInput, key: TagBindingKey, expression: string) {
+    updateChild(child.id, {
+      bindings: updateBinding(child.bindings, key, null, expression),
+    });
+  }
+
+  function isChildBound(child: UdtDefinitionTagInput, key: TagBindingKey) {
+    return Boolean(child.bindings?.[key]?.trim());
+  }
+
+  function childBindingResult(child: UdtDefinitionTagInput, key: TagBindingKey) {
+    const expression = child.bindings?.[key];
+    if (!expression?.trim()) return "";
+
+    const evaluation = evaluateTagBinding(expression, {
+      tagConfig: child as TagOptionsInput,
+      properties: selectedDefinition?.properties ?? {},
+    });
+
+    if (evaluation.isErr()) return "";
+    return formatBindingResult(evaluation.value);
+  }
+
+  function udtBindingError(child: UdtDefinitionTagInput, key: TagBindingKey) {
+    const expression = child.bindings?.[key];
+    if (!expression?.trim()) return null;
+
+    const evaluation = evaluateTagBinding(expression, {
+      tagConfig: child as TagOptionsInput,
+      properties: selectedDefinition?.properties ?? {},
+    });
+
+    return evaluation.isErr() ? neverThrowErrorToString(evaluation.error) : null;
+  }
+
   function saveProps() {
-    const parsed = attempt(() => JSON.parse(propsText));
+    const parsed = attempt(() => JSON.parse(propertiesText));
     if (parsed.isErr) {
-      formError = `props JSON: ${errorToString(parsed.error)}`;
+      formError = `properties JSON: ${errorToString(parsed.error)}`;
       return;
     }
 
-    updateDefinition({ props: parsed.data });
+    updateDefinition({ properties: parsed.data });
   }
 
   function deleteDefinition() {
     if (!selectedId) return;
     collection.remove(selectedId);
     selectedId = null;
-    propsText = "{}";
+    propertiesText = "{}";
     formError = null;
   }
 
@@ -152,6 +192,22 @@
     return ability.can("manage", "UdtDefinition");
   }
 </script>
+
+{#snippet childBindingEditor(
+  child: UdtDefinitionTagInput,
+  key: TagBindingKey,
+  label: string,
+)}
+  <BindingEditor
+    {label}
+    binding={child.bindings?.[key] ?? ""}
+    contextDescription="tagConfig and properties"
+    scope="tag"
+    savedError={udtBindingError(child, key)}
+    onBindingSave={(expression) => saveChildBinding(child, key, expression)}
+    onBindingRemove={() => saveChildBinding(child, key, "")}
+  />
+{/snippet}
 
 <div class="flex h-full min-h-0 flex-col gap-2 p-2">
   <div class="flex items-center gap-2">
@@ -198,11 +254,11 @@
         />
       </div>
 
-      <label class="opacity-60" for="udt-props">Props (JSON)</label>
+      <label class="opacity-60" for="udt-properties">Properties (JSON)</label>
       <textarea
-        id="udt-props"
+        id="udt-properties"
         class="input min-h-20 font-mono text-xs"
-        bind:value={propsText}
+        bind:value={propertiesText}
         onchange={saveProps}
       ></textarea>
 
@@ -242,17 +298,26 @@
           <div class="grid grid-cols-2 gap-2">
             <label class="flex flex-col gap-1">
               <span class="opacity-60">Data type</span>
-              <select
-                class="select py-0"
-                value={child.dataType}
-                onchange={(event) =>
-                  updateChild(child.id, { dataType: event.currentTarget.value })}
-              >
-                {#each dataTypes as dataType}
-                  <option value={dataType}>{dataType}</option>
-                {/each}
-              </select>
+              {#if isChildBound(child, "dataType")}
+                <input
+                  class="input py-0"
+                  value={childBindingResult(child, "dataType")}
+                  disabled
+                />
+              {:else}
+                <select
+                  class="select py-0"
+                  value={child.dataType}
+                  onchange={(event) =>
+                    updateChild(child.id, { dataType: event.currentTarget.value })}
+                >
+                  {#each dataTypes as dataType}
+                    <option value={dataType}>{dataType}</option>
+                  {/each}
+                </select>
+              {/if}
             </label>
+            {@render childBindingEditor(child, "dataType", "Data Type")}
 
             <label class="flex flex-col gap-1">
               <span class="opacity-60">Write level</span>
@@ -271,57 +336,77 @@
             </label>
 
             <label class="col-span-2 flex flex-col gap-1">
-              <span class="opacity-60">Node id</span>
+              <span class="opacity-60">Driver path</span>
               <input
                 class="input py-0"
-                value={child.nodeId ?? ""}
-                placeholder="[device]path"
+                value={isChildBound(child, "driverPath")
+                  ? childBindingResult(child, "driverPath")
+                  : (child.driverPath ?? "")}
+                placeholder={isChildBound(child, "driverPath") ? "" : "[device]path"}
+                disabled={isChildBound(child, "driverPath")}
                 onblur={(event) =>
-                  updateChild(child.id, { nodeId: event.currentTarget.value || null })}
+                  updateChild(child.id, { driverPath: event.currentTarget.value || null })}
               />
             </label>
+            {@render childBindingEditor(child, "driverPath", "Driver Path")}
 
             <label class="flex flex-col gap-1">
               <span class="opacity-60">Unit</span>
               <input
                 class="input py-0"
-                value={child.unit}
+                value={isChildBound(child, "unit")
+                  ? childBindingResult(child, "unit")
+                  : child.unit}
+                disabled={isChildBound(child, "unit")}
                 onblur={(event) => updateChild(child.id, { unit: event.currentTarget.value })}
               />
             </label>
+            {@render childBindingEditor(child, "unit", "Unit")}
 
             <label class="flex items-center gap-2 pt-4">
               <input
                 type="checkbox"
                 class="checkbox"
-                checked={child.writeable ?? true}
+                checked={isChildBound(child, "readonly")
+                  ? childBindingResult(child, "readonly") === "true"
+                  : (child.readonly ?? false)}
+                disabled={isChildBound(child, "readonly")}
                 onchange={(event) =>
-                  updateChild(child.id, { writeable: event.currentTarget.checked })}
+                  updateChild(child.id, { readonly: event.currentTarget.checked })}
               />
-              <span>Writeable</span>
+              <span>Readonly</span>
             </label>
+            {@render childBindingEditor(child, "readonly", "Readonly")}
 
             <label class="flex items-center gap-2">
               <input
                 type="checkbox"
                 class="checkbox"
-                checked={child.exposeOverOpcua ?? true}
+                checked={isChildBound(child, "exposeOverOpcua")
+                  ? childBindingResult(child, "exposeOverOpcua") === "true"
+                  : (child.exposeOverOpcua ?? true)}
+                disabled={isChildBound(child, "exposeOverOpcua")}
                 onchange={(event) =>
                   updateChild(child.id, { exposeOverOpcua: event.currentTarget.checked })}
               />
               <span>Expose OPC UA</span>
             </label>
+            {@render childBindingEditor(child, "exposeOverOpcua", "Expose OPC UA")}
 
             <label class="flex items-center gap-2">
               <input
                 type="checkbox"
                 class="checkbox"
-                checked={child.trendEnabled ?? false}
+                checked={isChildBound(child, "trendEnabled")
+                  ? childBindingResult(child, "trendEnabled") === "true"
+                  : (child.trendEnabled ?? false)}
+                disabled={isChildBound(child, "trendEnabled")}
                 onchange={(event) =>
                   updateChild(child.id, { trendEnabled: event.currentTarget.checked })}
               />
               <span>Trend</span>
             </label>
+            {@render childBindingEditor(child, "trendEnabled", "Trend Enabled")}
 
             <label class="col-span-2 flex flex-col gap-1">
               <span class="opacity-60">Trend interval (ms)</span>
@@ -329,7 +414,10 @@
                 type="number"
                 min="100"
                 class="input py-0"
-                value={child.trendMinimumSamplingIntervalMs ?? 1000}
+                value={isChildBound(child, "trendMinimumSamplingIntervalMs")
+                  ? childBindingResult(child, "trendMinimumSamplingIntervalMs")
+                  : (child.trendMinimumSamplingIntervalMs ?? 1000)}
+                disabled={isChildBound(child, "trendMinimumSamplingIntervalMs")}
                 onchange={(event) => {
                   const value = Number(event.currentTarget.value);
                   if (!updateChild(child.id, { trendMinimumSamplingIntervalMs: value })) {
@@ -340,6 +428,40 @@
                 }}
               />
             </label>
+            {@render childBindingEditor(
+              child,
+              "trendMinimumSamplingIntervalMs",
+              "Trend Interval",
+            )}
+
+            <label class="col-span-2 flex flex-col gap-1">
+              <span class="opacity-60">Properties</span>
+              <textarea
+                class="input min-h-20 py-0 font-mono text-xs"
+                value={isChildBound(child, "properties")
+                  ? childBindingResult(child, "properties")
+                  : child.properties
+                    ? JSON.stringify(child.properties, null, 2)
+                    : ""}
+                disabled={isChildBound(child, "properties")}
+                onblur={(event) => {
+                  const raw = event.currentTarget.value;
+                  if (!raw.trim()) {
+                    updateChild(child.id, { properties: null });
+                    return;
+                  }
+                  const parsed = attempt(() => JSON.parse(raw));
+                  if (parsed.isErr) {
+                    event.currentTarget.value = child.properties
+                      ? JSON.stringify(child.properties, null, 2)
+                      : "";
+                    return;
+                  }
+                  updateChild(child.id, { properties: parsed.data });
+                }}
+              ></textarea>
+            </label>
+            {@render childBindingEditor(child, "properties", "Properties")}
           </div>
         </div>
       {/each}

@@ -11,12 +11,13 @@ import {
 } from "$lib/sqlite/tables";
 import { logger } from "../pino/logger";
 import { UdtDefinition, compareTagNames, sortUdtChildren } from "./udt";
+import { normalizeUdtChild } from "./legacyNormalization";
 
 function toDefinition(row: typeof tables.udt_definitions.$inferSelect): UdtDefinition {
   return new UdtDefinition({
     id: row.id,
     name: row.name,
-    props: row.props ?? {},
+    properties: row.properties ?? {},
     children: sortUdtChildren(row.children ?? []) as unknown as UdtDefinitionTagInput[],
   });
 }
@@ -61,7 +62,7 @@ export class UdtManager {
           .values({
             id: parsed.data.id,
             name: parsed.data.name,
-            props: parsed.data.props,
+            properties: parsed.data.properties,
             children: parsed.data.children,
           })
           .run(),
@@ -118,7 +119,7 @@ export class UdtManager {
         tx.update(tables.udt_definitions)
           .set({
             name: parsed.data.name,
-            props: parsed.data.props,
+            properties: parsed.data.properties,
             children: parsed.data.children,
           })
           .where(eq(tables.udt_definitions.id, id))
@@ -209,7 +210,25 @@ export class UdtManager {
 
     this.udts.clear();
     for (const row of definitions.data) {
-      const udt = toDefinition(row);
+      let changed = false;
+      const children = row.children.map((child) => {
+        const normalized = normalizeUdtChild(child);
+        if (normalized.changed) changed = true;
+        return normalized.value;
+      });
+
+      if (changed) {
+        const written = attempt(() =>
+          db
+            .update(tables.udt_definitions)
+            .set({ children })
+            .where(eq(tables.udt_definitions.id, row.id))
+            .run(),
+        );
+        if (written.isErr) logger.error(written.error);
+      }
+
+      const udt = toDefinition({ ...row, children });
       this.udts.set(udt.name, udt);
     }
 

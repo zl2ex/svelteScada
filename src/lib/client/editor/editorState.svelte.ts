@@ -22,6 +22,7 @@ import { pagePath, pageRoute, sortedPages, type PageRecord } from "$lib/elements
 import { attempt } from "$lib/util/attempt";
 import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { newId } from "$lib/util/newId";
+import { clampCanvasZoom, stepCanvasZoom } from "./canvasZoom";
 
 const OPEN_PAGES_KEY = "editor-open-page-ids";
 const MAX_FOCUS_HISTORY = 50;
@@ -70,18 +71,20 @@ export class EditorState {
   pagesCollection: PatchCollection<PageRecord, NeverThrowError>;
   userThemesCollection: PatchCollection<UserThemeSelect, NeverThrowError>;
   elementsCollection = $state.raw<PatchCollection<ElementRecord, NeverThrowError> | null>(null);
-  projects = $state<ProjectSelect[]>([]);
+  projects: PatchCollection<ProjectSelect, NeverThrowError>;
   userComponents = $state<UserComponentDefinition[]>([]);
   activeProjectId = $state<string | null>(null);
   activePageId = $state<string | null>(null);
   openPageIds = $state<string[]>([]);
+  selectedProjectId = $state<string | null>(null);
   selectedElementIds = $state<string[]>([]);
   tagSelectionIds = $state<string[]>([]);
   leftPanelTab = $state<EditorLeftPanelTab>("tags");
   projectLoading = $state(false);
   projectError = $state<string | null>(null);
   mode = $state<EditorMode>("edit");
-  grid = $state<EditorGrid>({ spacing: 20, enabled: false });
+  grid = $state<EditorGrid>({ spacing: 5, enabled: true });
+  canvasZoom = $state(1);
 
   #pageCollections = $state.raw<Record<string, PatchCollection<ElementRecord, NeverThrowError>>>(
     {},
@@ -102,7 +105,7 @@ export class EditorState {
   constructor(options: {
     pages: PatchCollection<PageRecord, NeverThrowError>;
     userThemes: PatchCollection<UserThemeSelect, NeverThrowError>;
-    projects: ProjectSelect[];
+    projects: PatchCollection<ProjectSelect, NeverThrowError>;
     userComponents: UserComponentDefinition[];
     initialPath: string;
   }) {
@@ -116,7 +119,11 @@ export class EditorState {
 
   get activeProject(): ProjectSelect | null {
     if (!this.activeProjectId) return null;
-    return this.projects.find((project) => project.id === this.activeProjectId) ?? null;
+    return this.projects.state[this.activeProjectId] ?? null;
+  }
+
+  get projectList(): ProjectSelect[] {
+    return Object.values(this.projects.state).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   get themes(): UserThemeSelect[] {
@@ -177,6 +184,16 @@ export class EditorState {
     this.selectedElementIds = [];
   }
 
+  selectProject(id: string) {
+    if (!this.projects.state[id]) return;
+    this.selectedProjectId = id;
+    this.clearElementSelection();
+  }
+
+  clearProjectSelection() {
+    this.selectedProjectId = null;
+  }
+
   selectElement(id: string, options: { additive?: boolean; range?: boolean } = {}) {
     if (options.range) {
       const order = this.#elementOrder();
@@ -232,12 +249,12 @@ export class EditorState {
   route(id: string) {
     const page = this.pagesCollection.state[id];
     if (!page) return "/editor";
-    const project = this.projects.find((item) => item.id === page.projectId);
+    const project = this.projects.state[page.projectId];
     return pageRoute(this.pagesCollection.state, project?.name ?? "project", id);
   }
 
   projectForPage(page: PageRecord) {
-    return this.projects.find((project) => project.id === page.projectId);
+    return this.projects.state[page.projectId];
   }
 
   children(projectId?: string) {
@@ -252,7 +269,8 @@ export class EditorState {
   async openProject(projectId: string) {
     if (this.activeProjectId === projectId && this.#projectReady) return ok(null);
 
-    if (!this.projects.some((project) => project.id === projectId)) {
+    const project = this.projects.state[projectId];
+    if (!project) {
       return err({
         reason: "PROJECT_NOT_FOUND",
         cause: `project ${projectId} does not exist`,
@@ -290,8 +308,39 @@ export class EditorState {
     this.activeProjectId = projectId;
     this.#pageCollections = nextCollections;
     this.#projectReady = true;
+    this.grid = {
+      enabled: project.grid_enabled,
+      spacing: project.grid_spacing,
+    };
     this.setActivePage(null);
     return ok(null);
+  }
+
+  setGrid(next: Partial<EditorGrid>) {
+    this.grid = { ...this.grid, ...next };
+    const project = this.activeProject;
+    if (!project) return;
+    this.projects.update(project.id, {
+      grid_enabled: this.grid.enabled,
+      grid_spacing: this.grid.spacing,
+      updatedAt: Date.now(),
+    });
+  }
+
+  setCanvasZoom(value: number) {
+    this.canvasZoom = clampCanvasZoom(value);
+  }
+
+  zoomIn() {
+    this.canvasZoom = stepCanvasZoom(this.canvasZoom, 1);
+  }
+
+  zoomOut() {
+    this.canvasZoom = stepCanvasZoom(this.canvasZoom, -1);
+  }
+
+  resetCanvasZoom() {
+    this.canvasZoom = 1;
   }
 
   setActivePage(id: string | null) {
@@ -303,6 +352,7 @@ export class EditorState {
         : null;
 
     this.activePageId = nextId;
+    this.selectedProjectId = null;
     this.clearElementSelection();
     this.elementsCollection = collection;
     undoManager.setActiveDocument(nextId ? pageDocumentId(nextId) : null);
@@ -347,6 +397,51 @@ export class EditorState {
 
     this.setActivePage(next);
     return next;
+  }
+
+  addProject() {
+    const names = new Set(this.projectList.map((project) => project.name));
+    let index = this.projectList.length + 1;
+    let name = `project-${index}`;
+    while (names.has(name)) {
+      index++;
+      name = `project-${index}`;
+    }
+
+    const now = Date.now();
+    const project: ProjectSelect = {
+      id: newId(),
+      name,
+      version: "0.0.0",
+      description: null,
+      themeId: null,
+      grid_enabled: true,
+      grid_spacing: 5,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.projects.add(project);
+    this.selectProject(project.id);
+    return project.id;
+  }
+
+  removeProject(id: string) {
+    if (!this.projects.state[id]) return;
+
+    const pageIds = new Set(this.children(id).map((page) => page.id));
+    this.openPageIds = this.openPageIds.filter((pageId) => !pageIds.has(pageId));
+    this.#persistOpenPages();
+
+    if (this.activeProjectId === id) {
+      this.#disposePageCollections();
+      this.activeProjectId = null;
+      this.#projectReady = false;
+      this.setActivePage(null);
+    }
+    if (this.selectedProjectId === id) this.selectedProjectId = null;
+
+    this.projects.remove(id);
   }
 
   addPage(projectId: string) {
@@ -513,6 +608,7 @@ export class EditorState {
     this.activePageId = null;
     this.clearElementSelection();
     this.leftPanelTab = "tags";
+    this.canvasZoom = 1;
     this.#focusHistory = [];
     this.#focusFuture = [];
     this.#lastFocus = this.snapshotFocus();

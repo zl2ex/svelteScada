@@ -17,12 +17,12 @@ export type ScriptElementBindings = ScriptBindings<{
 	styleClass: Record<string, string>;
 }>;
 export type ScriptTagBindings = ScriptBindings<{
-	nodeId: string;
+	driverPath: string;
 	dataType: string;
 	initalValue: string;
-	writeable: string;
+	readonly: string;
 	exposeOverOpcua: string;
-	parameters: string;
+	properties: string;
 	unit: string;
 	trendEnabled: string;
 	trendMinimumSamplingIntervalMs: string;
@@ -49,10 +49,10 @@ export type ScriptTagOptions = {
 	folderId?: string | null;
 	dataType?: string;
 	initalValue?: string | null;
-	nodeId?: string | null;
-	writeable?: boolean | null;
+	driverPath?: string | null;
+	readonly?: boolean | null;
 	exposeOverOpcua?: boolean | null;
-	parameters?: unknown;
+	properties?: unknown;
 	unit?: string;
 	writeLevel?: "operator" | "engineer" | "admin";
 	bindings?: ScriptTagBindings | null;
@@ -126,6 +126,7 @@ export type ScriptBindingGlobals = ScriptCommonBindingGlobals & {
 };
 export type ScriptTagBindingGlobals = {
 	tagConfig: ScriptTagOptions;
+	properties: ScriptElementAttributes;
 };
 export type ScriptEventTarget = {
 	tagName: string;
@@ -175,6 +176,7 @@ export {};
 
 declare global {
   const tagConfig: ScriptTagOptions;
+  const properties: ScriptElementAttributes;
 }
 
 export {};

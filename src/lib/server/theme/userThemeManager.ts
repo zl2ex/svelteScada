@@ -171,31 +171,6 @@ export class UserThemeManager {
     return ok({ id });
   }
 
-  setProjectTheme(projectId: string, themeId: string | null) {
-    if (themeId !== null) {
-      const theme = this.get(themeId);
-      if (theme.isErr()) return err(theme.error);
-    }
-
-    const updated = attempt(() =>
-      db
-        .update(projects)
-        .set({ themeId, updatedAt: Date.now() })
-        .where(eq(projects.id, projectId))
-        .returning()
-        .get(),
-    );
-    if (updated.isErr) return dbError(updated.error, "setProjectTheme() update failed");
-    if (!updated.data) {
-      return err({
-        reason: "PROJECT_NOT_FOUND",
-        cause: `project ${projectId} does not exist`,
-      } as const satisfies NeverThrowError);
-    }
-
-    return ok(updated.data);
-  }
-
 }
 
 export const userThemeManager = new UserThemeManager();

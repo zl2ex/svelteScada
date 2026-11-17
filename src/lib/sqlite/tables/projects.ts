@@ -11,6 +11,12 @@ export const projects = sqliteTable("projects", {
   version: text("version").notNull().default("0.0.0"),
   description: text("description"),
   themeId: text("themeId").references(() => user_theme.id, { onDelete: "set null" }),
+  grid_enabled: integer("grid_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  grid_spacing: integer("grid_spacing")
+    .notNull()
+    .default(5),
   createdAt: integer("createdAt", { mode: "number" })
     .notNull()
     .$defaultFn(() => Date.now()),
@@ -26,4 +32,11 @@ export const z_ProjectSelect = createSelectSchema(projects);
 
 export const z_ProjectInsert = createInsertSchema(projects, {
   name: (schema) => schema.regex(routeSegmentPattern).min(1).max(64),
+  grid_spacing: (schema) => schema.min(1).max(200).default(5),
+  grid_enabled: (schema) => schema.default(true),
+});
+
+export const z_ProjectGrid = z_ProjectInsert.pick({
+  grid_enabled: true,
+  grid_spacing: true,
 });

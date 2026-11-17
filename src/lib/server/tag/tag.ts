@@ -392,8 +392,8 @@ export class Tag {
       tag.exposeOpcuaVarible = exposed.data;
     }
 
-    // subscribe to value from driver if nodeId provided
-    if (options.nodeId) {
+    // subscribe to value from driver if driverPath provided
+    if (options.driverPath) {
       const driverSub = tag.subscribeToDriver();
       if (driverSub.isErr()) {
         logger.error(driverSub.error);
@@ -509,24 +509,24 @@ export class Tag {
   }
 
   subscribeToDriver() {
-    if (!this.options.nodeId)
+    if (!this.options.driverPath)
       return err({
-        reason: "NODE_ID_UNDEFINED",
-        cause: `no nodeId provided for tag ${this.id}  ${this.name}`,
+        reason: "DRIVER_PATH_UNDEFINED",
+        cause: `no driverPath provided for tag ${this.id}  ${this.name}`,
       } as const satisfies NeverThrowError);
 
-    const resolvedPath = resolveDevicePath(this.options.nodeId);
+    const resolvedPath = resolveDevicePath(this.options.driverPath);
     if (!resolvedPath.deviceName) {
       return err({
         reason: "RESOLVE_DEVICE_NAME_FAILED",
-        cause: `[Tag] Device at ${this.options.nodeId} not found while trying to subscribe to driver tag ${this.id} ${this.name}`,
+        cause: `[Tag] Device at ${this.options.driverPath} not found while trying to subscribe to driver tag ${this.id} ${this.name}`,
       } as const satisfies NeverThrowError);
     }
 
     if (!resolvedPath.driverPath) {
       return err({
         reason: "RESOLVE_DEVICE_DRIVER_PATH_FAILED",
-        cause: `[Tag] Driver Path at ${this.options.nodeId} not found while trying to subscribe to driver tag ${this.id} ${this.name}`,
+        cause: `[Tag] Driver Path at ${this.options.driverPath} not found while trying to subscribe to driver tag ${this.id} ${this.name}`,
       } as const satisfies NeverThrowError);
     }
 
@@ -552,11 +552,11 @@ export class Tag {
 
   // external write api from web client
   async write(value: TagValue) {
-    if (this.options.writeable == false) {
+    if (this.options.readonly) {
       this.statusCode = StatusCodes.BadNotWritable;
       return err({
-        reason: "NOT_WRITEABLE",
-        cause: `[Tag] update() ${this.id} failed because writeable is set to false`,
+        reason: "TAG_READONLY",
+        cause: `[Tag] update() ${this.id} failed because readonly is true`,
         options: this.options,
       } as const satisfies FailedTag);
     }
@@ -598,7 +598,7 @@ export class Tag {
         cause: `[Tag] update() Array Size Error - Value ${newValue} is not assignable to tag ${this.id} expected type ${this.options.dataType}  - provided length ${newValue.length} expected length ${this.arrayLength}`,
         options: this.options,
       } as const satisfies FailedTag);
-    //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.nodeId  + " expected type " + this.dataType);
+    //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.id + " expected type " + this.dataType);
 
     if (Object.keys(this.children).length > 0) {
       if (typeof newValue !== "object" || newValue === null || Array.isArray(newValue)) {

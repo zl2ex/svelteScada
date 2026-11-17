@@ -95,7 +95,7 @@ export { z_UserSelect, z_UserInsert, z_UserLogin } from "./users";
 export { z_UserPermissionSelect, z_UserPermissionInsert } from "./user_permissions";
 export { z_TagSelect, z_TagInsert } from "./tags";
 export { z_DeviceSelect, z_DeviceInsert } from "./devices";
-export { z_ProjectSelect, z_ProjectInsert } from "./projects";
+export { z_ProjectSelect, z_ProjectInsert, z_ProjectGrid } from "./projects";
 export { z_UserThemeSelect, z_UserThemeInsert } from "./user_theme";
 export { z_PageSelect, z_PageInsert } from "./pages";
 export { z_ElementPathSelect, z_ElementPathInsert } from "./element_paths";

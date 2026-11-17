@@ -14,7 +14,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
-    "code-server": "code-server --bind-addr 0.0.0.0:8080 ~/Documents/sandbox/svelteScada/"
+    "code-server": "code-server --bind-addr 0.0.0.0:8080 ~/Documents/sandbox/svelteScada/",
+    "postinstall": "patch-package"
   },
   "devDependencies": {
     "@lucide/svelte": "^1.47.0",
@@ -43,6 +44,7 @@
     "math-expression-evaluator": "^2.0.7",
     "monaco-editor": "^0.57.0",
     "mutative": "^1.3.0",
+    "patch-package": "^8.0.1",
     "prettier": "^3.9.8",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "st-ethernet-ip": "^2.7.5",

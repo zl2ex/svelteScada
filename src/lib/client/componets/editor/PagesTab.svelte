@@ -12,6 +12,7 @@
     Link2Icon,
     MoreHorizontalIcon,
     PencilIcon,
+    PlusIcon,
     Trash2Icon,
   } from "@lucide/svelte";
   import {
@@ -31,6 +32,7 @@
     sortedChildren,
   } from "$lib/elements/elementTypes";
   import type { PageRecord } from "$lib/elements/pageTypes";
+  import type { ProjectSelect } from "$lib/sqlite/tables";
   import { focusOnMount } from "$lib/client/util/use";
   import { toast } from "$lib/client/toast.svelte";
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
@@ -45,12 +47,16 @@
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
-  type ProjectSelect = (typeof editor.projects)[number];
 
   let renamingId = $state<string | null>(null);
+  let contextMenuProjectId = $state<string | null>(null);
   let contextMenuPageId = $state<string | null>(null);
   let contextMenuElementId = $state<string | null>(null);
   let lastExpandedPageId: string | null = null;
+
+  const contextMenuProject = $derived(
+    contextMenuProjectId ? editor.projects.state[contextMenuProjectId] : undefined,
+  );
 
   const contextMenuPage = $derived(
     contextMenuPageId ? editor.pagesCollection.state[contextMenuPageId] : undefined,
@@ -136,7 +142,7 @@
     if (!node) return [];
 
     if (node.kind === "root") {
-      return editor.projects.map(projectNode);
+      return editor.projectList.map(projectNode);
     }
 
     if (node.kind === "project") {
@@ -176,15 +182,22 @@
     collection,
     selectionMode: "multiple",
     expandOnClick: true,
-    defaultExpandedValue: editor.projects.map((project) => `${project.id}`),
+    defaultExpandedValue: editor.projectList.map((project) => `${project.id}`),
     onSelectionChange: (details) => {
       const last = details.selectedNodes.at(-1);
       if (!last) {
         editor.clearElementSelection();
+        editor.clearProjectSelection();
+        return;
+      }
+
+      if (last.kind === "project") {
+        editor.selectProject(last.project.id);
         return;
       }
 
       if (last.kind !== "element") {
+        editor.clearProjectSelection();
         editor.clearElementSelection();
         if (last.kind === "page" && last.page.id !== editor.activePageId) {
           void open(last.page.id);
@@ -192,6 +205,7 @@
         return;
       }
 
+      editor.clearProjectSelection();
       const selectedElements = details.selectedNodes.filter(
         (node): node is ElementNode => node.kind === "element",
       );
@@ -204,11 +218,13 @@
   });
 
   const treeSelection = $derived(
-    editor.selectedElementIds.length > 0
-      ? editor.selectedElementIds.map(String)
-      : editor.activePageId
-        ? [String(editor.activePageId)]
-        : [],
+    editor.selectedProjectId
+      ? [String(editor.selectedProjectId)]
+      : editor.selectedElementIds.length > 0
+        ? editor.selectedElementIds.map(String)
+        : editor.activePageId
+          ? [String(editor.activePageId)]
+          : [],
   );
 
   $effect(() => {
@@ -544,16 +560,28 @@
     const pageRow = target.closest<HTMLElement>("[data-page-id]");
     const pageId = pageRow?.dataset.pageId;
 
+    const projectRow = target.closest<HTMLElement>("[data-project-id]");
+    const projectId = projectRow?.dataset.projectId;
+
     if (elementId) {
       contextMenuElementId = elementId;
       if (!editor.isElementSelected(elementId)) editor.setElementSelection([elementId], elementId);
       contextMenuPageId = null;
+      contextMenuProjectId = null;
       return;
     }
     if (pageId) {
       contextMenuPageId = pageId;
       contextMenuElementId = null;
+      contextMenuProjectId = null;
       editor.clearElementSelection();
+      return;
+    }
+    if (projectId) {
+      contextMenuProjectId = projectId;
+      contextMenuElementId = null;
+      contextMenuPageId = null;
+      editor.selectProject(projectId);
     }
   }
 
@@ -567,6 +595,16 @@
   }
 
   function handleMenuSelect(value: string) {
+    if (contextMenuProject) {
+      if (value === "delete") {
+        if (confirm(`Delete project "${contextMenuProject.name}" and all its pages?`)) {
+          editor.removeProject(contextMenuProject.id);
+        }
+      }
+      contextMenuProjectId = null;
+      return;
+    }
+
     if (contextMenuElement) {
       switch (value) {
         case "add":
@@ -687,6 +725,7 @@
     {#if node.kind === "project"}
       <TreeView.Branch>
         <TreeView.BranchControl
+          data-project-id={node.project.id}
           data-drop={dropTarget?.id === node.id ? dropTarget.position : undefined}
           ondragover={(ev) => handleDragOver(ev, node)}
           ondragleave={(ev) => handleDragLeave(ev, node)}
@@ -801,8 +840,21 @@
 {/snippet}
 
 <div class="flex flex-col h-full min-h-0 text-xs">
+  <div class="flex items-center justify-between border-b border-surface-200-800 p-2">
+    <span class="font-semibold">Projects</span>
+    <button
+      type="button"
+      class="btn-icon btn-sm"
+      title="New project"
+      aria-label="New project"
+      disabled={!ability.can("update", "Project")}
+      onclick={() => editor.addProject()}
+    >
+      <PlusIcon class="size-4" />
+    </button>
+  </div>
   <fieldset class="contents" disabled={!ability.can("update", "Page")}>
-    {#if editor.projects.length === 0}
+    {#if editor.projectList.length === 0}
       <p class="p-3 opacity-60">
         No projects exist yet. Insert a project row in the database to start creating pages.
       </p>
@@ -827,29 +879,38 @@
       <Portal>
         <Menu.Positioner>
           <Menu.Content class="text-xs border-none bg-surface-100-900">
-            {#if contextMenuElement}
-              <Menu.Item value="add">
+            {#if contextMenuProject}
+              <Menu.Item value="delete" class="text-error-600-400">
                 <Menu.ItemText class="flex items-center w-full gap-2">
-                  <ArrowUpIcon class="size-4" />
-                  <span>Add</span>
-                  <span class="text-xs text-neutral-500 ml-auto">Ins</span>
+                  <Trash2Icon class="size-4" />
+                  <span>Delete project</span>
+                </Menu.ItemText>
+              </Menu.Item>
+            {:else}
+              {#if contextMenuElement}
+                <Menu.Item value="add">
+                  <Menu.ItemText class="flex items-center w-full gap-2">
+                    <ArrowUpIcon class="size-4" />
+                    <span>Add</span>
+                    <span class="text-xs text-neutral-500 ml-auto">Ins</span>
+                  </Menu.ItemText>
+                </Menu.Item>
+              {/if}
+              <Menu.Item value="rename">
+                <Menu.ItemText class="flex items-center w-full gap-2">
+                  <PencilIcon class="size-4" />
+                  <span>Rename</span>
+                  <span class="text-xs text-neutral-500 ml-auto">F2</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item value="delete" class="text-error-600-400">
+                <Menu.ItemText class="flex items-center w-full gap-2">
+                  <Trash2Icon class="size-4" />
+                  <span>Delete</span>
+                  <span class="text-xs text-neutral-500 ml-auto">Del</span>
                 </Menu.ItemText>
               </Menu.Item>
             {/if}
-            <Menu.Item value="rename">
-              <Menu.ItemText class="flex items-center w-full gap-2">
-                <PencilIcon class="size-4" />
-                <span>Rename</span>
-                <span class="text-xs text-neutral-500 ml-auto">F2</span>
-              </Menu.ItemText>
-            </Menu.Item>
-            <Menu.Item value="delete" class="text-error-600-400">
-              <Menu.ItemText class="flex items-center w-full gap-2">
-                <Trash2Icon class="size-4" />
-                <span>Delete</span>
-                <span class="text-xs text-neutral-500 ml-auto">Del</span>
-              </Menu.ItemText>
-            </Menu.Item>
           </Menu.Content>
         </Menu.Positioner>
       </Portal>

@@ -135,10 +135,7 @@ function setupScopedMode(modeId: string, defaults: monaco.typescript.LanguageSer
     monaco.languages.registerRenameProvider(modeId, new RenameAdapter(libFiles, worker));
   }
   if (modeConfiguration.documentRangeFormattingEdits) {
-    monaco.languages.registerDocumentRangeFormattingEditProvider(
-      modeId,
-      new FormatAdapter(worker),
-    );
+    monaco.languages.registerDocumentRangeFormattingEditProvider(modeId, new FormatAdapter(worker));
   }
   if (modeConfiguration.onTypeFormattingEdits) {
     monaco.languages.registerOnTypeFormattingEditProvider(modeId, new FormatOnTypeAdapter(worker));

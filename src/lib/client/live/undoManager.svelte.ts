@@ -89,7 +89,7 @@ export class UnifiedUndoManager {
   /**
    * Record a forward mutation on the unified timeline.
    * PatchCollection's onMutation callback calls this automatically
-   * after every add / update / remove / mutateStateWithHistory.
+   * after every add / update / remove / mutateState.
    *
    * Batch operations (e.g. delete 5 nodes in a loop) should call
    * `recordMutation` once after the batch, not once per item.

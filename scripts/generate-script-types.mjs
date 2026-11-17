@@ -71,6 +71,7 @@ export {};`;
 
 const tagGlobals = `declare global {
   const tagConfig: ScriptTagOptions;
+  const properties: ScriptElementAttributes;
 }
 
 export {};`;

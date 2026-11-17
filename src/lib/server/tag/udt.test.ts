@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TagOptionsInput } from "./tag";
 import { UdtDefinition } from "./udt";
+import { buildResolvedUdtRows } from "$lib/client/editor/udtBuilder";
 import {
   z_UdtDefinitionInput,
   type UdtDefinitionInput,
@@ -13,10 +14,10 @@ function child(overrides: Partial<UdtDefinitionTagInput> = {}): UdtDefinitionTag
     name: "AChild",
     dataType: "Double",
     initalValue: null,
-    nodeId: null,
-    writeable: true,
+    driverPath: null,
+    readonly: false,
     exposeOverOpcua: true,
-    parameters: null,
+    properties: null,
     unit: "",
     bindings: null,
     writeLevel: "operator",
@@ -30,7 +31,7 @@ function definition(children: UdtDefinitionTagInput[]): UdtDefinitionInput {
   return {
     id: "def-1",
     name: "Motor",
-    props: { prefix: "motor" },
+    properties: { prefix: "motor" },
     children,
   };
 }
@@ -42,15 +43,16 @@ function parent(overrides: Partial<TagOptionsInput> = {}): TagOptionsInput {
     name: "M1",
     dataType: "Motor",
     initalValue: null,
-    nodeId: null,
-    writeable: true,
+    driverPath: null,
+    readonly: false,
     exposeOverOpcua: true,
-    parameters: null,
+    properties: null,
     unit: "",
     bindings: null,
     writeLevel: "operator",
     trendEnabled: false,
     trendMinimumSamplingIntervalMs: 1000,
+    udtDefinitionId: "def-1",
     ...overrides,
   };
 }
@@ -74,11 +76,10 @@ describe("UdtDefinition", () => {
     expect(udt.children.map((item) => item.name)).toEqual(["AChild", "Point2", "Point10"]);
   });
 
-  it("builds flat child tags with instance props and deterministic ids", () => {
-    const udt = new UdtDefinition(definition([child()]));
-    const built = udt
-      .buildInstanceOptions(parent({ parameters: { prefix: "instance" } }))
-      .find((item) => item.name === "AChild");
+  it("builds flat child tags with instance properties and deterministic ids", () => {
+    const defs = { Motor: definition([child()]) };
+    const rows = buildResolvedUdtRows(parent({ properties: { prefix: "instance" } }), defs);
+    const built = rows.find((item) => item.name === "AChild");
 
     expect(built).toMatchObject({
       id: "tag-1:child-a",
@@ -87,24 +88,53 @@ describe("UdtDefinition", () => {
       parentTagId: "tag-1",
       udtDefinitionId: null,
       udtDefinitionChildId: "child-a",
-      parameters: { prefix: "instance" },
+      properties: { prefix: "instance" },
     });
   });
 
   it("applies only the explicit override fields over the definition", () => {
-    const udt = new UdtDefinition(
-      definition([child({ id: "child-a", name: "AChild", unit: "V", nodeId: "definition/path" })]),
-    );
-    const built = udt.buildInstanceOptions(parent(), {
-      "child-a": { unit: "A", writeable: false },
-    })[0];
+    const defs = {
+      Motor: definition([
+        child({ id: "child-a", name: "AChild", unit: "V", driverPath: "definition/path" }),
+      ]),
+    };
+    const preserved = new Map<string, TagOptionsInput>([
+      [
+        "tag-1:child-a",
+        {
+          ...parent(),
+          id: "tag-1:child-a",
+          name: "AChild",
+          dataType: "Double",
+          parentTagId: "tag-1",
+          udtDefinitionChildId: "child-a",
+          udtOverrides: { unit: "A", readonly: true },
+        },
+      ],
+    ]);
+    const rows = buildResolvedUdtRows(parent(), defs, preserved);
+    const built = rows.find((item) => item.id === "tag-1:child-a");
 
     expect(built).toMatchObject({
       id: "tag-1:child-a",
       unit: "A",
-      nodeId: "definition/path",
-      writeable: false,
-      udtOverrides: { unit: "A", writeable: false },
+      driverPath: "definition/path",
+      readonly: true,
+      udtOverrides: { unit: "A", readonly: true },
     });
+  });
+
+  it("resolves UDT bindings with tagConfig and properties", () => {
+    const defs = {
+      Motor: definition([
+        child({
+          id: "child-a",
+          name: "AChild",
+          bindings: { driverPath: '"[" + properties.prefix + "]path"' },
+        }),
+      ]),
+    };
+    const rows = buildResolvedUdtRows(parent({ properties: { prefix: "instance" } }), defs);
+    expect(rows.find((item) => item.id === "tag-1:child-a")?.driverPath).toBe("[instance]path");
   });
 });

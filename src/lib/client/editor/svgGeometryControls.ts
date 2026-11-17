@@ -1,5 +1,6 @@
 import type { AttributeValue, ElementAttributes, ElementRecord } from "$lib/elements/elementTypes";
 import type { SvgTag } from "$lib/elements/svgTags";
+import { formatLength, parseLength, unitOf } from "./moveableGeometry";
 import { svgMoveableSupport, type SvgControlKind } from "./svgMoveable";
 
 export type SvgGeometryControl = {
@@ -19,6 +20,30 @@ function num(value: AttributeValue | undefined, fallback = 0) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return fallback;
+}
+
+function controlLength(
+  value: AttributeValue | undefined,
+  axis: "x" | "y",
+  target: SVGElement | undefined,
+) {
+  if (!target) return num(value);
+  return parseLength(typeof value === "string" ? value : num(value), axis, target);
+}
+
+function controlValue(
+  value: number,
+  authored: AttributeValue | undefined,
+  axis: "x" | "y",
+  target: SVGElement | undefined,
+) {
+  if (!target) return String(round(value));
+  return formatLength(
+    value,
+    unitOf(typeof authored === "string" ? authored : "", ""),
+    axis,
+    target,
+  );
 }
 
 function round(value: number) {
@@ -51,17 +76,10 @@ export function supportsSvgGeometryControls(element: ElementRecord) {
   return (svgMoveableSupport[element.tag as SvgTag]?.controls.length ?? 0) > 0;
 }
 
-export function readSvgAttributes(target: SVGElement): ElementAttributes {
-  const attributes: ElementAttributes = {};
-  for (const attribute of target.attributes) {
-    attributes[attribute.name] = attribute.value;
-  }
-  return attributes;
-}
-
 export function getSvgGeometryControls(
   element: ElementRecord,
   attributes: ElementAttributes = element.attributes,
+  target?: SVGElement,
 ): SvgGeometryControl[] {
   if (!supportsSvgGeometryControls(element)) return [];
   const tag = element.tag as SvgTag;
@@ -71,16 +89,16 @@ export function getSvgGeometryControls(
       {
         kind: "line-start",
         key: "line:start",
-        x: num(attributes.x1),
-        y: num(attributes.y1),
+        x: controlLength(attributes.x1, "x", target),
+        y: controlLength(attributes.y1, "y", target),
         label: "Move line start",
         cursor: "move",
       },
       {
         kind: "line-end",
         key: "line:end",
-        x: num(attributes.x2),
-        y: num(attributes.y2),
+        x: controlLength(attributes.x2, "x", target),
+        y: controlLength(attributes.y2, "y", target),
         label: "Move line end",
         cursor: "move",
       },
@@ -104,8 +122,8 @@ export function getSvgGeometryControls(
       {
         kind: "center",
         key: `${tag}:center`,
-        x: num(attributes.cx),
-        y: num(attributes.cy),
+        x: controlLength(attributes.cx, "x", target),
+        y: controlLength(attributes.cy, "y", target),
         label: "Move center",
         cursor: "move",
       },
@@ -120,19 +138,20 @@ export function applySvgGeometryControlDrag(
   baseAttributes: ElementAttributes,
   control: SvgGeometryControl,
   pointer: { x: number; y: number },
+  target?: SVGElement,
 ): ElementAttributes | null {
   const attributes: ElementAttributes = { ...baseAttributes };
   const tag = element.tag as SvgTag;
 
   if (tag === "line") {
     if (control.kind === "line-start") {
-      attributes.x1 = String(round(pointer.x));
-      attributes.y1 = String(round(pointer.y));
+      attributes.x1 = controlValue(pointer.x, attributes.x1, "x", target);
+      attributes.y1 = controlValue(pointer.y, attributes.y1, "y", target);
       return attributes;
     }
     if (control.kind === "line-end") {
-      attributes.x2 = String(round(pointer.x));
-      attributes.y2 = String(round(pointer.y));
+      attributes.x2 = controlValue(pointer.x, attributes.x2, "x", target);
+      attributes.y2 = controlValue(pointer.y, attributes.y2, "y", target);
       return attributes;
     }
     return null;
@@ -149,8 +168,8 @@ export function applySvgGeometryControlDrag(
 
   if (tag === "circle" || tag === "ellipse") {
     if (control.kind !== "center") return null;
-    attributes.cx = String(round(pointer.x));
-    attributes.cy = String(round(pointer.y));
+    attributes.cx = controlValue(pointer.x, attributes.cx, "x", target);
+    attributes.cy = controlValue(pointer.y, attributes.cy, "y", target);
     return attributes;
   }
 

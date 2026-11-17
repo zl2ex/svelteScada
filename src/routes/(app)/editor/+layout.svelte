@@ -31,10 +31,15 @@
   import { EditorState, type EditorLeftPanelTab } from "$lib/client/editor/editorState.svelte.js";
   import { setEditorContext } from "$lib/client/editor/editorContext.js";
   import type { PageRecord } from "$lib/elements/pageTypes.js";
-  import type { UserThemeSelect } from "$lib/sqlite/tables";
+  import type { ProjectSelect, UserThemeSelect } from "$lib/sqlite/tables";
   import { page } from "$app/state";
   import { pagePatches, applyPagePatches } from "$live/pages";
+  import { projectPatches, applyProjectPatches } from "$live/projects";
   import { userThemePatches, applyUserThemePatches } from "$live/user-theme";
+  import { tagPatches, applyTagPatches } from "$live/tags";
+  import type { TagOptionsInput } from "$lib/server/tag/tag";
+  import { setTagCollectionContext } from "$lib/client/editor/tagCollectionContext";
+  import { rebuildUdtInstances } from "$lib/client/editor/udtInstanceRebuild";
   import { udtPatches, applyUdtPatches } from "$live/udts";
   import type { UdtDefinitionInput } from "$lib/sqlite/tables/udt_definitions";
   import { setUdtDefinitionsContext } from "$lib/client/editor/udtDefinitionContext";
@@ -42,10 +47,12 @@
   import UdtsTab from "$lib/client/componets/editor/UdtsTab.svelte";
   import PagesTab from "$lib/client/componets/editor/PagesTab.svelte";
   import PageProperties from "$lib/client/componets/editor/PageProperties.svelte";
+  import ProjectEditor from "$lib/client/componets/editor/ProjectEditor.svelte";
   import ElementProperties from "$lib/client/componets/editor/ElementProperties.svelte";
   import MultiElementProperties from "$lib/client/componets/editor/MultiElementProperties.svelte";
   import ElementsInsert from "$lib/client/componets/editor/ElementsInsert.svelte";
   import GridControls from "$lib/client/componets/editor/GridControls.svelte";
+  import ZoomControls from "$lib/client/componets/editor/ZoomControls.svelte";
   import { attempt } from "$lib/util/attempt.js";
   import { logout } from "$lib/remote/user.remote.js";
   import { toast } from "$lib/client/toast.svelte.js";
@@ -130,6 +137,26 @@
     }),
   );
 
+  let projectPatchesCollection = $state(
+    new PatchCollection<ProjectSelect, NeverThrowError>({
+      initial: Object.fromEntries(data.projects.map((project) => [project.id, project])),
+      applyPatch: applyProjectPatches,
+      subscribePatches: (notify) => {
+        const unsubscribe = projectPatches.subscribe((payload) => {
+          if (!payload || "error" in payload) {
+            notify(null);
+            return;
+          }
+          notify(payload);
+        });
+        return unsubscribe;
+      },
+      maxHistory: 50,
+      onMutation: () => undoManager.recordMutation("projects"),
+      onError: (error) => console.error("Project sync error:", error),
+    }),
+  );
+
   let userThemePatchesCollection = $state(
     new PatchCollection<UserThemeSelect, NeverThrowError>({
       initial: data.themes.reduce(
@@ -156,6 +183,28 @@
     }),
   );
 
+  let tagPatchesCollection = $state(
+    new PatchCollection<TagOptionsInput, NeverThrowError>({
+      initial: data.tags,
+      applyPatch: applyTagPatches,
+      subscribePatches: (notify) => {
+        const unsubscribe = tagPatches.subscribe((payload) => {
+          if (!payload || "error" in payload) {
+            notify(null);
+            return;
+          }
+          notify(payload);
+        });
+        return unsubscribe;
+      },
+      maxHistory: 50,
+      onMutation: () => undoManager.recordMutation("tags"),
+      onError: (e) => console.error("Tag sync error:", e),
+    }),
+  );
+
+  setTagCollectionContext(tagPatchesCollection);
+
   let udtDefinitionPatchesCollection = $state(
     new PatchCollection<UdtDefinitionInput, NeverThrowError>({
       initial: Object.fromEntries(data.udts.map((udt) => [udt.id, udt])),
@@ -173,6 +222,9 @@
       maxHistory: 50,
       onMutation: () => undoManager.recordMutation("udts"),
       onError: (error) => console.error("UDT sync error:", error),
+      onApplied: () => {
+        rebuildUdtInstances(tagPatchesCollection, udtDefinitionPatchesCollection);
+      },
     }),
   );
 
@@ -181,7 +233,7 @@
   const editor = new EditorState({
     pages: pagePatchesCollection,
     userThemes: userThemePatchesCollection,
-    projects: data.projects,
+    projects: projectPatchesCollection,
     userComponents: data.userComponents,
     initialPath: page.url.pathname + page.url.search,
   });
@@ -194,6 +246,13 @@
 
   $effect(() => {
     editor.trackFocus(page.url.pathname + page.url.search);
+  });
+
+  $effect(() => {
+    const selectedProjectId = editor.selectedProjectId;
+    if (selectedProjectId && !editor.projects.state[selectedProjectId]) {
+      editor.clearProjectSelection();
+    }
   });
 
   function currentPath() {
@@ -243,7 +302,9 @@
   }
 
   undoManager.register("pages", pagePatchesCollection);
+  undoManager.register("projects", projectPatchesCollection);
   undoManager.register("themes", userThemePatchesCollection);
+  undoManager.register("tags", tagPatchesCollection);
   undoManager.register("udts", udtDefinitionPatchesCollection);
 
   onMount(() => {
@@ -259,10 +320,14 @@
     // unmount
     return () => {
       undoManager.unregister("pages");
+      undoManager.unregister("projects");
       undoManager.unregister("themes");
+      undoManager.unregister("tags");
       undoManager.unregister("udts");
       pagePatchesCollection.dispose();
+      projectPatchesCollection.dispose();
       userThemePatchesCollection.dispose();
+      tagPatchesCollection.dispose();
       udtDefinitionPatchesCollection.dispose();
       editor.dispose();
     };
@@ -419,6 +484,7 @@
         <AppBar.Headline></AppBar.Headline>
         <AppBar.Trail class="items-center">
           <GridControls />
+          <ZoomControls />
           <div class="btn-group bg-surface-200-800">
             <button
               class="btn btn-sm {editor.mode === 'edit' ? 'preset-filled' : 'preset-tonal'}"
@@ -551,7 +617,9 @@
       class="shrink-0 overflow-y-auto"
       style={panelLayout.width.right ? `width: ${panelLayout.width.right}px` : ""}
     >
-      {#if editor.activePage}
+      {#if editor.selectedProjectId}
+        <ProjectEditor />
+      {:else if editor.activePage}
         <ElementsInsert />
         <div class="border-t border-surface-200-800">
           {#if editor.selectedElementIds.length > 1}

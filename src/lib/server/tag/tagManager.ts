@@ -13,13 +13,8 @@ import { errorToString, neverThrowErrorToString, type NeverThrowError } from "$l
 import { publishTagValue } from "../../../live/tags";
 import { tagFoldersClosureTable } from "../sqlite/util/tagClosureTable";
 import { udtManager } from "../../../hooks.server";
+import { normalizeTagOptions } from "./legacyNormalization";
 import type { UdtTagOverrides } from "./tag";
-
-type PreservedTag = {
-  options: TagOptionsInput;
-  value?: TagValue;
-  overrides?: UdtTagOverrides | null;
-};
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
@@ -80,18 +75,6 @@ export class TagManager {
     for (const { id, tag } of this.#childrenOf(parentId)) {
       out.set(id, { ...this.#optionsOf(tag) });
       this.#collectSubtreeOptions(id, out);
-    }
-    return out;
-  }
-
-  #collectPreserved(parentId: string, out = new Map<string, PreservedTag>()) {
-    for (const { id, tag } of this.#childrenOf(parentId)) {
-      out.set(id, {
-        options: { ...this.#optionsOf(tag) },
-        value: tag.isOk() ? tag.value.value : undefined,
-        overrides: this.#optionsOf(tag).udtOverrides ?? null,
-      });
-      this.#collectPreserved(id, out);
     }
     return out;
   }
@@ -198,49 +181,6 @@ export class TagManager {
     }
   }
 
-  #expandOptions(root: TagOptionsInput, preserved: Map<string, PreservedTag> = new Map()) {
-    const rows: TagOptionsInput[] = [root];
-    const definition = udtManager.getUdtById(root.udtDefinitionId ?? "");
-    if (!definition) return rows;
-
-    const overridesByChildId: Record<string, UdtTagOverrides> = {};
-    for (const child of definition.children) {
-      const childId = `${root.id}:${child.id}`;
-      const saved = preserved.get(childId);
-      if (saved?.overrides) overridesByChildId[child.id] = saved.overrides;
-    }
-
-    for (const childOptions of definition.buildInstanceOptions(root, overridesByChildId)) {
-      const childDefinition = udtManager.getUdt(childOptions.dataType);
-      childOptions.udtDefinitionId = childDefinition?.id ?? null;
-      const saved = preserved.get(childOptions.id);
-      if (saved) {
-        childOptions.udtOverrides = saved.overrides ?? {};
-        if (saved.value !== undefined && saved.options.dataType === childOptions.dataType) {
-          childOptions.initalValue =
-            typeof saved.value === "string" ? saved.value : JSON.stringify(saved.value);
-        }
-      }
-      rows.push(...this.#expandOptions(childOptions, preserved));
-    }
-
-    return rows;
-  }
-
-  #writeRows(root: TagOptionsInput, rows: TagOptionsInput[], oldChildIds: string[] = []) {
-    return attempt(() =>
-      db.transaction((tx) => {
-        tx.update(tables.tags).set(root).where(eq(tables.tags.id, root.id)).run();
-        if (oldChildIds.length > 0) {
-          tx.delete(tables.tags).where(inArray(tables.tags.id, oldChildIds)).run();
-        }
-        for (const row of rows.slice(1)) {
-          tx.insert(tables.tags).values(row).run();
-        }
-      }),
-    );
-  }
-
   #folderForRow(row: TagOptionsInput, rowMap: Map<string, TagOptionsInput>) {
     let current = row;
     while (current.parentTagId) {
@@ -322,18 +262,8 @@ export class TagManager {
     const duplicate = this.checkDuplicate(opts, folder);
     if (duplicate.isErr()) return err(duplicate.error);
 
-    const definition = udtManager.getUdt(opts.dataType);
-    if (definition) {
-      opts = { ...opts, udtDefinitionId: definition.id };
-    }
-
-    const rows = this.#expandOptions(opts);
     if (writeToDb) {
-      const written = attempt(() =>
-        db.transaction((tx) => {
-          for (const row of rows) tx.insert(tables.tags).values(row).run();
-        }),
-      );
+      const written = attempt(() => db.insert(tables.tags).values(opts).run());
       if (written.isErr) {
         return err({
           reason: "DB_ERROR",
@@ -342,7 +272,7 @@ export class TagManager {
       }
     }
 
-    const created = this.#buildRuntime(rows);
+    const created = this.#buildRuntime([opts]);
     const root = created.get(opts.id);
     if (!root)
       return err({
@@ -414,21 +344,22 @@ export class TagManager {
       }
     }
 
-    const oldChildren = this.#collectSubtreeOptions(id);
-    const oldChildIds = [...oldChildren.keys()];
-    const preserved = this.#collectPreserved(id);
-    const rows = this.#expandOptions(next, preserved);
+    const preservedChildren = existing.isOk() ? Object.values(existing.value.children) : [];
 
     if (oldOptions.parentTagId) {
       const parent = this.#tags.get(oldOptions.parentTagId);
       if (parent?.isOk()) parent.value.detachRuntimeChild(oldOptions.name);
     }
 
-    if (existing.isOk()) existing.value.dispose();
+    if (existing.isOk()) {
+      existing.value.detachRuntimeChildren();
+      existing.value.dispose();
+    }
     this.#tags.delete(id);
-    for (const childId of oldChildIds) this.#tags.delete(childId);
 
-    const written = this.#writeRows(next, rows, oldChildIds);
+    const written = attempt(() =>
+      db.update(tables.tags).set(next).where(eq(tables.tags.id, id)).run(),
+    );
     if (written.isErr) {
       return err({
         reason: "DB_ERROR",
@@ -436,15 +367,47 @@ export class TagManager {
       } as const satisfies NeverThrowError);
     }
 
-    const created = this.#buildRuntime(rows);
-    const root = created.get(id);
-    if (!root)
+    if (!this.opcuaServer || !this.#folderManager) {
+      throw Error("[TagManager] updateTag() server/folder manager not initialised");
+    }
+
+    let folder = this.#folderManager.get(next.folderId);
+    if (!folder && next.parentTagId) {
+      const parent = this.#tags.get(next.parentTagId);
+      if (parent?.isOk()) folder = parent.value.opcuaFolder;
+    }
+    if (!folder) {
       return err({
-        reason: "TAG_UPDATE_FAILED",
-        cause: "root tag not created",
+        reason: "OPCUA_FOLDER_NOT_FOUND",
+        cause: `no opcua folder at ${next.folderId}`,
       } as const satisfies NeverThrowError);
-    if (root.isErr()) return err(root.error);
-    return ok(root);
+    }
+
+    const rebuilt = this.tagConfigError(Tag.create(this.opcuaServer, folder, next));
+    this.#tags.set(id, rebuilt);
+    this.#trackValue(rebuilt);
+
+    if (rebuilt.isOk()) {
+      if (next.udtDefinitionId) {
+        for (const child of preservedChildren) {
+          rebuilt.value.attachRuntimeChild(child);
+        }
+        rebuilt.value.recomputeFromChildren();
+      }
+
+      if (next.parentTagId) {
+        const parent = this.#tags.get(next.parentTagId);
+        if (parent?.isOk()) {
+          parent.value.attachRuntimeChild(rebuilt.value);
+          parent.value.recomputeFromChildren();
+        }
+      }
+    }
+
+    this.rebuildPaths();
+
+    if (rebuilt.isErr()) return err(rebuilt.error);
+    return ok(rebuilt);
   }
 
   deleteTag(id: string) {
@@ -522,8 +485,8 @@ export class TagManager {
     const reloaded: string[] = [];
     for (const tag of this.getAllTags()) {
       const options = this.#optionsOf(tag);
-      if (!options.nodeId) continue;
-      if (resolveDevicePath(options.nodeId).deviceName !== deviceName) continue;
+      if (!options.driverPath) continue;
+      if (resolveDevicePath(options.driverPath).deviceName !== deviceName) continue;
       const rebuilt = this.updateTag(options.id, { ...options });
       if (rebuilt.isErr()) {
         logger.error(neverThrowErrorToString(rebuilt.error));
@@ -532,27 +495,6 @@ export class TagManager {
       reloaded.push(options.id);
     }
     return reloaded;
-  }
-
-  rebuildAllUdtInstances() {
-    const before = new Map(
-      this.getAllTags().map((tag) => {
-        const options = this.#optionsOf(tag);
-        return [options.id, options] as const;
-      }),
-    );
-    const rebuilt: string[] = [];
-    for (const tag of this.getAllTags()) {
-      const options = this.#optionsOf(tag);
-      if (options.parentTagId || !options.udtDefinitionId) continue;
-      const result = this.updateTag(options.id, { ...options });
-      if (result.isOk()) rebuilt.push(options.id);
-    }
-
-    const upserted = this.getAllTags().map((tag) => this.#optionsOf(tag));
-    const afterIds = new Set(upserted.map((options) => options.id));
-    const removed = [...before.keys()].filter((id) => !afterIds.has(id));
-    return { rebuilt, upserted, removed };
   }
 
   async loadAllFromDb() {
@@ -569,7 +511,23 @@ export class TagManager {
     }
 
     this.#tags.clear();
-    const rows = tagOptions.data as TagOptionsInput[];
+    const rows = (tagOptions.data as TagOptionsInput[]).map((row) => {
+      const normalized = normalizeTagOptions(row);
+      if (normalized.changed) {
+        const written = attempt(() =>
+          db
+            .update(tables.tags)
+            .set({
+              bindings: normalized.value.bindings,
+              udtOverrides: normalized.value.udtOverrides as Record<string, unknown> | null,
+            })
+            .where(eq(tables.tags.id, row.id))
+            .run(),
+        );
+        if (written.isErr) logger.error(written.error);
+      }
+      return normalized.value;
+    });
     const rowMap = new Map(rows.map((row) => [row.id, row]));
     const roots = rows.filter((row) => !row.parentTagId);
     const children = rows.filter((row) => row.parentTagId);

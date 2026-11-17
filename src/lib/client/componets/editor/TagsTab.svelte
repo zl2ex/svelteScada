@@ -21,13 +21,13 @@
   } from "@skeletonlabs/skeleton-svelte";
 
   import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
+  import type { TagProperties } from "$lib/sqlite/tagProperties";
   import { attempt } from "$lib/util/attempt";
   import { newId } from "$lib/util/newId";
   import { err, ok } from "neverthrow";
   import { z_TagFolderNodeInsert } from "$lib/sqlite/tables/index";
   import { z_TagOptionsInsert } from "$lib/sqlite/tagOptions";
   import { browser } from "$app/env";
-  import { tagPatches, applyTagPatches } from "$live/tags";
   import { tagFolderPatches, applyTagFolderPatches } from "$live/tag-folder";
   import { PatchCollection } from "$lib/client/live/patchCollection.svelte";
   import type { BaseTypeStrings, TagOptionsInput } from "$lib/server/tag/tag";
@@ -46,6 +46,8 @@
   import { focusOnMount } from "$lib/client/util/use";
   import BindingEditor from "./BindingEditor.svelte";
   import TagEditorPopover from "./TagEditorPopover.svelte";
+  import { buildResolvedUdtRows } from "$lib/client/editor/udtBuilder";
+  import { rebuildUdtInstances } from "$lib/client/editor/udtInstanceRebuild";
   import { formatBindingResult, updateBinding } from "$lib/client/editor/bindings";
   import { evaluateTagBinding, resolveTagBindings } from "$lib/client/editor/tagExpressions";
   import type { TagBindingKey } from "$lib/tagBindings";
@@ -57,6 +59,7 @@
     type TreeDragPayload,
   } from "$lib/client/util/dragging";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
+  import { getTagCollectionContext } from "$lib/client/editor/tagCollectionContext";
 
   let {
     tagFolders,
@@ -70,6 +73,7 @@
   const ability = getAbilityContext();
   const tagValueMap = getTagValueMapContext();
   const udtDefinitionsCollection = getUdtDefinitionsContext();
+  const tagPatchesCollection = getTagCollectionContext();
 
   let udtDefinitionsByName = $derived(
     Object.fromEntries(
@@ -108,40 +112,32 @@
     }),
   );
 
-  let tagPatchesCollection = $state(
-    new PatchCollection<TagOptionsInput, NeverThrowError>({
-      initial: tags,
-      applyPatch: applyTagPatches,
-      subscribePatches: (notify) => {
-        const unsubscribe = tagPatches.subscribe((payload) => {
-          if (!payload || "error" in payload) {
-            notify(null);
-            return;
-          }
-          notify(payload);
-        });
-        return unsubscribe;
-      },
-      maxHistory: 50,
-      onMutation: () => undoManager.recordMutation("tags"),
-      onError: (e) => console.error("Tag sync error:", e),
-    }),
-  );
-
   undoManager.register("folders", tagFolderPatchesCollection);
-  undoManager.register("tags", tagPatchesCollection);
 
   onMount(() => {
     return () => {
       undoManager.unregister("folders");
-      undoManager.unregister("tags");
       tagFolderPatchesCollection.dispose();
-      tagPatchesCollection.dispose();
     };
   });
 
+  function propertiesForTag(tag: TagOptionsInput): TagProperties {
+    const definition = udtDefinitionsByName[tag.dataType];
+    const instanceProperties =
+      tag.properties &&
+      typeof tag.properties === "object" &&
+      !Array.isArray(tag.properties)
+        ? (tag.properties as TagProperties)
+        : {};
+
+    return {
+      ...(definition?.properties ?? {}),
+      ...instanceProperties,
+    };
+  }
+
   function resolvedTagConfig(config: TagOptionsInput) {
-    return resolveTagBindings(config);
+    return resolveTagBindings(config, propertiesForTag(config));
   }
 
   function saveTagConfig(node: TagOptionsInput, changes: Partial<Omit<TagOptionsInput, "id">>) {
@@ -150,7 +146,16 @@
   }
 
   function addResolvedTag(config: TagOptionsInput) {
-    tagPatchesCollection.add(resolvedTagConfig(config));
+    const resolved = resolvedTagConfig(config);
+    const definition = udtDefinitionsByName[resolved.dataType];
+    if (!definition) {
+      tagPatchesCollection.add(resolved);
+      return;
+    }
+
+    tagPatchesCollection.addMany(
+      buildResolvedUdtRows({ ...resolved, udtDefinitionId: definition.id }, udtDefinitionsByName),
+    );
   }
 
   function isTagBound(node: TagOptionsInput, key: TagBindingKey) {
@@ -161,7 +166,10 @@
     const expression = node.bindings?.[key];
     if (!expression?.trim()) return { result: "", error: null };
 
-    const evaluation = evaluateTagBinding(expression, { tagConfig: node });
+    const evaluation = evaluateTagBinding(expression, {
+      tagConfig: node,
+      properties: propertiesForTag(node),
+    });
     if (evaluation.isErr()) {
       return { result: "", error: neverThrowErrorToString(evaluation.error) };
     }
@@ -209,14 +217,25 @@
   function saveSelectedTags(changes: Partial<Omit<TagOptionsInput, "id">>) {
     if (selectedTags.length === 0) return;
 
+    const rebuildChildren = "dataType" in changes || "properties" in changes;
+
     undoManager.beginTransaction();
     tagPatchesCollection.updateMany(
-      selectedTags.map((tag) => ({
-        id: tag.id,
-        changes: resolvedTagConfig({ ...tag, ...changes }),
-      })),
+      selectedTags.map((tag) => {
+        const resolved = resolvedTagConfig({ ...tag, ...changes });
+        const definition = udtDefinitionsByName[resolved.dataType];
+        resolved.udtDefinitionId = definition?.id ?? null;
+        return {
+          id: tag.id,
+          changes: resolved,
+        };
+      }),
     );
     undoManager.endTransaction();
+
+    if (rebuildChildren) {
+      rebuildUdtInstances(tagPatchesCollection, udtDefinitionsCollection);
+    }
   }
 
   function selectedBindingValue(key: TagBindingKey) {
@@ -229,6 +248,23 @@
     if (selectedTags.length === 0) return false;
     const first = selectedTags[0].bindings?.[key] ?? "";
     return selectedTags.some((tag) => (tag.bindings?.[key] ?? "") !== first);
+  }
+
+  function selectedBindingComputed(key: TagBindingKey) {
+    const boundTags = selectedTags.filter((tag) => isTagBound(tag, key));
+    if (boundTags.length === 0) {
+      return { bound: false, mixed: false, value: undefined };
+    }
+
+    const values = boundTags.map((tag) => tagBindingResult(tag, key));
+    const mixed =
+      boundTags.length !== selectedTags.length || values.some((value) => value !== values[0]);
+
+    return {
+      bound: true,
+      mixed,
+      value: mixed ? undefined : values[0],
+    };
   }
 
   function selectedBindingError(key: TagBindingKey) {
@@ -936,10 +972,10 @@
         name: name,
         dataType: tag.dataType,
         initalValue: tag.initalValue ?? null,
-        nodeId: tag.nodeId ?? null,
-        writeable: tag.writeable ?? true,
+        driverPath: tag.driverPath ?? null,
+        readonly: tag.readonly ?? false,
         exposeOverOpcua: tag.exposeOverOpcua ?? true,
-        parameters: tag.parameters ?? null,
+        properties: tag.properties ?? null,
         unit: tag.unit ?? "",
         bindings: tag.bindings ?? null,
         writeLevel: tag.writeLevel ?? "operator",
@@ -1074,7 +1110,7 @@
         <TagInput
           id={node.id}
           label=""
-          class="py-0  border-none max-w-40 rounded-sm"
+          class="py-0 px-2 border-none max-w-40 rounded-sm"
           onclick={(ev) => ev.stopPropagation()}
           onkeydown={(ev) => ev.stopPropagation()}
         />
@@ -1194,107 +1230,107 @@
   positioning={{ placement: "right-end", offset: { mainAxis: 48 } }}
 >
   <Menu class="overflow-y-scroll" onSelect={(details) => void handleMenuSelect(details.value)}>
-  <Menu.ContextTrigger class="w-full pb-12">
-    <TreeView.Provider value={treeView}>
-      <TreeView.Tree
-        class="w-full"
-        onkeyup={handleTreeKeyup}
-        oncontextmenu={handleTreeContextMenu}
-        onpaste={(e) => {
-          e.stopPropagation();
-          handlePaste(e, undefined);
-        }}
-      >
-        {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders } ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
-          {@render treeNode(node, [index])}
-        {/each}
-      </TreeView.Tree>
-    </TreeView.Provider>
-  </Menu.ContextTrigger>
-  <Portal>
-    <Menu.Positioner>
-      <Menu.Content class="text-xs border-none bg-surface-100-900">
-        {#if (contextMenuFolders.length === 1 && contextMenuTags.length === 0) || (contextMenuFolders.length === 0 && contextMenuTags.length === 1)}
-          <Menu.Item value="rename">
-            <Menu.ItemText class="flex items-center w-full gap-2">
-              <PencilIcon class="size-4" />
-              <span>Rename</span>
-              <span class="text-xs text-neutral-500 ml-auto">F2</span>
-            </Menu.ItemText>
-          </Menu.Item>
-        {/if}
-        {#if contextMenuFolders.length === 1 && contextMenuTags.length === 0}
-          <Menu.Item value="newTag">
-            <Menu.ItemText class="flex items-center w-full gap-2">
-              <TagPlus class="size-4" />
-              <span>New Tag</span>
-              <span class="text-xs text-neutral-500 ml-auto">Alt+T</span>
-            </Menu.ItemText>
-          </Menu.Item>
-          <Menu.Item value="newFolder">
-            <Menu.ItemText class="flex items-center w-full gap-2">
-              <FolderPlus class="size-4" />
-              <span>New Folder</span>
-              <span class="text-xs text-neutral-500 ml-auto">Alt+F</span>
-            </Menu.ItemText>
-          </Menu.Item>
-        {/if}
-        {#if contextMenuFolders.length === 0 && contextMenuTags.length === 1}
+    <Menu.ContextTrigger class="w-full pb-12">
+      <TreeView.Provider value={treeView}>
+        <TreeView.Tree
+          class="w-full"
+          onkeyup={handleTreeKeyup}
+          oncontextmenu={handleTreeContextMenu}
+          onpaste={(e) => {
+            e.stopPropagation();
+            handlePaste(e, undefined);
+          }}
+        >
+          {#each Object.values( { ...tagFolderPatchesCollection.state, ...stagingFolders } ).filter((f) => f.parentId == undefined) ?? [] as node, index (node.id)}
+            {@render treeNode(node, [index])}
+          {/each}
+        </TreeView.Tree>
+      </TreeView.Provider>
+    </Menu.ContextTrigger>
+    <Portal>
+      <Menu.Positioner>
+        <Menu.Content class="text-xs border-none bg-surface-100-900">
+          {#if (contextMenuFolders.length === 1 && contextMenuTags.length === 0) || (contextMenuFolders.length === 0 && contextMenuTags.length === 1)}
+            <Menu.Item value="rename">
+              <Menu.ItemText class="flex items-center w-full gap-2">
+                <PencilIcon class="size-4" />
+                <span>Rename</span>
+                <span class="text-xs text-neutral-500 ml-auto">F2</span>
+              </Menu.ItemText>
+            </Menu.Item>
+          {/if}
+          {#if contextMenuFolders.length === 1 && contextMenuTags.length === 0}
+            <Menu.Item value="newTag">
+              <Menu.ItemText class="flex items-center w-full gap-2">
+                <TagPlus class="size-4" />
+                <span>New Tag</span>
+                <span class="text-xs text-neutral-500 ml-auto">Alt+T</span>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Item value="newFolder">
+              <Menu.ItemText class="flex items-center w-full gap-2">
+                <FolderPlus class="size-4" />
+                <span>New Folder</span>
+                <span class="text-xs text-neutral-500 ml-auto">Alt+F</span>
+              </Menu.ItemText>
+            </Menu.Item>
+          {/if}
+          {#if contextMenuFolders.length === 0 && contextMenuTags.length === 1}
+            <Menu.Separator />
+            <Menu.Item value="copyPath">
+              <Menu.ItemText class="flex items-center w-full gap-2">
+                <Copy class="size-4" />
+                <span>Copy Path</span>
+                <span class="text-xs text-neutral-500 ml-auto">Ctrl+Q</span>
+              </Menu.ItemText>
+            </Menu.Item>
+          {/if}
           <Menu.Separator />
-          <Menu.Item value="copyPath">
+          <Menu.Item
+            value="cut"
+            disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+          >
+            <Menu.ItemText class="flex items-center w-full gap-2">
+              <Scissors class="size-4" />
+              <span>Cut</span>
+              <span class="text-xs text-neutral-500 ml-auto">Ctrl+X</span>
+            </Menu.ItemText>
+          </Menu.Item>
+          <Menu.Item
+            value="copy"
+            disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+          >
             <Menu.ItemText class="flex items-center w-full gap-2">
               <Copy class="size-4" />
-              <span>Copy Path</span>
-              <span class="text-xs text-neutral-500 ml-auto">Ctrl+Q</span>
+              <span>Copy</span>
+              <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
             </Menu.ItemText>
           </Menu.Item>
-        {/if}
-        <Menu.Separator />
-        <Menu.Item
-          value="cut"
-          disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-        >
-          <Menu.ItemText class="flex items-center w-full gap-2">
-            <Scissors class="size-4" />
-            <span>Cut</span>
-            <span class="text-xs text-neutral-500 ml-auto">Ctrl+X</span>
-          </Menu.ItemText>
-        </Menu.Item>
-        <Menu.Item
-          value="copy"
-          disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-        >
-          <Menu.ItemText class="flex items-center w-full gap-2">
-            <Copy class="size-4" />
-            <span>Copy</span>
-            <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
-          </Menu.ItemText>
-        </Menu.Item>
-        <Menu.Item
-          value="paste"
-          disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-        >
-          <Menu.ItemText class="flex items-center w-full gap-2">
-            <Copy class="size-4" />
-            <span>Paste</span>
-            <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
-          </Menu.ItemText>
-        </Menu.Item>
-        <Menu.Separator />
+          <Menu.Item
+            value="paste"
+            disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+          >
+            <Menu.ItemText class="flex items-center w-full gap-2">
+              <Copy class="size-4" />
+              <span>Paste</span>
+              <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
+            </Menu.ItemText>
+          </Menu.Item>
+          <Menu.Separator />
 
-        <Menu.Item
-          value="delete"
-          disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
-        >
-          <Menu.ItemText class="flex items-center w-full gap-2">
-            <Trash2 class="size-4" />
-            <span>Delete</span>
-            <span class="text-xs text-neutral-500 ml-auto">Del</span>
-          </Menu.ItemText>
-        </Menu.Item>
-      </Menu.Content>
-    </Menu.Positioner>
-  </Portal>
+          <Menu.Item
+            value="delete"
+            disabled={contextMenuFolders.length === 0 && contextMenuTags.length === 0}
+          >
+            <Menu.ItemText class="flex items-center w-full gap-2">
+              <Trash2 class="size-4" />
+              <span>Delete</span>
+              <span class="text-xs text-neutral-500 ml-auto">Del</span>
+            </Menu.ItemText>
+          </Menu.Item>
+        </Menu.Content>
+      </Menu.Positioner>
+    </Portal>
   </Menu>
 
   {#if activeTag && selectedTags.length > 0}
@@ -1306,6 +1342,7 @@
       bindingValue={selectedBindingValue}
       bindingMixed={selectedBindingMixed}
       bindingError={selectedBindingError}
+      bindingComputed={selectedBindingComputed}
       hasOverride={hasSelectedOverride}
       onSave={saveSelectedTags}
       onBindingSave={saveSelectedBinding}

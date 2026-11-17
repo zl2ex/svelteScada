@@ -28,10 +28,7 @@ export interface PatchPayload {
   versions?: Record<string, number>;
 }
 
-export interface PatchCollectionOptions<
-  T extends Identifiable,
-  E extends NeverThrowError,
-> {
+export interface PatchCollectionOptions<T extends Identifiable, E extends NeverThrowError> {
   initial: Record<string, T>;
   // however your generated RPC/room action is shaped, as long as it
   // takes a single patch op and returns/rejects a promise
@@ -39,21 +36,18 @@ export interface PatchCollectionOptions<
   // adapt whatever store you're using (a live.stream, on(topic), etc.)
   // to this shape: call `notify` with each incoming payload, return an
   // unsubscribe function so destroy() can clean up.
-  subscribePatches: (
-    notify: (payload: PatchPayload | null) => void,
-  ) => () => void;
+  subscribePatches: (notify: (payload: PatchPayload | null) => void) => () => void;
   maxHistory?: number;
-  // Called after every tracked mutation (add/update/remove/mutateStateWithHistory).
+  // Called after every tracked mutation (add/update/remove/mutateState).
   // Used by UnifiedUndoManager to record entries on the unified timeline.
   onMutation?: () => void;
   // Called when a server sync fails for one or more patches.
   onError?: (error: NeverThrowError) => void;
+  // Called after the server accepts a patch.
+  onApplied?: (ops: Ops) => void;
 }
 
-export class PatchCollection<
-  T extends Identifiable,
-  E extends NeverThrowError,
-> {
+export class PatchCollection<T extends Identifiable, E extends NeverThrowError> {
   state = $state<Record<string, T>>({});
   syncError = $state<string | NeverThrowError | null>(null);
 
@@ -62,6 +56,7 @@ export class PatchCollection<
   #applyPatch: PatchCollectionOptions<T, E>["applyPatch"];
   #onMutation?: () => void;
   #onError?: (error: E) => void;
+  #onApplied?: (ops: Ops) => void;
   #unsubscribeTravels?: () => void;
   #unsubscribePatches?: () => void;
 
@@ -71,6 +66,7 @@ export class PatchCollection<
     this.#applyPatch = options.applyPatch;
     this.#onMutation = options.onMutation;
     this.#onError = options.onError;
+    this.#onApplied = options.onApplied;
 
     const created = attempt(() =>
       createTravels(this.state, {
@@ -105,10 +101,7 @@ export class PatchCollection<
         );
       } else {
         // reverse
-        this.#dispatchOps(
-          patches.inversePatches[event.position],
-          patches.patches[event.position],
-        );
+        this.#dispatchOps(patches.inversePatches[event.position], patches.patches[event.position]);
       }
 
       this.#prevPosition = event.position;
@@ -116,10 +109,8 @@ export class PatchCollection<
 
     this.#unsubscribePatches = options.subscribePatches((payload) => {
       if (!payload) return;
-      this.mutateState((state) => {
-        const merged = attempt(() =>
-          apply(state, payload.patches, { mutable: true }),
-        );
+      this.mutateStateWithoutHistory((state) => {
+        const merged = attempt(() => apply(state, payload.patches, { mutable: true }));
         if (merged.isErr) {
           this.syncError = {
             reason: "PATCH_MERGE_FAILED",
@@ -202,6 +193,11 @@ export class PatchCollection<
           duration: 3000,
         });
         this.#onError?.(res.error);
+      } else {
+        const applied = attempt(() => this.#onApplied?.([ops[i]] as Ops));
+        if (applied.isErr) {
+          console.error("PatchCollection onApplied callback failed:", applied.error);
+        }
       }
     }
     if (!hadError) this.syncError = null;
@@ -212,13 +208,8 @@ export class PatchCollection<
   // sent to the server via the subscribe listener. Use this for any
   // compound edit that doesn't fit the three named methods (e.g. mutating
   // several fields across several ids in one undoable step).
-  mutateStateWithHistory(
-    fn: (draft: Record<string, T>) => void,
-    label?: string,
-  ) {
-    const tracked = attempt(() =>
-      this.#travels.setState(fn as any, label ? { label } : undefined),
-    );
+  mutateState(fn: (draft: Record<string, T>) => void, label?: string) {
+    const tracked = attempt(() => this.#travels.setState(fn as any, label ? { label } : undefined));
     if (tracked.isErr) {
       this.syncError = {
         reason: "TRAVELS_SET_STATE_FAILED",
@@ -236,18 +227,18 @@ export class PatchCollection<
   // local-only `selected`/`hovered` UI flag on an item). Because `state` is
   // already a live reactive object, `fn` can mutate it directly — no
   // Mutative recipe/draft finalization needed for the untracked path.
-  mutateState(fn: (state: Record<string, T>) => void) {
+  mutateStateWithoutHistory(fn: (state: Record<string, T>) => void) {
     fn(this.state);
   }
 
   add(item: T) {
-    this.mutateStateWithHistory((draft) => {
+    this.mutateState((draft) => {
       draft[item.id] = item;
     }, `Add ${item.id}`);
   }
 
   update(id: string, changes: Partial<Omit<T, "id">>) {
-    this.mutateStateWithHistory((draft) => {
+    this.mutateState((draft) => {
       // always send the entire object to the server for flat ["id"] = {entire object}
       // consistency so no properties are missing
       draft[id] = { ...draft[id], ...changes };
@@ -255,13 +246,13 @@ export class PatchCollection<
   }
 
   remove(id: string) {
-    this.mutateStateWithHistory((draft) => {
+    this.mutateState((draft) => {
       delete draft[id];
     }, `Delete ${id}`);
   }
 
   addMany(items: T[]) {
-    this.mutateStateWithHistory(
+    this.mutateState(
       (draft) => {
         items.forEach((item) => (draft[item.id] = item));
       },
@@ -270,20 +261,18 @@ export class PatchCollection<
   }
 
   updateMany(items: { id: string; changes: Partial<Omit<T, "id">> }[]) {
-    this.mutateStateWithHistory(
+    this.mutateState(
       (draft) => {
         // always send the entire object to the server for flat ["id"] = {entire object}
         // consistency so no properties are missing
-        items.forEach(
-          (item) => (draft[item.id] = { ...draft[item.id], ...item.changes }),
-        );
+        items.forEach((item) => (draft[item.id] = { ...draft[item.id], ...item.changes }));
       },
       `Edit ${items.forEach((item) => item.id)}`,
     );
   }
 
   removeMany(ids: string[]) {
-    this.mutateStateWithHistory((draft) => {
+    this.mutateState((draft) => {
       ids.forEach((id) => delete draft[id]);
     }, `Delete ${ids}`);
   }

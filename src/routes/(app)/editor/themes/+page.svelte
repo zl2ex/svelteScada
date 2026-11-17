@@ -77,8 +77,12 @@
     if (!selected) return;
     const id = selected.id;
     editor.userThemesCollection.remove(id);
-    for (const project of editor.projects) {
-      if (project.themeId === id) project.themeId = null;
+    const updatedAt = Date.now();
+    const projectUpdates = editor.projectList
+      .filter((project) => project.themeId === id)
+      .map((project) => ({ id: project.id, changes: { themeId: null, updatedAt } }));
+    if (projectUpdates.length > 0) {
+      editor.projects.updateMany(projectUpdates);
     }
     toast({ kind: "info", title: "Theme deleted", description: selected.name });
   }
