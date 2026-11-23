@@ -11,7 +11,7 @@ import {
 import z from "zod";
 import { OpcuaFolder } from "$lib/server/tag/opcuaFolder";
 import { deviceManager, gatewayOpcua, udtManager } from "../../../hooks.server";
-import { trends } from "$lib/sqlite/tables";
+import { tags, trends } from "$lib/sqlite/tables";
 import {
   z_TagOptionsInsert,
   type TagOptionsInput,
@@ -25,6 +25,7 @@ import { attempt } from "$lib/util/attempt";
 import type { DriverVariable } from "$lib/server/drivers/driver";
 import { toTrendValue } from "$lib/util/trend";
 import { publishTrend } from "../trend/trend";
+import { eq } from "drizzle-orm";
 
 export type { TagOptionsInput, UdtTagOverrides } from "$lib/sqlite/tagOptions";
 
@@ -600,6 +601,7 @@ export class Tag {
       } as const satisfies FailedTag);
     //if(typeof newValue !== typeof this.dataType) throw new Error("Value " + newValue + " is not assignable to tag " + this.id + " expected type " + this.dataType);
 
+    // if tag is an instance of udt it will have children
     if (Object.keys(this.children).length > 0) {
       if (typeof newValue !== "object" || newValue === null || Array.isArray(newValue)) {
         return err({
@@ -671,6 +673,28 @@ export class Tag {
     logger.trace(`[Tag] update() ${this.id} = ${value} : ${this.statusCode.name} from ${source}`);
 
     this.#trend(newValue, statusCode);
+
+    // no driver path so it is a memory tag
+    if (!this.options.driverPath) {
+      const written = attempt(() =>
+        db
+          .update(tags)
+          .set({
+            ...this.options,
+            initalValue: JSON.stringify(newValue),
+          })
+          .where(eq(tags.id, this.options.id))
+          .run(),
+      );
+      if (written.isErr) {
+        return err({
+          reason: "TAG_INITAL_VALUE_DB_FAILED",
+          cause: `[Tag] #update() ${this.id} ${this.name} ${this.path} failed to write initalValue: ${errorToString(written.error)}`,
+          // cause: errorToString(written.error),
+          options: this.options,
+        } as const satisfies FailedTag);
+      }
+    }
 
     const changed = attempt(() => this.onChange?.(newValue, source, statusCode));
     if (changed.isErr) {

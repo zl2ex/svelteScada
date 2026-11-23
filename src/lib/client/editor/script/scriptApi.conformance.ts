@@ -8,7 +8,6 @@ import type { TagValue } from "$lib/server/tag/tag";
 import type { TagBindings } from "$lib/tagBindings";
 import type { TagBindingContext } from "$lib/client/editor/tagExpressions";
 import type {
-  ContainerType,
   ElementAttributes,
   ElementBindings,
   ElementKind,
@@ -19,7 +18,6 @@ import type {
   ScriptBindingGlobals,
   ScriptTagBindingGlobals,
   ScriptTagBindings,
-  ScriptContainerType,
   ScriptElementAttributes,
   ScriptElementBindings,
   ScriptElementKind,
@@ -56,14 +54,6 @@ export type _TagBindingsToScriptBindings = AssertAssignable<TagBindings, ScriptT
 export type _ScriptBindingsToTagBindings = AssertAssignable<ScriptTagBindings, TagBindings>;
 export type _ElementKindToScriptKind = AssertAssignable<ElementKind, ScriptElementKind>;
 export type _ScriptKindToElementKind = AssertAssignable<ScriptElementKind, ElementKind>;
-export type _ContainerTypeToScriptContainerType = AssertAssignable<
-  ContainerType,
-  ScriptContainerType
->;
-export type _ScriptContainerTypeToContainerType = AssertAssignable<
-  ScriptContainerType,
-  ContainerType
->;
 export type _NeverThrowErrorToScriptNeverThrowError = AssertAssignable<
   NeverThrowError,
   ScriptNeverThrowError

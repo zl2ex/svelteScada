@@ -19,7 +19,6 @@
 {#if page && elements}
   <PageCanvas
     {elements}
-    containerType={page.containerType}
     mode={editor.mode}
     themeName={theme?.name}
   />

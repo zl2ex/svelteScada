@@ -1,7 +1,7 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { projects } from "./projects";
-import { containerTypes, routeSegmentPattern } from "../../elements/elementTypes";
+import { routeSegmentPattern } from "../../elements/elementTypes";
 
 export const pages = sqliteTable(
   "pages",
@@ -13,7 +13,6 @@ export const pages = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    containerType: text("containerType", { enum: containerTypes }).notNull().default("absolute"),
     sortIndex: integer("sortIndex").notNull().default(0),
     createdAt: integer("createdAt", { mode: "number" })
       .notNull()

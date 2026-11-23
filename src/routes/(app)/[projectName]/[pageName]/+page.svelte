@@ -14,7 +14,6 @@
 <div class="h-svh">
   <PageCanvas
     elements={data.elements}
-    containerType={data.page.containerType}
     mode="preview"
     userComponents={data.userComponents}
     themeName={data.theme?.name}

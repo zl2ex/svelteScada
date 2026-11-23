@@ -4,13 +4,13 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { pages } from "./pages";
 import { user_components } from "./user_components";
 import {
-  containerTypes,
   elementKinds,
   type ElementAttributes,
   type ElementBindings,
   type ElementStyle,
 } from "../../elements/elementTypes";
 import { type BaseComponentNames } from "$lib/elements/baseComponents";
+import type { PropertyMap } from "$lib/propertyValue";
 import type { SvgTag } from "$lib/elements/svgTags";
 import type { HtmlTag } from "$lib/elements/htmlTags";
 
@@ -33,9 +33,12 @@ export const elements = sqliteTable(
     }),
     name: text("name").notNull().default(""),
     text: text("text"),
-    containerType: text("containerType", { enum: containerTypes }).notNull().default("none"),
     attributes: text("attributes", { mode: "json" })
       .$type<ElementAttributes>()
+      .notNull()
+      .default({}),
+    properties: text("properties", { mode: "json" })
+      .$type<PropertyMap>()
       .notNull()
       .default({}),
     style: text("style", { mode: "json" }).$type<ElementStyle>().notNull().default({}),

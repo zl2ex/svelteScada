@@ -11,6 +11,7 @@ export const tagBindingKeys = [
   "unit",
   "trendEnabled",
   "trendMinimumSamplingIntervalMs",
+  "writeLevel",
 ] as const;
 
 export type TagBindingKey = (typeof tagBindingKeys)[number];
@@ -26,4 +27,5 @@ export const z_TagBindings = z.object({
   unit: z.string().optional(),
   trendEnabled: z.string().optional(),
   trendMinimumSamplingIntervalMs: z.string().optional(),
+  writeLevel: z.string().optional(),
 });

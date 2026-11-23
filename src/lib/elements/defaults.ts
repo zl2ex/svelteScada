@@ -1,4 +1,5 @@
 import type { ElementAttributes, ElementKind, ElementStyle } from "./elementTypes";
+import type { PropertyMap } from "$lib/propertyValue";
 import { baseComponents } from "./baseComponents";
 import { htmlElementDefaults } from "./htmlElementDefaults";
 import type { HtmlTag } from "./htmlTags";
@@ -12,11 +13,13 @@ export type ElementFingerprint = {
 
 export type ElementDefaultsInput = {
   attributes?: ElementAttributes;
+  properties?: PropertyMap;
   style?: ElementStyle;
 };
 
 export type ElementDefaults = {
   attributes: ElementAttributes;
+  properties: PropertyMap;
   style: ElementStyle;
 };
 
@@ -29,7 +32,7 @@ function normalizeDefaults(defaults: ElementDefaultsInput): ElementDefaults {
     delete attributes[key];
   }
 
-  return { attributes, style };
+  return { attributes, properties: { ...defaults.properties }, style };
 }
 
 function getHtmlDefaults(tag: string | null | undefined) {
@@ -44,7 +47,7 @@ function getSvgDefaults(tag: string | null | undefined) {
 
 function getBaseComponentDefaults(baseComponent: string | null | undefined) {
   if (!baseComponent) return {};
-  return baseComponents[baseComponent]?.defaultAttributes ?? {};
+  return baseComponents[baseComponent]?.defaultProperties ?? {};
 }
 
 export function getDefaultElementConfig(
@@ -57,7 +60,7 @@ export function getDefaultElementConfig(
     case "svg":
       return normalizeDefaults(getSvgDefaults(options.tag));
     case "base-component":
-      return normalizeDefaults({ attributes: getBaseComponentDefaults(options.baseComponent) });
+      return normalizeDefaults({ properties: getBaseComponentDefaults(options.baseComponent) });
     case "user-component":
       return normalizeDefaults({});
   }

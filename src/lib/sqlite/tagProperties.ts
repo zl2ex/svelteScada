@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { z_PropertyMap, z_PropertyValue } from "$lib/propertyValue";
 
-export const z_TagPropertyValue = z.union([z.string(), z.number(), z.boolean()]);
+export const z_TagPropertyValue = z_PropertyValue;
 
-export const z_TagProperties = z.record(z.string(), z_TagPropertyValue);
+export const z_TagProperties = z_PropertyMap;
 
-export type TagProperties = z.infer<typeof z_TagProperties>;
+export type TagProperties = z.input<typeof z_TagProperties>;

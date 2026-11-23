@@ -63,12 +63,6 @@ function changed(a: number, b: number): boolean {
   return Math.abs(a - b) > EPS;
 }
 
-function unitsPerPx(el: MoveableElement, zoom = 1): number {
-  if (!isSvgElement(el)) return 1 / zoom;
-  const matrix = el.ownerSVGElement?.getScreenCTM();
-  return matrix?.a ? 1 / matrix.a : 1;
-}
-
 export function unitOf(raw: string | null | undefined, fallback: string): string {
   return /^-?[\d.]+([a-z%]*)$/i.exec(raw?.trim() ?? "")?.[1] ?? fallback;
 }
@@ -118,12 +112,25 @@ export function parseLength(
   return value * pxPer(unitOf(raw === null || raw === undefined ? "" : String(raw), ""), axis, el);
 }
 
-function toSnapGrid(px: number): number {
+export function toSnapGrid(px: number): number {
   const grid = getEditorInstance()?.grid;
 
   if (!grid?.enabled || grid.spacing <= 0) return px;
 
   return Math.round(px / grid.spacing) * grid.spacing;
+}
+
+export function snapBoxToGrid(box: MoveableBox): MoveableBox {
+  const grid = getEditorInstance()?.grid;
+  if (!grid?.enabled || grid.spacing <= 0) return box;
+
+  return {
+    ...box,
+    x: toSnapGrid(box.x),
+    y: toSnapGrid(box.y),
+    w: Math.max(grid.spacing, toSnapGrid(box.w)),
+    h: Math.max(grid.spacing, toSnapGrid(box.h)),
+  };
 }
 
 function fmt(px: number, prop: Prop, units: MoveableUnits, el: MoveableElement): string {
@@ -407,47 +414,73 @@ function boxWrites(
   next: MoveableBox,
   units: MoveableUnits,
   el: MoveableElement,
+  wholeBox = false,
 ): GeometryChanges {
-  const dx = changed(base.x, next.x);
-  const dy = changed(base.y, next.y);
-  const dw = changed(base.w, next.w);
-  const dh = changed(base.h, next.h);
-  const dr = changed(base.rotate, next.rotate);
-  const dorigin = changed(base.ox, next.ox) || changed(base.oy, next.oy);
+  const target = wholeBox ? snapBoxToGrid(next) : { ...next };
+
+  if (!wholeBox) {
+    const baseRight = base.x + base.w;
+    const baseBottom = base.y + base.h;
+
+    if (changed(base.w, target.w)) {
+      if (changed(base.x, target.x)) {
+        target.x = toSnapGrid(target.x);
+        target.w = Math.max(0, baseRight - target.x);
+      } else {
+        target.x = base.x;
+        target.w = Math.max(0, toSnapGrid(base.x + target.w) - target.x);
+      }
+    } else if (changed(base.x, target.x)) {
+      target.x = toSnapGrid(target.x);
+    }
+
+    if (changed(base.h, target.h)) {
+      if (changed(base.y, target.y)) {
+        target.y = toSnapGrid(target.y);
+        target.h = Math.max(0, baseBottom - target.y);
+      } else {
+        target.y = base.y;
+        target.h = Math.max(0, toSnapGrid(base.y + target.h) - target.y);
+      }
+    } else if (changed(base.y, target.y)) {
+      target.y = toSnapGrid(target.y);
+    }
+  }
+
+  const dx = changed(base.x, target.x);
+  const dy = changed(base.y, target.y);
+  const dw = changed(base.w, target.w);
+  const dh = changed(base.h, target.h);
+  const dr = changed(base.rotate, target.rotate);
+  const dorigin = changed(base.ox, target.ox) || changed(base.oy, target.oy);
   const style: Record<string, string> = {};
   const attributes: Record<string, string> = {};
 
   const tag = (element.tag ?? "").toLowerCase();
 
-  // TD WIP center svg tags circle and elipse resize
   if (usesCenterTag(tag)) {
-    if (dw) {
-      //next.h = next.w;
-      attributes.r = fmt(next.w / 2, "w", units, el);
+    if (tag === "circle") {
+      if (dw || dh) attributes.r = fmt((dh ? target.h : target.w) / 2, "w", units, el);
+    } else {
+      if (dw) attributes.rx = fmt(target.w / 2, "w", units, el);
+      if (dh) attributes.ry = fmt(target.h / 2, "h", units, el);
     }
-
-    if (dh) {
-      //next.w = next.h;
-      attributes.r = fmt(next.h / 2, "h", units, el);
-    }
-    delete attributes.width;
-    delete attributes.height;
   } else {
-    if (dw) style.width = fmt(next.w, "w", units, el);
-    if (dh) style.height = fmt(next.h, "h", units, el);
+    if (dw) style.width = fmt(target.w, "w", units, el);
+    if (dh) style.height = fmt(target.h, "h", units, el);
   }
 
   if (dorigin) {
-    const reference = originReference(element, el, next.w, next.h);
+    const reference = originReference(element, el, target.w, target.h);
     style["transform-origin"] = `${fmtOrigin(
-      next.ox + reference.offsetX,
+      target.ox + reference.offsetX,
       "x",
       units.ox,
       el,
       reference.width,
       reference.height,
     )} ${fmtOrigin(
-      next.oy + reference.offsetY,
+      target.oy + reference.offsetY,
       "y",
       units.oy,
       el,
@@ -456,7 +489,7 @@ function boxWrites(
     )}`;
   }
 
-  if (dr) style.rotate = `${next.rotate}deg`;
+  if (dr) style.rotate = `${target.rotate}deg`;
 
   if (element.kind === "svg") {
     const center = usesCenterTag(tag);
@@ -464,7 +497,7 @@ function boxWrites(
     if (center || position) {
       if (dx || (center && dw)) {
         attributes[center ? "cx" : "x"] = fmt(
-          center ? next.x + next.w / 2 : next.x,
+          center ? target.x + target.w / 2 : target.x,
           "x",
           units,
           el,
@@ -472,15 +505,15 @@ function boxWrites(
       }
       if (dy || (center && dh)) {
         attributes[center ? "cy" : "y"] = fmt(
-          center ? next.y + next.h / 2 : next.y,
+          center ? target.y + target.h / 2 : target.y,
           "y",
           units,
           el,
         );
       }
     } else if (tag === "line" && (dx || dy)) {
-      const deltaX = next.x - base.x;
-      const deltaY = next.y - base.y;
+      const deltaX = target.x - base.x;
+      const deltaY = target.y - base.y;
       const x1 = shiftLengthAttribute(element, "x1", "x", deltaX, el);
       const y1 = shiftLengthAttribute(element, "y1", "y", deltaY, el);
       const x2 = shiftLengthAttribute(element, "x2", "x", deltaX, el);
@@ -493,27 +526,27 @@ function boxWrites(
         attributes.y2 = y2;
         if (styleValue(element, "translate") !== null) style.translate = "";
       } else {
-        style.translate = `${fmt(next.x, "x", units, el)} ${fmt(next.y, "y", units, el)}`;
+        style.translate = `${fmt(target.x, "x", units, el)} ${fmt(target.y, "y", units, el)}`;
       }
     } else if ((tag === "polyline" || tag === "polygon") && (dx || dy)) {
       const points = shiftPointsAttribute(
         attributeValue(element, "points"),
-        next.x - base.x,
-        next.y - base.y,
+        target.x - base.x,
+        target.y - base.y,
       );
 
       if (points !== null) {
         attributes.points = points;
         if (styleValue(element, "translate") !== null) style.translate = "";
       } else {
-        style.translate = `${fmt(next.x, "x", units, el)} ${fmt(next.y, "y", units, el)}`;
+        style.translate = `${fmt(target.x, "x", units, el)} ${fmt(target.y, "y", units, el)}`;
       }
     } else if (dx || dy) {
-      style.translate = `${fmt(next.x, "x", units, el)} ${fmt(next.y, "y", units, el)}`;
+      style.translate = `${fmt(target.x, "x", units, el)} ${fmt(target.y, "y", units, el)}`;
     }
   } else {
-    if (dx) style.left = fmt(next.x, "x", units, el);
-    if (dy) style.top = fmt(next.y, "y", units, el);
+    if (dx) style.left = fmt(target.x, "x", units, el);
+    if (dy) style.top = fmt(target.y, "y", units, el);
   }
 
   return {
@@ -528,8 +561,9 @@ export function captureBoxChanges(
   current: MoveableBox,
   units: MoveableUnits,
   el: MoveableElement,
+  wholeBox = false,
 ): GeometryChanges | null {
-  const changes = boxWrites(element, start, current, units, el);
+  const changes = boxWrites(element, start, current, units, el, wholeBox);
   return changes.attributes || changes.style ? changes : null;
 }
 
@@ -539,30 +573,27 @@ export function applyDrag(
   el: MoveableElement,
   zoom = 1,
 ): MoveableBox {
-  const scale = unitsPerPx(el, zoom);
   return {
     ...start,
-    x: start.x + dist[0] * scale,
-    y: start.y + dist[1] * scale,
+    x: start.x + dist[0],
+    y: start.y + dist[1],
   };
 }
 
 export function applyResize(
-  box: MoveableBox,
-  width: number,
-  height: number,
+  start: MoveableBox,
+  current: MoveableBox,
+  sizeDist: number[],
   dragDelta: number[],
   el: MoveableElement,
   zoom = 1,
 ): MoveableBox {
-  const sizeScale = isSvgElement(el) ? unitsPerPx(el) : 1;
-  const deltaScale = unitsPerPx(el, zoom);
   return {
-    ...box,
-    w: width * sizeScale,
-    h: height * sizeScale,
-    x: box.x + dragDelta[0] * deltaScale,
-    y: box.y + dragDelta[1] * deltaScale,
+    ...current,
+    w: start.w + sizeDist[0],
+    h: start.h + sizeDist[1],
+    x: current.x + dragDelta[0],
+    y: current.y + dragDelta[1],
   };
 }
 

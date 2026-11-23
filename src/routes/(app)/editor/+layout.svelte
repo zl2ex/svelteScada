@@ -43,9 +43,13 @@
   import { udtPatches, applyUdtPatches } from "$live/udts";
   import type { UdtDefinitionInput } from "$lib/sqlite/tables/udt_definitions";
   import { setUdtDefinitionsContext } from "$lib/client/editor/udtDefinitionContext";
+  import {
+    EditorScriptEvaluator,
+    setScriptEvaluatorContext,
+  } from "$lib/client/editor/scriptEvaluatorContext";
   import TagsTab from "$lib/client/componets/editor/TagsTab.svelte";
   import UdtsTab from "$lib/client/componets/editor/UdtsTab.svelte";
-  import PagesTab from "$lib/client/componets/editor/PagesTab.svelte";
+  import PrpojectsTab from "$lib/client/componets/editor/ProjectsTab.svelte";
   import PageProperties from "$lib/client/componets/editor/PageProperties.svelte";
   import ProjectEditor from "$lib/client/componets/editor/ProjectEditor.svelte";
   import ElementProperties from "$lib/client/componets/editor/ElementProperties.svelte";
@@ -111,7 +115,7 @@
     return ok(null);
   }
 
-  const leftPanelTabs: EditorLeftPanelTab[] = ["tags", "udts", "pages"];
+  const leftPanelTabs: EditorLeftPanelTab[] = ["tags", "udts", "projects"];
 
   function isLeftPanelTab(value: string | null): value is EditorLeftPanelTab {
     return value !== null && leftPanelTabs.includes(value as EditorLeftPanelTab);
@@ -243,6 +247,13 @@
   }
 
   setEditorContext(editor);
+
+  setScriptEvaluatorContext(
+    new EditorScriptEvaluator({
+      udts: udtDefinitionPatchesCollection,
+      tagValueMap,
+    }),
+  );
 
   $effect(() => {
     editor.trackFocus(page.url.pathname + page.url.search);
@@ -562,21 +573,30 @@
           }}
         >
           <Tabs.List class="shrink-0">
-            <Tabs.Trigger class="flex-1 text-xs" value="tags">Tags</Tabs.Trigger>
-            <Tabs.Trigger class="flex-1 text-xs" value="udts">Udts</Tabs.Trigger>
-            <Tabs.Trigger class="flex-1 text-xs" value="pages">Pages</Tabs.Trigger>
-            <Tabs.Indicator
-              class="[[data-scope='tabs'][data-part='indicator']]:bg-primary-400-600 [[data-scope='tabs'][data-part='indicator']]:h-1"
-            />
+            {#each leftPanelTabs as tab (tab)}
+              <Tabs.Trigger class="flex-1 text-xs" value={tab}>
+                {tab[0].toUpperCase() + tab.slice(1)}
+              </Tabs.Trigger>
+            {/each}
+            <Tabs.Indicator />
           </Tabs.List>
-          <Tabs.Content value="tags" class="flex-1 min-h-0 overflow-y-auto">
-            <TagsTab tagFolders={data.tagFolders} tags={data.tags} />
+          <Tabs.Content
+            value={"tags" satisfies EditorLeftPanelTab}
+            class="flex-1 min-h-0 overflow-y-auto"
+          >
+            <TagsTab tagFolders={data.tagFolders} />
           </Tabs.Content>
-          <Tabs.Content value="udts" class="flex-1 min-h-0 overflow-y-auto">
+          <Tabs.Content
+            value={"udts" satisfies EditorLeftPanelTab}
+            class="flex-1 min-h-0 overflow-y-auto"
+          >
             <UdtsTab />
           </Tabs.Content>
-          <Tabs.Content value="pages" class="flex-1 min-h-0 overflow-y-auto">
-            <PagesTab />
+          <Tabs.Content
+            value={"projects" satisfies EditorLeftPanelTab}
+            class="flex-1 min-h-0 overflow-y-auto"
+          >
+            <PrpojectsTab />
           </Tabs.Content>
         </Tabs>
 

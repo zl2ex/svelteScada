@@ -40,7 +40,6 @@ export const applyPagePatches = live(
         id,
         projectId: value.projectId,
         name: value.name,
-        containerType: value.containerType,
         sortIndex: value.sortIndex,
       });
       if (result.isErr()) return wireErr(result.error);
@@ -53,7 +52,6 @@ export const applyPagePatches = live(
       const result = pageManager.replace(id, {
         name: value.name,
         sortIndex: value.sortIndex,
-        containerType: value.containerType,
       });
       if (result.isErr()) return wireErr(result.error);
       published = {

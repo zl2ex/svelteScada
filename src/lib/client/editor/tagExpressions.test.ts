@@ -58,6 +58,7 @@ describe("tag binding expressions", () => {
         unit: '"V"',
         trendEnabled: "false",
         trendMinimumSamplingIntervalMs: "100",
+        writeLevel: '"engineer"',
       },
     });
 
@@ -73,6 +74,7 @@ describe("tag binding expressions", () => {
       unit: "V",
       trendEnabled: false,
       trendMinimumSamplingIntervalMs: 100,
+      writeLevel: "engineer",
       bindings: config.bindings,
     });
     expect(config).toMatchObject({
@@ -100,10 +102,13 @@ describe("tag binding expressions", () => {
 
   it("evaluates expressions with properties", () => {
     const config = tagOptions();
-    const evaluation = evaluateTagBinding('properties.prefix + ":" + tagConfig.name', {
-      tagConfig: config,
-      properties: { prefix: "motor" },
-    });
+    const evaluation = evaluateTagBinding(
+      'properties.prefix.value + ":" + tagConfig.name',
+      {
+        tagConfig: config,
+        properties: { prefix: { value: "motor", required: true } },
+      },
+    );
 
     expect(evaluation.isOk()).toBe(true);
     if (evaluation.isOk()) expect(evaluation.value).toBe("motor:Test Tag");

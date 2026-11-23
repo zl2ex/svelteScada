@@ -3,7 +3,6 @@ import { err, ok } from "neverthrow";
 import { db } from "$lib/server/sqlite/db";
 import { logger } from "$lib/server/pino/logger";
 import { pages, projects } from "$lib/sqlite/tables";
-import type { ContainerType } from "$lib/elements/elementTypes";
 import { isValidRouteSegment } from "$lib/elements/elementTypes";
 import type { PageRecord } from "$lib/elements/pageTypes";
 import { attempt } from "$lib/util/attempt";
@@ -21,7 +20,6 @@ export type CreatePageInput = {
   id?: string;
   projectId: string;
   name: string;
-  containerType?: ContainerType;
   sortIndex?: number;
 };
 
@@ -94,7 +92,6 @@ export class PageManager {
           id,
           projectId: input.projectId,
           name: input.name,
-          containerType: input.containerType ?? "absolute",
           sortIndex,
           createdAt: now,
           updatedAt: now,
@@ -112,8 +109,7 @@ export class PageManager {
     input: {
       name: string;
       sortIndex: number;
-      containerType?: ContainerType;
-    },
+        },
   ) {
     if (!isValidRouteSegment(input.name)) {
       return err({
@@ -140,7 +136,6 @@ export class PageManager {
         .set({
           name: input.name,
           sortIndex: input.sortIndex,
-          ...(input.containerType === undefined ? {} : { containerType: input.containerType }),
           updatedAt: Date.now(),
         })
         .where(eq(pages.id, id))

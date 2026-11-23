@@ -1,19 +1,20 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
-  import type { ContainerType } from "$lib/elements/elementTypes";
-  import { containerTypes, isContainerElement } from "$lib/elements/elementTypes";
   import { toast } from "$lib/client/toast.svelte";
   import {
     attributeBindingScope,
     coerceAttributeValue,
     formatBindingResult,
+    getElementProperties,
     getBindingMap,
     getStyle,
     getTopLevelAttributes,
+    removeElementPropertyRow,
     removeStyleRow,
     removeTopLevelAttributeRow,
     setBinding,
+    setElementPropertyValue,
     setStyleProperty,
     setTopLevelAttribute,
     type AttributeBindingScope,
@@ -21,7 +22,8 @@
     type ElementBindingRowData,
   } from "$lib/client/editor/elementBindingRows";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import { evaluateExpression, type BindingContext } from "$lib/client/editor/elementExpressions";
+  import type { BindingContext } from "$lib/client/editor/elementExpressions";
+  import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
   import ElementBindingRow from "./ElementBindingRow.svelte";
   import ElementBindingSection from "./ElementBindingSection.svelte";
@@ -31,16 +33,13 @@
   const editor = getEditorContext();
   const ability = getAbilityContext();
   const tagValueMap = getTagValueMapContext();
-  const containerOptions = containerTypes;
 
-  let containerType = $state<ContainerType>("none");
 
   let selected = $derived(
     editor.selectedElementIds.length === 1
       ? editor.elementsCollection?.state[editor.selectedElementIds[0]]
       : null,
   );
-  let selectedIsContainer = $derived(isContainerElement(selected));
   let showStyle = $derived(!!selected && selected.kind !== "user-component");
   let attributeScope = $derived<AttributeBindingScope>(
     selected ? attributeBindingScope(selected) : "attributes",
@@ -58,15 +57,9 @@
     } satisfies BindingContext;
   });
 
-  $effect(() => {
-    const element = selected;
-    if (!element) return;
-    containerType = element.containerType;
-  });
-
   function evaluateBinding(expression: string, context: BindingContext | null) {
     if (!expression.trim() || !context) return { result: "", error: null };
-    const evaluation = evaluateExpression(expression, context);
+    const evaluation = scriptEvaluator.evaluateElement(expression, context);
     if (evaluation.isErr()) {
       return { result: "", error: neverThrowErrorToString(evaluation.error) };
     }
@@ -90,12 +83,21 @@
   let attributeRows = $derived.by((): ElementBindingRowData[] => {
     const element = selected;
     if (!element) return [];
-    const base = getTopLevelAttributes(element);
+    const usesProperties = attributeScope === "props";
+    const base = usesProperties ? getElementProperties(element) : getTopLevelAttributes(element);
     const bindings = getBindingMap(element, attributeScope);
     const keys = [...new Set([...Object.keys(base), ...Object.keys(bindings)])].sort();
     return keys.map((key) => {
       const binding = bindings[key] ?? "";
-      const value = base[key];
+      const raw = base[key];
+      const value =
+        usesProperties && raw && typeof raw === "object" && "value" in raw
+          ? raw.value
+          : raw;
+      const property =
+        usesProperties && raw && typeof raw === "object" && "value" in raw
+          ? raw
+          : undefined;
       const evaluation = evaluateBinding(binding, bindingContext);
       return {
         key,
@@ -103,6 +105,8 @@
         binding,
         result: evaluation.result,
         error: evaluation.error,
+        description: property?.description,
+        required: usesProperties ? (property?.required ?? true) : false,
       };
     });
   });
@@ -136,6 +140,16 @@
 
   function saveAttributeValue(key: string, raw: string) {
     if (!selected) return;
+    const usesProperties = attributeScope === "props";
+    if (usesProperties) {
+      const previous = getElementProperties(selected)[key]?.value;
+      const value = raw === "" ? null : coerceAttributeValue(previous, raw);
+      editor.elementsCollection?.update(selected.id, {
+        properties: setElementPropertyValue(selected, key, value),
+        updatedAt: Date.now(),
+      });
+      return;
+    }
     const previous = getTopLevelAttributes(selected)[key];
     const value = raw === "" ? null : coerceAttributeValue(previous, raw);
     editor.elementsCollection?.update(selected.id, {
@@ -162,15 +176,20 @@
 
   function addAttribute(key: string, value: string) {
     if (!selected) return false;
-    if (
-      Object.hasOwn(getTopLevelAttributes(selected), key) ||
-      Object.hasOwn(getBindingMap(selected, attributeScope), key)
-    ) {
+    const usesProperties = attributeScope === "props";
+    const base = usesProperties ? getElementProperties(selected) : getTopLevelAttributes(selected);
+    if (Object.hasOwn(base, key) || Object.hasOwn(getBindingMap(selected, attributeScope), key)) {
       toast({ kind: "error", title: "Attribute already exists", description: key });
       return false;
     }
     editor.elementsCollection?.update(selected.id, {
-      attributes: setTopLevelAttribute(selected, key, value),
+      ...(usesProperties
+        ? {
+            properties: setElementPropertyValue(selected, key, coerceAttributeValue(undefined, value), {
+              required: false,
+            }),
+          }
+        : { attributes: setTopLevelAttribute(selected, key, value) }),
       updatedAt: Date.now(),
     });
     return true;
@@ -193,8 +212,11 @@
   }
 
   function removeAttributeRow(row: ElementBindingRowData) {
-    if (!selected) return;
-    const next = removeTopLevelAttributeRow(selected, attributeScope, row.key);
+    if (!selected || row.required) return;
+    const next =
+      attributeScope === "props"
+        ? removeElementPropertyRow(selected, row.key)
+        : removeTopLevelAttributeRow(selected, attributeScope, row.key);
     editor.elementsCollection?.update(selected.id, {
       ...next,
       updatedAt: Date.now(),
@@ -210,14 +232,7 @@
     });
   }
 
-  function saveContainer(value: ContainerType) {
-    if (!selected) return;
-    containerType = value;
-    editor.elementsCollection?.update(selected.id, {
-      containerType: value,
-      updatedAt: Date.now(),
-    });
-  }
+
 </script>
 
 <div class="flex flex-col text-xs">
@@ -248,22 +263,6 @@
           />
         {/if}
 
-        {#if selectedIsContainer}
-          <label class="flex flex-col gap-1">
-            <span class="opacity-60">Container</span>
-            <select
-              class="input h-7 py-0 px-1"
-              value={containerType}
-              onchange={(event) => saveContainer(event.currentTarget.value as ContainerType)}
-            >
-              {#each containerOptions as option}
-                <option value={option}>{option}</option>
-              {/each}
-            </select>
-          </label>
-        {:else}
-          <p class="opacity-50">This element is not a container.</p>
-        {/if}
 
         <ElementBindingSection
           title={attributeScope === "props" ? "Props" : "Attributes"}

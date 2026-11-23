@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { baseComponents } from "./baseComponents";
 import {
-  containerTypes,
   elementKinds,
   type ElementBindings,
   type ElementKind,
@@ -10,14 +9,16 @@ import {
 import { htmlTags } from "./htmlTags";
 import { svgTags } from "./svgTags";
 import { z_BindingExpression, z_BindingExpressionMap } from "$lib/bindings";
+import { z_PropertyMap } from "$lib/propertyValue";
 
 export const z_ElementKind = z.enum(elementKinds);
-export const z_ContainerType = z.enum(containerTypes);
 export const z_AttributeValue = z.union([z.string(), z.number(), z.boolean()]);
 
 export const z_ElementStyle = z.record(z.string(), z.string());
 
 export const z_ElementAttributes = z.record(z.string(), z_AttributeValue);
+
+export const z_ElementProperties = z_PropertyMap;
 
 export const z_ElementBindings = z.object({
   text: z_BindingExpression.optional(),
@@ -44,8 +45,8 @@ export const z_ElementWrite = z.object({
   referencedComponentId: z.string().nullable(),
   name: z.string(),
   text: z.string().nullable(),
-  containerType: z_ContainerType,
   attributes: z_ElementAttributes,
+  properties: z_ElementProperties,
   style: z_ElementStyle,
   styleClass: z_ElementStyleClass,
   bindings: z_ElementBindings.nullable(),
@@ -185,8 +186,8 @@ export function toElementRecord(value: ElementRecord): ElementRecord {
     referencedComponentId: value.referencedComponentId,
     name: value.name,
     text: value.text,
-    containerType: value.containerType,
     attributes: value.attributes,
+    properties: value.properties,
     style: value.style,
     styleClass: value.styleClass,
     bindings: value.bindings,

@@ -1,7 +1,7 @@
 import type { TagOptionsInput } from "$lib/server/tag/tag";
 import type { UdtDefinitionInput } from "$lib/sqlite/tables/udt_definitions";
 import { undoManager } from "$lib/client/history/undoManager";
-import { buildResolvedUdtRows } from "./udtBuilder";
+import { buildEffectiveUdtRows } from "./udtBuilder";
 import type { TagCollection } from "./tagCollectionContext";
 import type { UdtDefinitionCollection } from "./udtDefinitionContext";
 
@@ -17,6 +17,10 @@ function collectDescendants(
   return out;
 }
 
+/**
+ * Rebuilds all flattened UDT instance rows after a definition, binding, or override change.
+ * Rows are materialized so top-level fields always contain effective binding results.
+ */
 export function rebuildUdtInstances(
   tagCollection: TagCollection,
   udtCollection: UdtDefinitionCollection,
@@ -42,7 +46,7 @@ export function rebuildUdtInstances(
   for (const root of allTags) {
     if (root.parentTagId || !root.udtDefinitionId) continue;
 
-    const desiredRows = buildResolvedUdtRows(root, definitionsByName, preserved);
+    const desiredRows = buildEffectiveUdtRows(root, definitionsByName, preserved);
     const desiredIds = new Set(desiredRows.map((row) => row.id));
     const existingChildren = collectDescendants(root.id, childrenByParent);
 
@@ -50,10 +54,11 @@ export function rebuildUdtInstances(
       if (!desiredIds.has(existing.id)) removes.push(existing.id);
     }
 
-    for (const desired of desiredRows.slice(1)) {
-      const existing = existingChildren.get(desired.id);
+    for (const desired of desiredRows) {
+      const isRoot = desired.id === root.id;
+      const existing = isRoot ? preserved.get(desired.id) : existingChildren.get(desired.id);
       if (!existing) {
-        adds.push(desired);
+        if (!isRoot) adds.push(desired);
         continue;
       }
       if (JSON.stringify(existing) !== JSON.stringify(desired)) {

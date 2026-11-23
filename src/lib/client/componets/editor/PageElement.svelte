@@ -6,20 +6,20 @@
     UserComponentDefinition,
   } from "$lib/client/editor/editorState.svelte";
   import {
-    evaluateExpression,
     runEventScript,
     type BindingContext,
     type EventContext,
   } from "$lib/client/editor/elementExpressions";
+  import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
   import type {
     AttributeValue,
     ElementAttributes,
+    ElementProperties,
     ElementRecord,
   } from "$lib/elements/elementTypes";
+  import type { PropertyValue } from "$lib/propertyValue";
   import {
-    containerTypeStyle,
     elementStyleToString,
-    isContainerElement,
     isSvgDrawingElement,
     sortedChildren,
   } from "$lib/elements/elementTypes";
@@ -34,7 +34,7 @@
   type Props = {
     element: ElementRecord;
     elements: Record<string, ElementRecord>;
-    propValues?: ElementAttributes;
+    propValues?: ElementProperties;
     insideSvg?: boolean;
     depth?: number;
     mode?: EditorMode;
@@ -89,7 +89,7 @@
     const attributes: Record<string, AttributeValue> = { ...element.attributes };
     for (const [name, expression] of Object.entries(element.bindings?.attributes ?? {})) {
       if (name.toLowerCase().startsWith("on")) continue;
-      const evaluation = evaluateExpression(expression, bindingContext);
+      const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext);
       const value = evaluation.isOk() ? toAttributeValue(evaluation.value) : undefined;
       if (value === undefined) delete attributes[name];
       else attributes[name] = value;
@@ -103,7 +103,7 @@
     return classes.filter((className) => {
       const expression = styleClassBindings[className];
       if (!expression?.trim()) return true;
-      const evaluation = evaluateExpression(expression, bindingContext);
+      const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext);
       return evaluation.isOk() && Boolean(evaluation.value);
     });
   });
@@ -117,25 +117,32 @@
   let resolvedStyle = $derived.by(() => {
     const style: Record<string, string> = { ...element.style };
     for (const [property, expression] of Object.entries(element.bindings?.style ?? {})) {
-      const evaluation = evaluateExpression(expression, bindingContext);
+      const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext);
       const value = evaluation.isOk() ? evaluation.value : undefined;
       if (value === null || value === undefined) delete style[property];
       else style[property] = String(value);
     }
-    if (isContainerElement(element)) {
-      Object.assign(style, containerTypeStyle(element.containerType));
-    }
-
     return elementStyleToString(style);
   });
 
   let resolvedProps = $derived.by(() => {
-    const props: ElementAttributes = { ...element.attributes };
+    const props: ElementProperties = { ...element.properties };
     for (const [name, expression] of Object.entries(element.bindings?.props ?? {})) {
-      const evaluation = evaluateExpression(expression, bindingContext);
+      const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext);
       const value = evaluation.isOk() ? toAttributeValue(evaluation.value) : undefined;
       if (value === undefined) delete props[name];
-      else props[name] = value;
+      else {
+        const existing = props[name];
+        props[name] = existing ? { ...existing, value } : { value, required: true };
+      }
+    }
+    return props;
+  });
+
+  let resolvedComponentProps = $derived.by(() => {
+    const props: Record<string, AttributeValue> = {};
+    for (const [name, property] of Object.entries(resolvedProps)) {
+      props[name] = property.value;
     }
     return props;
   });
@@ -143,7 +150,7 @@
   let text = $derived.by(() => {
     const expression = element.bindings?.text;
     if (expression === undefined) return element.text ?? "";
-    const evaluation = evaluateExpression(expression, bindingContext);
+    const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext);
     const value = evaluation.isOk() ? evaluation.value : undefined;
     return value === null || value === undefined ? "" : String(value);
   });
@@ -204,11 +211,11 @@
 {:else if element.kind === "base-component"}
   <div data-element-id={element.id} use:eventScripts={eventAction}>
     {#if element.baseComponent === "TagInput"}
-      <TagInput {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
+      <TagInput {...resolvedComponentProps} class={resolvedClass} style={resolvedStyle} />
     {:else if element.baseComponent === "DeviceStatus"}
-      <DeviceStatus id="" {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
+      <DeviceStatus id="" {...resolvedComponentProps} class={resolvedClass} style={resolvedStyle} />
     {:else if element.baseComponent === "TrendChart"}
-      <TrendChart id={element.id} {...resolvedAttributes} class={resolvedClass} style={resolvedStyle} />
+      <TrendChart id={element.id} {...resolvedComponentProps} class={resolvedClass} style={resolvedStyle} />
     {:else}
       <span class="text-xs opacity-50">
         Unknown component: {element.baseComponent satisfies null}

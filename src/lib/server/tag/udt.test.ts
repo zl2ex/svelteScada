@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { TagOptionsInput } from "./tag";
 import { UdtDefinition } from "./udt";
-import { buildResolvedUdtRows } from "$lib/client/editor/udtBuilder";
+import { buildEffectiveUdtRows, buildResolvedUdtRows } from "$lib/client/editor/udtBuilder";
+import { applyUdtOverrides } from "$lib/tagOverrides";
 import {
   z_UdtDefinitionInput,
   type UdtDefinitionInput,
@@ -31,7 +32,7 @@ function definition(children: UdtDefinitionTagInput[]): UdtDefinitionInput {
   return {
     id: "def-1",
     name: "Motor",
-    properties: { prefix: "motor" },
+    properties: { prefix: { value: "motor", required: true } },
     children,
   };
 }
@@ -76,9 +77,76 @@ describe("UdtDefinition", () => {
     expect(udt.children.map((item) => item.name)).toEqual(["AChild", "Point2", "Point10"]);
   });
 
+  it("materializes definition properties onto the main instance", () => {
+    const defs = { Motor: definition([child()]) };
+    const rows = buildResolvedUdtRows(parent(), defs);
+
+    expect(rows[0].properties).toEqual({
+      prefix: { value: "motor", required: true },
+    });
+    expect(rows[0].udtOverrides).toBeNull();
+  });
+
+  it("keeps explicit instance properties as overrides on the main instance", () => {
+    const defs = { Motor: definition([child()]) };
+    const rows = buildResolvedUdtRows(
+      parent({
+        udtOverrides: {
+          properties: { prefix: { value: "instance", required: true } },
+        },
+      }),
+      defs,
+    );
+
+    expect(rows[0].properties).toEqual({
+      prefix: { value: "motor", required: true },
+    });
+    expect(rows[0].udtOverrides?.properties).toEqual({
+      prefix: { value: "instance", required: true },
+    });
+    expect(applyUdtOverrides(rows[0]).properties).toEqual({
+      prefix: { value: "instance", required: true },
+    });
+  });
+
+  it("materializes override values and binding results into effective top-level fields", () => {
+    const defs = { Motor: definition([child()]) };
+    const rows = buildEffectiveUdtRows(
+      parent({
+        bindings: { unit: '"base"' },
+        udtOverrides: {
+          readonly: true,
+          bindings: { unit: '"override"' },
+        },
+      }),
+      defs,
+    );
+
+    expect(rows[0].unit).toBe("override");
+    expect(rows[0].readonly).toBe(true);
+    expect(rows[0].udtOverrides?.bindings).toEqual({ unit: '"override"' });
+  });
+
+  it("normalizes legacy effective base values back into overrides", () => {
+    const defs = { Motor: definition([child()]) };
+    const rows = buildResolvedUdtRows(
+      parent({
+        unit: "A",
+        udtOverrides: { unit: "A" },
+      }),
+      defs,
+    );
+
+    expect(rows[0].unit).toBe("");
+    expect(applyUdtOverrides(rows[0]).unit).toBe("A");
+  });
+
   it("builds flat child tags with instance properties and deterministic ids", () => {
     const defs = { Motor: definition([child()]) };
-    const rows = buildResolvedUdtRows(parent({ properties: { prefix: "instance" } }), defs);
+    const rows = buildResolvedUdtRows(
+      parent({ properties: { prefix: { value: "instance", required: true } } }),
+      defs,
+    );
     const built = rows.find((item) => item.name === "AChild");
 
     expect(built).toMatchObject({
@@ -88,7 +156,7 @@ describe("UdtDefinition", () => {
       parentTagId: "tag-1",
       udtDefinitionId: null,
       udtDefinitionChildId: "child-a",
-      properties: { prefix: "instance" },
+      properties: { prefix: { value: "instance", required: true } },
     });
   });
 
@@ -117,10 +185,14 @@ describe("UdtDefinition", () => {
 
     expect(built).toMatchObject({
       id: "tag-1:child-a",
-      unit: "A",
+      unit: "V",
       driverPath: "definition/path",
-      readonly: true,
+      readonly: false,
       udtOverrides: { unit: "A", readonly: true },
+    });
+    expect(applyUdtOverrides(built!)).toMatchObject({
+      unit: "A",
+      readonly: true,
     });
   });
 
@@ -130,11 +202,143 @@ describe("UdtDefinition", () => {
         child({
           id: "child-a",
           name: "AChild",
-          bindings: { driverPath: '"[" + properties.prefix + "]path"' },
+          bindings: { driverPath: '"[" + properties.prefix.value + "]path"' },
         }),
       ]),
     };
-    const rows = buildResolvedUdtRows(parent({ properties: { prefix: "instance" } }), defs);
+    const rows = buildResolvedUdtRows(
+      parent({ properties: { prefix: { value: "instance", required: true } } }),
+      defs,
+    );
     expect(rows.find((item) => item.id === "tag-1:child-a")?.driverPath).toBe("[instance]path");
+  });
+
+  it("resolves child bindings with instance property overrides", () => {
+    const defs = {
+      Motor: definition([
+        child({
+          id: "child-a",
+          name: "AChild",
+          bindings: { driverPath: '"[" + properties.prefix.value + "]path"' },
+        }),
+      ]),
+    };
+
+    const rows = buildResolvedUdtRows(
+      parent({
+        udtOverrides: {
+          properties: { prefix: { value: "instance", required: true } },
+        },
+      }),
+      defs,
+    );
+
+    expect(rows.find((item) => item.id === "tag-1:child-a")?.driverPath).toBe("[instance]path");
+  });
+
+  it("inherits effective parent fields when building child tags", () => {
+    const defs = {
+      Motor: definition([child({ id: "child-a", name: "AChild", readonly: null })]),
+    };
+
+    const rows = buildResolvedUdtRows(
+      parent({ readonly: false, udtOverrides: { readonly: true } }),
+      defs,
+    );
+
+    expect(rows.find((item) => item.id === "tag-1:child-a")?.readonly).toBe(true);
+  });
+
+  it("keeps bindings defined on UDT definition children", () => {
+    const defs = {
+      Motor: definition([
+        child({
+          id: "child-a",
+          name: "AChild",
+          bindings: { driverPath: '"ns=1;s=definition"' },
+        }),
+      ]),
+    };
+    const rows = buildResolvedUdtRows(parent(), defs);
+
+    const built = rows.find((item) => item.id === "tag-1:child-a")!;
+    expect(built.bindings).toEqual({
+      driverPath: '"ns=1;s=definition"',
+    });
+    expect(applyUdtOverrides(built).bindings).toEqual({
+      driverPath: '"ns=1;s=definition"',
+    });
+  });
+
+  it("merges instance binding overrides over definition bindings", () => {
+    const defs = {
+      Motor: definition([
+        child({
+          id: "child-a",
+          name: "AChild",
+          bindings: { driverPath: '"ns=1;s=definition"', unit: '"V"' },
+        }),
+      ]),
+    };
+    const preserved = new Map<string, TagOptionsInput>([
+      [
+        "tag-1:child-a",
+        {
+          ...parent(),
+          id: "tag-1:child-a",
+          name: "AChild",
+          dataType: "Double",
+          parentTagId: "tag-1",
+          udtDefinitionChildId: "child-a",
+          udtOverrides: { bindings: { unit: '"A"' } },
+        },
+      ],
+    ]);
+    const rows = buildResolvedUdtRows(parent(), defs, preserved);
+
+    const built = rows.find((item) => item.id === "tag-1:child-a")!;
+    expect(built.bindings).toEqual({
+      driverPath: '"ns=1;s=definition"',
+      unit: '"V"',
+    });
+    expect(applyUdtOverrides(built).bindings).toEqual({
+      driverPath: '"ns=1;s=definition"',
+      unit: '"A"',
+    });
+  });
+
+  it("does not erase definition bindings when instance overrides bindings are null", () => {
+    const defs = {
+      Motor: definition([
+        child({
+          id: "child-a",
+          name: "AChild",
+          bindings: { driverPath: '"ns=1;s=definition"' },
+        }),
+      ]),
+    };
+    const preserved = new Map<string, TagOptionsInput>([
+      [
+        "tag-1:child-a",
+        {
+          ...parent(),
+          id: "tag-1:child-a",
+          name: "AChild",
+          dataType: "Double",
+          parentTagId: "tag-1",
+          udtDefinitionChildId: "child-a",
+          udtOverrides: { bindings: null },
+        },
+      ],
+    ]);
+    const rows = buildResolvedUdtRows(parent(), defs, preserved);
+
+    const built = rows.find((item) => item.id === "tag-1:child-a")!;
+    expect(built.bindings).toEqual({
+      driverPath: '"ns=1;s=definition"',
+    });
+    expect(applyUdtOverrides(built).bindings).toEqual({
+      driverPath: '"ns=1;s=definition"',
+    });
   });
 });

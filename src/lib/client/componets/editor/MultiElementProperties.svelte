@@ -3,15 +3,18 @@
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
   import type { ElementRecord } from "$lib/elements/elementTypes";
-  import { evaluateExpression, type BindingContext } from "$lib/client/editor/elementExpressions";
+  import type { BindingContext } from "$lib/client/editor/elementExpressions";
+  import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
   import { formatBindingResult } from "$lib/client/editor/bindings";
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
   import {
     coerceAttributeValue,
     getBindingMap,
+    getElementProperties,
     getStyle,
     getTopLevelAttributes,
     setBinding,
+    setElementPropertyValue,
     setStyleProperty,
     setTopLevelAttribute,
     type AttributeBindingScope,
@@ -61,7 +64,9 @@
   let attributeKeys = $derived(
     commonKeysFor(
       elements.map((element) => ({
-        ...getTopLevelAttributes(element),
+        ...(bindingScope === "props"
+          ? getElementProperties(element)
+          : getTopLevelAttributes(element)),
         ...getBindingMap(element, bindingScope),
       })),
     ),
@@ -94,7 +99,7 @@
 
   function evaluateBinding(element: ElementRecord, expression: string) {
     if (!expression.trim()) return { result: "", error: null };
-    const evaluation = evaluateExpression(expression, bindingContext(element));
+    const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext(element));
     if (evaluation.isErr()) {
       return { result: "", error: neverThrowErrorToString(evaluation.error) };
     }
@@ -126,9 +131,21 @@
 
   let attributeRows = $derived(
     attributeKeys.map((key) => {
-      const common = commonAttributeValues(
-        elements.map((element) => getTopLevelAttributes(element)[key] ?? ""),
+      const values = elements.map((element) => {
+        if (bindingScope === "props") {
+          return getElementProperties(element)[key]?.value ?? "";
+        }
+        return getTopLevelAttributes(element)[key] ?? "";
+      });
+      const common = commonAttributeValues(values);
+      const propertyValues = elements.map((element) =>
+        bindingScope === "props" ? getElementProperties(element)[key] : undefined,
       );
+      const descriptions = propertyValues.map((property) => property?.description ?? "");
+      const commonDescription = commonStrings(descriptions);
+      const required =
+        bindingScope === "props" &&
+        propertyValues.some((property) => property?.required ?? true);
       const binding = commonBinding(bindingScope, key);
       const result = binding.value
         ? commonResult(bindingScope, key, binding.value)
@@ -140,6 +157,8 @@
         result: result.result,
         error: result.error,
         placeholder: common.mixed ? "<multiple_values>" : undefined,
+        description: commonDescription.mixed ? undefined : commonDescription.value || undefined,
+        required,
       } satisfies ElementBindingRowData;
     }),
   );
@@ -179,9 +198,20 @@
   function addAttribute(key: string, value: string) {
     if (!key.trim()) return false;
     if (attributeKeys.includes(key)) return false;
-    updateAll((element) => ({
-      attributes: setTopLevelAttribute(element, key, coerceAttributeValue(undefined, value)),
-    }));
+    updateAll((element) =>
+      bindingScope === "props"
+        ? {
+            properties: setElementPropertyValue(
+              element,
+              key,
+              coerceAttributeValue(undefined, value),
+              { required: false },
+            ),
+          }
+        : {
+            attributes: setTopLevelAttribute(element, key, coerceAttributeValue(undefined, value)),
+          },
+    );
     return true;
   }
 
@@ -195,13 +225,23 @@
   }
 
   function saveAttribute(row: ElementBindingRowData, raw: string) {
-    updateAll((element) => ({
-      attributes: setTopLevelAttribute(
-        element,
-        row.key,
-        coerceAttributeValue(getTopLevelAttributes(element)[row.key], raw),
-      ),
-    }));
+    updateAll((element) =>
+      bindingScope === "props"
+        ? {
+            properties: setElementPropertyValue(
+              element,
+              row.key,
+              raw === "" ? null : coerceAttributeValue(getElementProperties(element)[row.key]?.value, raw),
+            ),
+          }
+        : {
+            attributes: setTopLevelAttribute(
+              element,
+              row.key,
+              coerceAttributeValue(getTopLevelAttributes(element)[row.key], raw),
+            ),
+          },
+    );
   }
 
   function saveStyle(row: ElementBindingRowData, raw: string) {
@@ -217,8 +257,11 @@
   }
 
   function removeAttribute(row: ElementBindingRowData) {
+    if (row.required) return;
     updateAll((element) => ({
-      attributes: setTopLevelAttribute(element, row.key, null),
+      ...(bindingScope === "props"
+        ? { properties: setElementPropertyValue(element, row.key, null) }
+        : { attributes: setTopLevelAttribute(element, row.key, null) }),
       bindings: setBinding(element, bindingScope, row.key, ""),
     }));
   }

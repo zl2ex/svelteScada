@@ -1,9 +1,11 @@
 import type {
   AttributeValue,
   ElementAttributes,
+  ElementProperties,
   ElementRecord,
   ElementStyle,
 } from "$lib/elements/elementTypes";
+import type { PropertyValue } from "$lib/propertyValue";
 import { updateBinding } from "$lib/client/editor/bindings";
 
 export type AttributeBindingScope = "attributes" | "props";
@@ -16,10 +18,14 @@ export type ElementBindingRowData = {
   result: string;
   error: string | null;
   placeholder?: string;
+  description?: string;
+  required?: boolean;
 };
 
 export function attributeBindingScope(element: ElementRecord): AttributeBindingScope {
-  return element.kind === "user-component" ? "props" : "attributes";
+  return element.kind === "user-component" || element.kind === "base-component"
+    ? "props"
+    : "attributes";
 }
 
 export function getBindingMap(
@@ -31,6 +37,47 @@ export function getBindingMap(
 
 export function getTopLevelAttributes(element: ElementRecord): Record<string, AttributeValue> {
   return { ...element.attributes };
+}
+
+export function getElementProperties(element: ElementRecord): ElementProperties {
+  return { ...element.properties };
+}
+
+export function setElementProperty(
+  element: ElementRecord,
+  key: string,
+  value: PropertyValue | null,
+): ElementProperties {
+  const properties: ElementProperties = { ...element.properties };
+  if (value === null) delete properties[key];
+  else properties[key] = value;
+  return properties;
+}
+
+export function setElementPropertyValue(
+  element: ElementRecord,
+  key: string,
+  value: AttributeValue | null,
+  metadata?: Partial<Omit<PropertyValue, "value">>,
+): ElementProperties {
+  const properties = getElementProperties(element);
+  if (value === null) {
+    delete properties[key];
+    return properties;
+  }
+  properties[key] = {
+    ...(properties[key] ?? { required: true }),
+    ...metadata,
+    value,
+  };
+  return properties;
+}
+
+export function removeElementPropertyRow(element: ElementRecord, key: string) {
+  return {
+    properties: setElementProperty(element, key, null),
+    bindings: setBinding(element, "props", key, ""),
+  };
 }
 
 export function getStyle(element: ElementRecord): ElementStyle {

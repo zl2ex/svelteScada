@@ -83,10 +83,10 @@ afterEach(() => {
 
 describe("expression sandbox", () => {
   it("evaluates expressions against the provided scope", () => {
-    const result = evaluateSandboxExpression('tagValue("tag").value * 2 + props.offset', {
+    const result = evaluateSandboxExpression('tagValue("tag").value * 2 + props.offset.value', {
       ...bindingScope(),
       tagValue: (lookup: string) => (lookup === "tag" ? { value: 5 } : undefined),
-      props: { offset: 1 },
+      props: { offset: { value: 1, required: true } },
     });
 
     expectExpressionValue(result, 11);

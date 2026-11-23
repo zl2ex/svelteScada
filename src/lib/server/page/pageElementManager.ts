@@ -4,7 +4,7 @@ import { db } from "$lib/server/sqlite/db";
 import { logger } from "$lib/server/pino/logger";
 import { elements, pages, user_components, type ElementSelect } from "$lib/sqlite/tables";
 import type { ElementOwner, ElementRecord } from "$lib/elements/elementTypes";
-import { elementContainerTypeError, elementParentError } from "$lib/elements/elementTypes";
+import { elementParentError } from "$lib/elements/elementTypes";
 import {
   elementClosureTable,
   elementOwnerScope,
@@ -146,14 +146,6 @@ export class ElementManager {
       } as const satisfies NeverThrowError);
     }
 
-    const containerError = elementContainerTypeError(parsed.data);
-    if (containerError) {
-      return err({
-        reason: "INVALID_CONTAINER_TYPE",
-        cause: containerError,
-      } as const satisfies NeverThrowError);
-    }
-
     const parent = this.#validateParent(owner, parsed.data);
     if (parent.isErr()) return err(parent.error);
 
@@ -240,14 +232,6 @@ export class ElementManager {
       } as const satisfies NeverThrowError);
     }
 
-    const containerError = elementContainerTypeError(parsed.data);
-    if (containerError) {
-      return err({
-        reason: "INVALID_CONTAINER_TYPE",
-        cause: containerError,
-      } as const satisfies NeverThrowError);
-    }
-
     const parent = this.#validateParent(owner, parsed.data);
     if (parent.isErr()) return err(parent.error);
 
@@ -285,8 +269,8 @@ export class ElementManager {
           referencedComponentId: parsed.data.referencedComponentId,
           name: parsed.data.name,
           text: parsed.data.text,
-          containerType: parsed.data.containerType,
           attributes: parsed.data.attributes,
+          properties: parsed.data.properties,
           style: parsed.data.style,
           styleClass: parsed.data.styleClass,
           bindings: normalizeBindings(parsed.data.kind, parsed.data.bindings),
@@ -326,7 +310,7 @@ export class ElementManager {
 
   #validateParent(
     owner: ElementOwner,
-    element: Pick<ElementRecord, "id" | "parentId" | "kind" | "tag" | "containerType">,
+    element: Pick<ElementRecord, "id" | "parentId" | "kind" | "tag">,
   ) {
     const { id, parentId } = element;
     if (parentId === null) {
@@ -386,7 +370,7 @@ export class ElementManager {
 
   #validateChildren(
     owner: ElementOwner,
-    element: Pick<ElementRecord, "id" | "kind" | "tag" | "containerType">,
+    element: Pick<ElementRecord, "id" | "kind" | "tag">,
   ) {
     const rows = elementClosureTable.getAll(elementOwnerScope(owner));
     if (rows.isErr()) return err(rows.error);

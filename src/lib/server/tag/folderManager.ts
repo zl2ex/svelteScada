@@ -7,24 +7,31 @@ import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export class FolderManager {
   opcuaServer: OPCUAServer | undefined;
-  rootFolder: UAObject | undefined;
+  rootOpcuaFolderObject: UAObject | undefined;
+  rootFolder: OpcuaFolder | undefined;
   #opcuaFolders: Map<string, OpcuaFolder> = new Map();
 
   constructor() {}
 
   initOpcuaServer(opcuaServer: OPCUAServer, rootFolder: UAObject) {
     this.opcuaServer = opcuaServer;
-    this.rootFolder = rootFolder;
+    this.rootOpcuaFolderObject = rootFolder;
+    const root = this.#createOpcuaFolder({ id: "root", name: "root", parentId: null });
+    if (root.isErr()) {
+      throw root.error;
+    }
+    this.rootFolder = root.value;
   }
 
   #createOpcuaFolder(folder: ClosureTableNode) {
-    if (!this.opcuaServer?.engine.addressSpace || !this.rootFolder) {
+    if (!this.opcuaServer?.engine.addressSpace || !this.rootOpcuaFolderObject) {
       throw Error(
         `[FolderManager] createOpcuaFolder() ocpuaServer not initalised, call initOpcuaServer() first`,
       );
     }
 
-    const parent = this.#opcuaFolders.get(folder.parentId ?? "")?.uaObject ?? this.rootFolder;
+    const parent =
+      this.#opcuaFolders.get(folder.parentId ?? "")?.uaObject ?? this.rootOpcuaFolderObject;
 
     const result = OpcuaFolder.create(this.opcuaServer.engine.addressSpace, parent, folder);
 
@@ -130,7 +137,7 @@ export class FolderManager {
   }
 
   get(id: string | null | undefined) {
-    if (!id) return undefined;
+    if (!id) return this.rootFolder;
     return this.#opcuaFolders.get(id);
   }
 

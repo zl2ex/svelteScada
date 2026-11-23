@@ -1,14 +1,18 @@
 <script lang="ts">
   import {
+    ChartNoAxesCombinedIcon,
+    CircleAlertIcon,
     Copy,
     FolderIcon,
     FolderPlus,
+    KeyboardIcon,
     Link2Icon,
     LoaderIcon,
     PencilIcon,
     Scissors,
     TagIcon,
     TagPlus,
+    TimelineIcon,
     Trash2,
   } from "@lucide/svelte";
   import {
@@ -22,6 +26,7 @@
 
   import type { ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
   import type { TagProperties } from "$lib/sqlite/tagProperties";
+  import type { PropertyMap } from "$lib/propertyValue";
   import { attempt } from "$lib/util/attempt";
   import { newId } from "$lib/util/newId";
   import { err, ok } from "neverthrow";
@@ -44,15 +49,13 @@
   } from "$lib/util/neverThrow";
   import { undoManager } from "$lib/client/history/undoManager";
   import { focusOnMount } from "$lib/client/util/use";
-  import BindingEditor from "./BindingEditor.svelte";
   import TagEditorPopover from "./TagEditorPopover.svelte";
-  import { buildResolvedUdtRows } from "$lib/client/editor/udtBuilder";
+  import { buildEffectiveUdtRows } from "$lib/client/editor/udtBuilder";
   import { rebuildUdtInstances } from "$lib/client/editor/udtInstanceRebuild";
-  import { formatBindingResult, updateBinding } from "$lib/client/editor/bindings";
-  import { evaluateTagBinding, resolveTagBindings } from "$lib/client/editor/tagExpressions";
-  import type { TagBindingKey } from "$lib/tagBindings";
+  import { updateBinding } from "$lib/client/editor/bindings";
+  import { getScriptEvaluatorContext } from "$lib/client/editor/scriptEvaluatorContext";
+  import { tagBindingKeys, type TagBindingKey } from "$lib/tagBindings";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
-  import { tagWriteLevels, type TagWriteLevel } from "$lib/permissions/constants";
   import {
     readTreeDragData,
     writeTreeDragData,
@@ -60,13 +63,13 @@
   } from "$lib/client/util/dragging";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
   import { getTagCollectionContext } from "$lib/client/editor/tagCollectionContext";
+  import { isTagOptions, isUdtTag } from "$lib/util/tag";
+  import { inheritedTagFieldValue } from "$lib/client/editor/udtOverrides";
 
   let {
     tagFolders,
-    tags,
   }: {
     tagFolders: Record<string, ClosureTableNode>;
-    tags: Record<string, TagOptionsInput>;
   } = $props();
 
   const editor = getEditorContext();
@@ -74,6 +77,7 @@
   const tagValueMap = getTagValueMapContext();
   const udtDefinitionsCollection = getUdtDefinitionsContext();
   const tagPatchesCollection = getTagCollectionContext();
+  const editorEvaluator = getScriptEvaluatorContext();
 
   let udtDefinitionsByName = $derived(
     Object.fromEntries(
@@ -115,29 +119,23 @@
   undoManager.register("folders", tagFolderPatchesCollection);
 
   onMount(() => {
+    rebuildUdtInstances(tagPatchesCollection, udtDefinitionsCollection);
+
     return () => {
       undoManager.unregister("folders");
       tagFolderPatchesCollection.dispose();
     };
   });
 
+  /**
+   * Returns the effective property map stored on the tag row.
+   */
   function propertiesForTag(tag: TagOptionsInput): TagProperties {
-    const definition = udtDefinitionsByName[tag.dataType];
-    const instanceProperties =
-      tag.properties &&
-      typeof tag.properties === "object" &&
-      !Array.isArray(tag.properties)
-        ? (tag.properties as TagProperties)
-        : {};
-
-    return {
-      ...(definition?.properties ?? {}),
-      ...instanceProperties,
-    };
+    return (tag.properties ?? {}) as TagProperties;
   }
 
   function resolvedTagConfig(config: TagOptionsInput) {
-    return resolveTagBindings(config, propertiesForTag(config));
+    return editorEvaluator.resolveTagConfig(config);
   }
 
   function saveTagConfig(node: TagOptionsInput, changes: Partial<Omit<TagOptionsInput, "id">>) {
@@ -154,35 +152,25 @@
     }
 
     tagPatchesCollection.addMany(
-      buildResolvedUdtRows({ ...resolved, udtDefinitionId: definition.id }, udtDefinitionsByName),
+      buildEffectiveUdtRows({ ...resolved, udtDefinitionId: definition.id }, udtDefinitionsByName),
     );
   }
 
+  /**
+   * Returns whether a top-level tag binding is currently configured.
+   */
+  /**
+   * Returns the effective binding expressions for a tag, including UDT instance overrides.
+   */
+  function bindingsForTag(node: TagOptionsInput) {
+    return { ...(node.bindings ?? {}), ...(node.udtOverrides?.bindings ?? {}) };
+  }
+
+  /**
+   * Returns whether a tag binding is configured.
+   */
   function isTagBound(node: TagOptionsInput, key: TagBindingKey) {
-    return Boolean(node.bindings?.[key]?.trim());
-  }
-
-  function tagBindingEvaluation(node: TagOptionsInput, key: TagBindingKey) {
-    const expression = node.bindings?.[key];
-    if (!expression?.trim()) return { result: "", error: null };
-
-    const evaluation = evaluateTagBinding(expression, {
-      tagConfig: node,
-      properties: propertiesForTag(node),
-    });
-    if (evaluation.isErr()) {
-      return { result: "", error: neverThrowErrorToString(evaluation.error) };
-    }
-
-    return { result: formatBindingResult(evaluation.value), error: null };
-  }
-
-  function tagBindingResult(node: TagOptionsInput, key: TagBindingKey) {
-    return tagBindingEvaluation(node, key).result;
-  }
-
-  function tagBindingError(node: TagOptionsInput, key: TagBindingKey) {
-    return tagBindingEvaluation(node, key).error;
+    return Boolean(bindingsForTag(node)[key]?.trim());
   }
 
   let activeTagId = $state<string | null>(null);
@@ -194,6 +182,14 @@
       const tag = tagPatchesCollection.state[id];
       return tag ? [tag] : [];
     }),
+  );
+
+  let lockedPropertyKeys = $derived(
+    new Set(
+      selectedTags.flatMap((tag) =>
+        Object.keys(udtDefinitionsByName[tag.dataType]?.properties ?? {}),
+      ),
+    ),
   );
 
   function openTagEditor(tag: TagOptionsInput) {
@@ -214,6 +210,21 @@
     }
   });
 
+  function isUdtInstance(tag: TagOptionsInput): boolean {
+    return Boolean(
+      tag.udtDefinitionChildId || tag.udtDefinitionId || udtDefinitionsByName[tag.dataType],
+    );
+  }
+
+  function sameValue(a: unknown, b: unknown): boolean {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  /**
+   * Saves edits to selected tags.
+   * UDT rows write effective values to the top level and keep explicit override differences
+   * in `udtOverrides` for indicators and later reset behavior.
+   */
   function saveSelectedTags(changes: Partial<Omit<TagOptionsInput, "id">>) {
     if (selectedTags.length === 0) return;
 
@@ -222,12 +233,48 @@
     undoManager.beginTransaction();
     tagPatchesCollection.updateMany(
       selectedTags.map((tag) => {
-        const resolved = resolvedTagConfig({ ...tag, ...changes });
-        const definition = udtDefinitionsByName[resolved.dataType];
-        resolved.udtDefinitionId = definition?.id ?? null;
+        const next = resolvedTagConfig({ ...tag, ...changes });
+
+        if (!isUdtInstance(tag)) {
+          return { id: tag.id, changes: next };
+        }
+
+        const overrides = { ...(tag.udtOverrides ?? {}) };
+
+        for (const key of Object.keys(changes)) {
+          if (key === "properties" || key === "bindings" || key === "id") continue;
+
+          if (["dataType", "folderId", "name", "parentTagId"].includes(key)) {
+            delete (overrides as Record<string, unknown>)[key];
+            continue;
+          }
+
+          const nextValue = (next as Record<string, unknown>)[key];
+          const inherited = inheritedTagFieldValue(
+            tag,
+            key as keyof TagOptionsInput,
+            udtDefinitionsByName,
+            tagPatchesCollection.state,
+          );
+
+          if (sameValue(nextValue, inherited)) {
+            delete (overrides as Record<string, unknown>)[key];
+          } else {
+            (overrides as Record<string, unknown>)[key] = nextValue;
+          }
+        }
+
+        if ("dataType" in changes) {
+          const definition = udtDefinitionsByName[next.dataType];
+          next.udtDefinitionId = definition?.id ?? null;
+        }
+
         return {
           id: tag.id,
-          changes: resolved,
+          changes: {
+            ...next,
+            udtOverrides: Object.keys(overrides).length > 0 ? overrides : null,
+          },
         };
       }),
     );
@@ -238,54 +285,260 @@
     }
   }
 
+  /**
+   * Saves property edits, writing effective properties to the top level and keeping
+   * explicit property differences in `udtOverrides.properties`.
+   */
+  function updateSelectedTagProperties(updater: (properties: TagProperties) => TagProperties) {
+    if (selectedTags.length === 0) return;
+    undoManager.beginTransaction();
+    tagPatchesCollection.updateMany(
+      selectedTags.map((tag) => {
+        const nextProperties = updater(propertiesForTag(tag));
+
+        if (!isUdtInstance(tag)) {
+          return {
+            id: tag.id,
+            changes: { properties: nextProperties, updatedAt: Date.now() },
+          };
+        }
+
+        const overrides = { ...(tag.udtOverrides ?? {}) };
+        const propertyOverrides = { ...(overrides.properties ?? {}) };
+        const parent = tag.parentTagId ? tagPatchesCollection.state[tag.parentTagId] : undefined;
+        const baseProperties = (
+          tag.udtDefinitionChildId
+            ? (parent?.properties ?? {})
+            : (udtDefinitionsByName[tag.dataType]?.properties ?? {})
+        ) as TagProperties;
+
+        const keys = new Set([
+          ...Object.keys(baseProperties),
+          ...Object.keys(nextProperties),
+          ...Object.keys(propertyOverrides),
+        ]);
+
+        for (const key of keys) {
+          const nextValue = nextProperties[key];
+          const baseValue = baseProperties[key];
+          if (nextValue === undefined || sameValue(nextValue, baseValue)) {
+            delete propertyOverrides[key];
+          } else {
+            propertyOverrides[key] = nextValue as PropertyMap[string];
+          }
+        }
+
+        if (Object.keys(propertyOverrides).length > 0) {
+          overrides.properties = propertyOverrides;
+        } else {
+          delete overrides.properties;
+        }
+
+        return {
+          id: tag.id,
+          changes: {
+            properties: nextProperties,
+            udtOverrides: Object.keys(overrides).length > 0 ? overrides : null,
+            updatedAt: Date.now(),
+          },
+        };
+      }),
+    );
+    undoManager.endTransaction();
+    rebuildUdtInstances(tagPatchesCollection, udtDefinitionsCollection);
+  }
+
   function selectedBindingValue(key: TagBindingKey) {
     if (selectedTags.length === 0) return "";
-    const first = selectedTags[0].bindings?.[key] ?? "";
-    return selectedTags.every((tag) => (tag.bindings?.[key] ?? "") === first) ? first : "";
+    const first = bindingsForTag(selectedTags[0])[key] ?? "";
+    return selectedTags.every((tag) => (bindingsForTag(tag)[key] ?? "") === first) ? first : "";
   }
 
   function selectedBindingMixed(key: TagBindingKey) {
     if (selectedTags.length === 0) return false;
-    const first = selectedTags[0].bindings?.[key] ?? "";
-    return selectedTags.some((tag) => (tag.bindings?.[key] ?? "") !== first);
+    const first = bindingsForTag(selectedTags[0])[key] ?? "";
+    return selectedTags.some((tag) => (bindingsForTag(tag)[key] ?? "") !== first);
   }
 
-  function selectedBindingComputed(key: TagBindingKey) {
+  /**
+   * Returns bound/mixed state for a field without evaluating the binding.
+   */
+  function selectedBindingState(key: TagBindingKey) {
     const boundTags = selectedTags.filter((tag) => isTagBound(tag, key));
-    if (boundTags.length === 0) {
-      return { bound: false, mixed: false, value: undefined };
-    }
-
-    const values = boundTags.map((tag) => tagBindingResult(tag, key));
-    const mixed =
-      boundTags.length !== selectedTags.length || values.some((value) => value !== values[0]);
-
     return {
-      bound: true,
-      mixed,
-      value: mixed ? undefined : values[0],
+      bound: boundTags.length > 0,
+      mixed: boundTags.length > 0 && boundTags.length !== selectedTags.length,
     };
   }
 
+  /**
+   * Caches binding errors for selected tags so the popover can display them without
+   * evaluating binding values again.
+   */
+  let selectedBindingErrors = $derived.by(() => {
+    const errors = new Map<string, string | null>();
+
+    for (const tag of selectedTags) {
+      const bindings = bindingsForTag(tag);
+      for (const key of tagBindingKeys) {
+        const expression = bindings[key];
+        if (!expression?.trim()) continue;
+
+        const evaluation = editorEvaluator.evaluateTagFor(tag, expression);
+        errors.set(
+          `${tag.id}:${key}`,
+          evaluation.isErr() ? neverThrowErrorToString(evaluation.error) : null,
+        );
+      }
+    }
+
+    return errors;
+  });
+
+  /**
+   * Returns the cached binding error for the first selected tag when expressions are not mixed.
+   */
   function selectedBindingError(key: TagBindingKey) {
     if (selectedTags.length === 0 || selectedBindingMixed(key)) return null;
-    return tagBindingError(selectedTags[0], key);
+    return selectedBindingErrors.get(`${selectedTags[0].id}:${key}`) ?? null;
   }
 
+  /**
+   * Saves a binding expression for the selected tags.
+   * For UDT instances, the expression is stored as an override binding and its resolved value
+   * is written directly to the effective top-level field sent to the server.
+   */
   function saveSelectedBinding(key: TagBindingKey, expression: string) {
     if (selectedTags.length === 0) return;
 
     undoManager.beginTransaction();
     tagPatchesCollection.updateMany(
       selectedTags.map((tag) => {
-        const bindings = updateBinding(tag.bindings, key, null, expression);
+        const overrides = { ...(tag.udtOverrides ?? {}) };
+        const bindingOverrides = { ...(overrides.bindings ?? {}) };
+        const effectiveBindings = bindingsForTag(tag);
+        const nextBindings = updateBinding(effectiveBindings, key, null, expression);
+
+        if (!isUdtInstance(tag)) {
+          return {
+            id: tag.id,
+            changes: resolvedTagConfig({ ...tag, bindings: nextBindings }),
+          };
+        }
+
+        if (expression.trim()) {
+          bindingOverrides[key] = expression;
+          delete (overrides as Record<string, unknown>)[key];
+          overrides.bindings = bindingOverrides;
+
+          const evaluation = editorEvaluator.evaluateTagFor(tag, expression);
+          const changes: Record<string, unknown> = {
+            udtOverrides: overrides,
+          };
+          if (evaluation.isOk() && evaluation.value !== undefined) {
+            changes[key] = evaluation.value;
+          }
+
+          return {
+            id: tag.id,
+            changes: changes as Partial<Omit<TagOptionsInput, "id">>,
+          };
+        }
+
+        delete bindingOverrides[key];
+        if (Object.keys(bindingOverrides).length > 0) {
+          overrides.bindings = bindingOverrides;
+        } else {
+          delete overrides.bindings;
+        }
+        delete (overrides as Record<string, unknown>)[key];
+
+        const baseExpression = tag.bindings?.[key];
+        const changes: Record<string, unknown> = {
+          udtOverrides: Object.keys(overrides).length > 0 ? overrides : null,
+        };
+
+        if (baseExpression?.trim()) {
+          const evaluation = editorEvaluator.evaluateTagFor(
+            { ...tag, ...overrides },
+            baseExpression,
+          );
+          if (evaluation.isOk() && evaluation.value !== undefined) {
+            changes[key] = evaluation.value;
+          }
+        } else {
+          changes[key] = inheritedTagFieldValue(
+            tag,
+            key,
+            udtDefinitionsByName,
+            tagPatchesCollection.state,
+          );
+        }
+
         return {
           id: tag.id,
-          changes: resolvedTagConfig({ ...tag, bindings }),
+          changes: changes as Partial<Omit<TagOptionsInput, "id">>,
         };
       }),
     );
     undoManager.endTransaction();
+  }
+
+  function hasSelectedPropertyOverride(key: string) {
+    return selectedTags.some(
+      (tag) =>
+        !!tag.udtOverrides?.properties &&
+        Object.prototype.hasOwnProperty.call(tag.udtOverrides.properties, key),
+    );
+  }
+
+  /**
+   * Clears a property override and restores the inherited/default property value.
+   */
+  function clearSelectedPropertyOverride(key: string) {
+    if (selectedTags.length === 0) return;
+
+    const targets = selectedTags.filter(
+      (tag) =>
+        !!tag.udtOverrides?.properties &&
+        Object.prototype.hasOwnProperty.call(tag.udtOverrides.properties, key),
+    );
+    if (targets.length === 0) return;
+
+    undoManager.beginTransaction();
+    tagPatchesCollection.updateMany(
+      targets.map((tag) => {
+        const udtOverrides = { ...(tag.udtOverrides ?? {}) };
+        const explicitProperties = { ...(udtOverrides.properties ?? {}) };
+        delete explicitProperties[key];
+        if (Object.keys(explicitProperties).length > 0) {
+          udtOverrides.properties = explicitProperties;
+        } else {
+          delete udtOverrides.properties;
+        }
+
+        const parent = tag.parentTagId ? tagPatchesCollection.state[tag.parentTagId] : undefined;
+        const baseProperties = (
+          tag.udtDefinitionChildId
+            ? (parent?.properties ?? {})
+            : (udtDefinitionsByName[tag.dataType]?.properties ?? {})
+        ) as TagProperties;
+        const properties = { ...(tag.properties ?? {}) } as TagProperties;
+        const inheritedProperty = baseProperties[key];
+        if (inheritedProperty) properties[key] = inheritedProperty;
+        else delete properties[key];
+
+        return {
+          id: tag.id,
+          changes: {
+            properties,
+            udtOverrides: Object.keys(udtOverrides).length > 0 ? udtOverrides : null,
+          },
+        };
+      }),
+    );
+    undoManager.endTransaction();
+    rebuildUdtInstances(tagPatchesCollection, udtDefinitionsCollection);
   }
 
   function hasSelectedOverride(key: string) {
@@ -294,6 +547,9 @@
     );
   }
 
+  /**
+   * Clears a top-level override and restores the value inherited from the UDT definition.
+   */
   function clearSelectedOverride(key: string) {
     if (selectedTags.length === 0) return;
 
@@ -307,10 +563,31 @@
       targets.map((tag) => {
         const udtOverrides = { ...(tag.udtOverrides ?? {}) };
         delete (udtOverrides as Record<string, unknown>)[key];
-        return { id: tag.id, changes: { udtOverrides } };
+        if (udtOverrides.bindings) {
+          const bindings = { ...udtOverrides.bindings };
+          delete bindings[key as TagBindingKey];
+          if (Object.keys(bindings).length > 0) udtOverrides.bindings = bindings;
+          else delete udtOverrides.bindings;
+        }
+
+        const changes = {
+          udtOverrides: Object.keys(udtOverrides).length > 0 ? udtOverrides : null,
+          [key]: inheritedTagFieldValue(
+            tag,
+            key as keyof TagOptionsInput,
+            udtDefinitionsByName,
+            tagPatchesCollection.state,
+          ),
+        };
+
+        return {
+          id: tag.id,
+          changes: changes as Partial<Omit<TagOptionsInput, "id">>,
+        };
       }),
     );
     undoManager.endTransaction();
+    rebuildUdtInstances(tagPatchesCollection, udtDefinitionsCollection);
   }
 
   let dragging = $state<TreeDragPayload | null>(null);
@@ -540,16 +817,6 @@
     return (
       Object.hasOwn(node, "id") && Object.hasOwn(node, "name") && Object.hasOwn(node, "parentId")
     );
-  }
-
-  function isTagOptions(node: object): node is TagOptionsInput {
-    return (
-      Object.hasOwn(node, "id") && Object.hasOwn(node, "name") && Object.hasOwn(node, "dataType")
-    );
-  }
-
-  function isUdtTag(node: TagOptionsInput) {
-    return node.udtDefinitionId != null;
   }
 
   function collectItems(values: string[]) {
@@ -1077,6 +1344,7 @@
 </script>
 
 {#snippet tagTrigger(node: TagOptionsInput, openEditor: () => void)}
+  {@const bindingError = editorEvaluator.tagError(node)}
   <span class="relative flex w-full min-w-0">
     <button
       type="button"
@@ -1086,7 +1354,11 @@
       class="w-full flex items-center justify-between gap-4 min-w-0 focus-visible:outline-none"
     >
       <div class="flex items-center gap-2 min-w-0 w-full">
-        <TagIcon class="size-4 shrink-0 opacity-60" />
+        {#if isUdtTag(node)}
+          <TimelineIcon class="size-5 shrink-0 opacity-60" />
+        {:else}
+          <TagIcon class="size-4 shrink-0 opacity-60" />
+        {/if}
         {#if renamingId === node.id}
           <input
             type="text"
@@ -1101,19 +1373,42 @@
           />
         {:else}
           <span class="truncate" title={node.dataType}>{node.name}</span>
-          {#if node.bindings}
-            <Link2Icon class="size-5 shrink-0 opacity-85" />
+
+          {#if node.trendEnabled}
+            <ChartNoAxesCombinedIcon class="size-4 shrink-0 opacity-85" title="trend active" />
           {/if}
+
+          {#if node.driverPath}
+            <KeyboardIcon class="size-4 shrink-0 opacity-85" title="driver connection active" />
+          {/if}
+
+          {#if node.bindings}
+            <Link2Icon class="size-4 shrink-0 opacity-85" title="bindings active" />
+          {/if}
+
+          <CircleAlertIcon
+            class={bindingError
+              ? "size-4 shrink-0 text-error-500 opacity-100"
+              : "size-4 shrink-0 text-error-500 opacity-0"}
+            aria-hidden={!bindingError}
+            title={bindingError
+              ? `${bindingError.scope}${bindingError.key ? `.${bindingError.key}` : ""}: ${bindingError.message}`
+              : undefined}
+          />
         {/if}
       </div>
       {#if renamingId !== node.id}
-        <TagInput
-          id={node.id}
-          label=""
-          class="py-0 px-2 border-none max-w-40 rounded-sm"
-          onclick={(ev) => ev.stopPropagation()}
-          onkeydown={(ev) => ev.stopPropagation()}
-        />
+        {#if isUdtTag(node)}
+          <span class="opacity-70">{node.dataType}</span>
+        {:else}
+          <TagInput
+            id={node.id}
+            label=""
+            class="py-0 px-2 border-none max-w-40 rounded-sm"
+            onclick={(ev) => ev.stopPropagation()}
+            onkeydown={(ev) => ev.stopPropagation()}
+          />
+        {/if}
       {/if}
     </button>
 
@@ -1342,19 +1637,16 @@
       bindingValue={selectedBindingValue}
       bindingMixed={selectedBindingMixed}
       bindingError={selectedBindingError}
-      bindingComputed={selectedBindingComputed}
+      bindingState={selectedBindingState}
       hasOverride={hasSelectedOverride}
+      propertyOverride={hasSelectedPropertyOverride}
+      onPropertyOverrideClear={clearSelectedPropertyOverride}
       onSave={saveSelectedTags}
       onBindingSave={saveSelectedBinding}
       onBindingRemove={(key) => saveSelectedBinding(key, "")}
       onClearOverride={clearSelectedOverride}
+      onPropertiesChange={updateSelectedTagProperties}
+      {lockedPropertyKeys}
     />
   {/if}
 </Popover>
-
-<style>
-  :global([data-drop="inside"]) {
-    outline: 2px solid var(--color-primary-500);
-    outline-offset: -2px;
-  }
-</style>

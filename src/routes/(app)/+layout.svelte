@@ -113,7 +113,7 @@
     <Portal>
       <Dialog.Backdrop class="fixed inset-0 bg-surface-50-950/75 backdrop-blur-sm" />
       <Dialog.Positioner class="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Content class="card w-full max-w-md p-6 shadow-2xl">
+        <Dialog.Content class="card w-full max-w-md p-6 shadow-2xl z-50">
           <header class="flex items-center gap-3">
             <div class="rounded-full preset-filled-error-500 p-2">
               <NetworkIcon class="size-5" />

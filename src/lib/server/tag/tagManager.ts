@@ -14,7 +14,6 @@ import { publishTagValue } from "../../../live/tags";
 import { tagFoldersClosureTable } from "../sqlite/util/tagClosureTable";
 import { udtManager } from "../../../hooks.server";
 import { normalizeTagOptions } from "./legacyNormalization";
-import type { UdtTagOverrides } from "./tag";
 
 export class TagManager {
   opcuaServer?: OPCUAServer;
@@ -263,7 +262,12 @@ export class TagManager {
     if (duplicate.isErr()) return err(duplicate.error);
 
     if (writeToDb) {
-      const written = attempt(() => db.insert(tables.tags).values(opts).run());
+      const written = attempt(() =>
+        db
+          .insert(tables.tags)
+          .values(opts as typeof tables.tags.$inferInsert)
+          .run(),
+      );
       if (written.isErr) {
         return err({
           reason: "DB_ERROR",
@@ -301,49 +305,6 @@ export class TagManager {
       next.udtDefinitionId = null;
     }
 
-    if (oldOptions.udtDefinitionChildId) {
-      const parent = oldOptions.parentTagId ? this.#tags.get(oldOptions.parentTagId) : undefined;
-      const parentOptions = parent ? this.#optionsOf(parent) : undefined;
-      const definition = parentOptions
-        ? udtManager.getUdtById(parentOptions.udtDefinitionId ?? "")
-        : undefined;
-      const child = definition?.getChild(oldOptions.udtDefinitionChildId);
-      if (definition && child) {
-        const oldOverrides = oldOptions.udtOverrides ?? {};
-        const requestedOverrides = tagUpdates.udtOverrides;
-        const overrides: UdtTagOverrides = {
-          ...(requestedOverrides ?? oldOverrides),
-        };
-
-        if (requestedOverrides) {
-          for (const key of Object.keys(oldOverrides)) {
-            if (!(key in requestedOverrides)) {
-              (next as Record<string, unknown>)[key] = (child as Record<string, unknown>)[key];
-            }
-          }
-        }
-
-        for (const [key, value] of Object.entries(next)) {
-          if (
-            [
-              "id",
-              "parentTagId",
-              "udtDefinitionId",
-              "udtDefinitionChildId",
-              "udtOverrides",
-            ].includes(key)
-          )
-            continue;
-          const oldValue = (oldOptions as Record<string, unknown>)[key];
-          if (oldValue === value) continue;
-          const definitionValue = (child as Record<string, unknown>)[key];
-          if (value === definitionValue) delete (overrides as Record<string, unknown>)[key];
-          else (overrides as Record<string, unknown>)[key] = value;
-        }
-        next.udtOverrides = overrides;
-      }
-    }
-
     const preservedChildren = existing.isOk() ? Object.values(existing.value.children) : [];
 
     if (oldOptions.parentTagId) {
@@ -358,7 +319,11 @@ export class TagManager {
     this.#tags.delete(id);
 
     const written = attempt(() =>
-      db.update(tables.tags).set(next).where(eq(tables.tags.id, id)).run(),
+      db
+        .update(tables.tags)
+        .set(next as typeof tables.tags.$inferInsert)
+        .where(eq(tables.tags.id, id))
+        .run(),
     );
     if (written.isErr) {
       return err({

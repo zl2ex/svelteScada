@@ -1,6 +1,6 @@
 import { goto } from "$app/navigation";
 import { toast } from "$lib/client/toast.svelte";
-import type { ElementAttributes, ElementRecord } from "$lib/elements/elementTypes";
+import type { ElementProperties, ElementRecord } from "$lib/elements/elementTypes";
 import type { TagValue } from "$lib/server/tag/tag";
 import type { ScriptEvent } from "$lib/client/editor/script/scriptApi";
 import {
@@ -9,7 +9,6 @@ import {
 } from "$lib/client/editor/script/scriptSandbox";
 import {
   createBindingScope,
-  evaluateExpression as evaluateContextExpression,
   type BindingContext as CommonBindingContext,
 } from "$lib/client/editor/expressions";
 import { errorToString, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
@@ -22,7 +21,7 @@ export type TagWrite = (
 ) => Promise<WireResult<{ success: true }, NeverThrowError>>;
 
 export type BindingContext = CommonBindingContext & {
-  props: ElementAttributes;
+  props: ElementProperties;
   element: ElementRecord;
 };
 
@@ -30,10 +29,6 @@ export type EventContext = BindingContext & {
   event: ScriptEvent;
   writeTag: TagWrite;
 };
-
-export function evaluateExpression(expression: string, context: BindingContext) {
-  return evaluateContextExpression(expression, context);
-}
 
 export async function runEventScript(script: string, context: EventContext) {
   if (!script.trim()) return;

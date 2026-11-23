@@ -36,6 +36,7 @@
     captureBoxChanges,
     readBox,
     readUnits,
+    snapBoxToGrid,
     type MoveableBox,
     type MoveableElement,
     type MoveableUnits,
@@ -99,6 +100,7 @@
   type GestureTarget = {
     target: MoveableElement;
     element: ElementRecord;
+    originBox: MoveableBox;
     start: MoveableBox;
     current: MoveableBox;
     units: MoveableUnits;
@@ -107,6 +109,8 @@
       attributes: ElementAttributes;
       sortIndex: number;
     };
+    baseStyle: ElementStyle;
+    baseAttributes: ElementAttributes;
     rect: DOMRect;
     scaleX: number;
     scaleY: number;
@@ -128,7 +132,7 @@
     sortIndex: number;
   };
 
-  let gesture: Gesture | null = null;
+  let gesture = $state.raw<Gesture | null>(null);
   let staticDrag: StaticDrag | null = null;
   let nudgeSession: Record<string, NudgeElementSnapshot> | null = null;
 
@@ -148,6 +152,7 @@
       return {
         target,
         element,
+        originBox: { ...start },
         start,
         current: { ...start },
         units: readUnits(element),
@@ -156,6 +161,8 @@
           attributes: { ...element.attributes },
           sortIndex: element.sortIndex,
         },
+        baseStyle: { ...element.style },
+        baseAttributes: { ...element.attributes },
         rect: target.getBoundingClientRect(),
         scaleX: 1,
         scaleY: 1,
@@ -163,10 +170,63 @@
     });
   }
 
+  function snapGestureBoxes(states: GestureTarget[]) {
+    const collection = editor.elementsCollection;
+    if (!collection) return;
+
+    let changedAny = false;
+
+    for (const state of states) {
+      if (isStaticElement(state.element)) continue;
+
+      const snapped = snapBoxToGrid(state.start);
+      if (
+        snapped.x === state.start.x &&
+        snapped.y === state.start.y &&
+        snapped.w === state.start.w &&
+        snapped.h === state.start.h
+      ) {
+        continue;
+      }
+
+      const changes = captureBoxChanges(
+        originalElement(state),
+        state.originBox,
+        snapped,
+        state.units,
+        state.target,
+        true,
+      );
+      if (!changes) continue;
+
+      state.start = snapped;
+      state.current = { ...snapped };
+      state.baseStyle = mergeStyleChanges(state.original.style, changes.style);
+      state.baseAttributes = mergeAttributeChanges(state.original.attributes, changes.attributes);
+      changedAny = true;
+    }
+
+    if (!changedAny) return;
+
+    collection.mutateStateWithoutHistory((records) => {
+      for (const state of states) {
+        if (isStaticElement(state.element)) continue;
+        const item = records[state.element.id];
+        if (!item) continue;
+        item.style = { ...state.baseStyle };
+        item.attributes = { ...state.baseAttributes };
+      }
+    });
+
+    flushSync();
+    moveable?.updateRect();
+  }
+
   function beginGesture(kind: GestureKind) {
     if (nudgeSession) commitNudgeSelection();
     gesture = { kind, states: createStates() };
     staticDrag = kind === "drag" ? { dx: 0, dy: 0 } : null;
+    if (kind === "drag" || kind === "resize") snapGestureBoxes(gesture.states);
   }
 
   function stateFor(target: MoveableElement, kind: GestureKind) {
@@ -179,6 +239,14 @@
       ...state.element,
       style: { ...state.original.style },
       attributes: { ...state.original.attributes },
+    };
+  }
+
+  function previewElement(state: GestureTarget): ElementRecord {
+    return {
+      ...state.element,
+      style: { ...state.baseStyle },
+      attributes: { ...state.baseAttributes },
     };
   }
 
@@ -208,23 +276,24 @@
 
   function previewGeometry(state: GestureTarget) {
     const changes = captureBoxChanges(
-      originalElement(state),
+      previewElement(state),
       state.start,
       state.current,
       state.units,
       state.target,
     );
+
     editor.elementsCollection?.mutateStateWithoutHistory((records) => {
       const item = records[state.element.id];
       if (!item) return;
-      item.style = mergeStyleChanges(state.original.style, changes?.style);
-      item.attributes = mergeAttributeChanges(state.original.attributes, changes?.attributes);
+      item.style = mergeStyleChanges(state.baseStyle, changes?.style);
+      item.attributes = mergeAttributeChanges(state.baseAttributes, changes?.attributes);
     });
     flushSync();
   }
 
   function previewScale(state: GestureTarget) {
-    const source = originalElement(state);
+    const source = previewElement(state);
     const attributes = svgScaleAttributes(
       source,
       state.start.w,
@@ -237,12 +306,12 @@
       const item = records[state.element.id];
       if (!item) return;
       if (attributes) {
-        item.attributes = mergeAttributeChanges(state.original.attributes, attributes);
-        item.style = { ...state.original.style };
+        item.attributes = mergeAttributeChanges(state.baseAttributes, attributes);
+        item.style = { ...state.baseStyle };
       } else {
-        item.attributes = { ...state.original.attributes };
+        item.attributes = { ...state.baseAttributes };
         item.style = {
-          ...state.original.style,
+          ...state.baseStyle,
           scale: `${state.scaleX} ${state.scaleY}`,
         };
       }
@@ -279,6 +348,7 @@
 
   function moveableOptions(): MoveableOptions {
     const support = selectionSupport();
+    const container = canvasElement ?? document.body;
     return {
       target: targetOption(),
       draggable: targets.length > 0,
@@ -288,13 +358,13 @@
       origin: true,
       originDraggable: true,
       edge: false,
-      throttleDrag: 0,
-      throttleResize: 0,
-      throttleScale: 0,
-      throttleRotate: 0,
-      zoom: editor.canvasZoom,
-      container: document.body,
-      rootContainer: document.body,
+      throttleDrag: editor.grid.spacing,
+      throttleResize: editor.grid.spacing,
+      throttleScale: editor.grid.spacing,
+      throttleRotate: 1,
+      checkResizableError: false,
+      container,
+      rootContainer: container,
       useResizeObserver: true,
       preventClickEventOnDrag: true,
       ables: [svgGeometryControlsAble],
@@ -380,46 +450,6 @@
     }
   }
 
-  function gestureChanges(kind: GestureKind, state: GestureTarget) {
-    if (kind === "scale") {
-      const source = originalElement(state);
-      const attributes = svgScaleAttributes(
-        source,
-        state.start.w,
-        state.start.h,
-        state.scaleX,
-        state.scaleY,
-      );
-      if (attributes) {
-        return { attributes: mergeAttributeChanges(state.original.attributes, attributes) };
-      }
-      return {
-        style: {
-          ...state.original.style,
-          scale: `${state.scaleX} ${state.scaleY}`,
-        },
-      };
-    }
-
-    const changes = captureBoxChanges(
-      originalElement(state),
-      state.start,
-      state.current,
-      state.units,
-      state.target,
-    );
-    if (!changes) return null;
-
-    const next: Partial<ElementRecord> = {};
-    if (changes.style) {
-      next.style = mergeStyleChanges(state.original.style, changes.style);
-    }
-    if (changes.attributes) {
-      next.attributes = mergeAttributeChanges(state.original.attributes, changes.attributes);
-    }
-    return next;
-  }
-
   function finishGesture() {
     const active = gesture;
     if (!active) return;
@@ -437,9 +467,19 @@
 
     for (const state of active.states) {
       if (isStaticElement(state.element)) continue;
-      const change = gestureChanges(active.kind, state);
-      if (!change) continue;
-      changes.set(state.element.id, { ...changes.get(state.element.id), ...change });
+      const current = editor.elementsCollection?.state[state.element.id];
+      if (!current) continue;
+
+      const change: Partial<ElementRecord> = {};
+      if (JSON.stringify(current.style) !== JSON.stringify(state.original.style)) {
+        change.style = { ...current.style };
+      }
+      if (JSON.stringify(current.attributes) !== JSON.stringify(state.original.attributes)) {
+        change.attributes = { ...current.attributes };
+      }
+      if (Object.keys(change).length > 0) {
+        changes.set(state.element.id, { ...changes.get(state.element.id), ...change });
+      }
     }
 
     const collection = editor.elementsCollection;
@@ -505,13 +545,7 @@
         continue;
       }
 
-      const zoom = editor.canvasZoom;
-      const current = applyGeometryDrag(
-        state.start,
-        [dx * zoom, dy * zoom],
-        state.target,
-        zoom,
-      );
+      const current = applyGeometryDrag(state.start, [dx, dy], state.target);
       const geometry = captureBoxChanges(
         originalElement(state),
         state.start,
@@ -663,12 +697,10 @@
       return;
     }
 
-    state.current = applyGeometryDrag(
-      state.start,
-      event.dist,
-      state.target,
-      editor.canvasZoom,
-    );
+    // TD WIP
+    //console.debug(event);
+    //state.element.style = { ...state.element.style, transform: event.transform };
+    state.current = applyGeometryDrag(state.start, event.dist, state.target, editor.canvasZoom);
     previewGeometry(state);
   }
 
@@ -692,13 +724,13 @@
     beginGesture("resize");
   }
 
-  function applyResizeEvent(event: OnResize & { drag: { delta: number[] } }) {
+  function applyResizeEvent(event: OnResize & { dist: number[]; drag: { delta: number[] } }) {
     const state = stateFor(event.target, "resize");
     if (!state) return;
     state.current = applyGeometryResize(
+      state.start,
       state.current,
-      event.width,
-      event.height,
+      event.dist,
       event.drag.delta,
       state.target,
       editor.canvasZoom,
@@ -707,12 +739,12 @@
   }
 
   function onResize(event: OnResize) {
-    applyResizeEvent(event as OnResize & { drag: { delta: number[] } });
+    applyResizeEvent(event as OnResize & { dist: number[]; drag: { delta: number[] } });
   }
 
   function onResizeGroup(event: OnResizeGroup) {
     event.events.forEach((child) =>
-      applyResizeEvent(child as OnResize & { drag: { delta: number[] } }),
+      applyResizeEvent(child as OnResize & { dist: number[]; drag: { delta: number[] } }),
     );
   }
 
@@ -804,12 +836,21 @@
     void selectedElements;
     void canvasElement;
     void editor.canvasZoom;
+    void editor.canvasPanX;
+    void editor.canvasPanY;
+
+    const active = gesture;
+    if (active) return;
+
     moveable?.setState(moveableOptions(), () => {
       moveable?.updateRect();
     });
   });
 
   $effect(() => {
+    const active = gesture;
+    if (active) return;
+
     const signature = selectedElements
       .map(
         (element) =>
@@ -844,7 +885,7 @@
 
     void import("moveable").then(({ default: Moveable }) => {
       if (disposed || !canvasElement) return;
-      instance = new Moveable(document.body, moveableOptions());
+      instance = new Moveable(canvasElement, moveableOptions());
       instance.on("dragStart", onDragStart);
       instance.on("drag", onDrag);
       instance.on("dragEnd", onDragEnd);
@@ -877,10 +918,12 @@
         moveable?.updateRect();
       });
 
-      canvasElement?.addEventListener("scroll", syncRect, { passive: true });
+      window.addEventListener("scroll", syncRect, { capture: true, passive: true });
       window.addEventListener("resize", syncRect);
       resizeObserver = new ResizeObserver(syncRect);
       resizeObserver.observe(canvasElement!);
+      const pageCanvas = canvasElement.querySelector(".page-canvas");
+      if (pageCanvas) resizeObserver.observe(pageCanvas);
     });
 
     return () => {
@@ -888,7 +931,7 @@
       cancelAnimationFrame(frame);
       canvasElement?.removeEventListener("keydown", handleNudgeKeydown);
       canvasElement?.removeEventListener("keyup", handleNudgeKeyup);
-      canvasElement?.removeEventListener("scroll", syncRect);
+      window.removeEventListener("scroll", syncRect, { capture: true });
       window.removeEventListener("resize", syncRect);
       resizeObserver?.disconnect();
       instance?.destroy();

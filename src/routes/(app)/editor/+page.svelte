@@ -9,7 +9,7 @@
   let activeProject = $derived(editor.activeProject);
 </script>
 
-<PageOpenTabs />
+<!--<PageOpenTabs />-->
 {#if editor.activePage}
   <PageCanvasEditor />
 {:else if activeProject}

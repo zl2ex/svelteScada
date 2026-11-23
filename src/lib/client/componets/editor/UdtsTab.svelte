@@ -1,9 +1,27 @@
 <script lang="ts">
-  import { Plus, Trash2 } from "@lucide/svelte";
+  import {
+    ClipboardPaste,
+    Copy,
+    Link2Icon,
+    PencilIcon,
+    Plus,
+    Scissors,
+    TagIcon,
+    TimelineIcon,
+    Trash2,
+  } from "@lucide/svelte";
+  import {
+    Menu,
+    Portal,
+    Popover,
+    TreeView,
+    createTreeViewCollection,
+    useTreeView,
+  } from "@skeletonlabs/skeleton-svelte";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { getUdtDefinitionsContext } from "$lib/client/editor/udtDefinitionContext";
-  import { attempt } from "$lib/util/attempt";
   import { newId } from "$lib/util/newId";
+  import { attempt } from "$lib/util/attempt";
   import { errorToString, neverThrowErrorToString } from "$lib/util/neverThrow";
   import {
     z_UdtDefinitionInput,
@@ -11,34 +29,144 @@
     type UdtDefinitionTagInput,
   } from "$lib/sqlite/tables/udt_definitions";
   import { baseTypeKeys } from "$lib/validation/baseTypes";
-  import { tagWriteLevels, type TagWriteLevel } from "$lib/permissions/constants";
-  import BindingEditor from "./BindingEditor.svelte";
-  import { formatBindingResult, updateBinding } from "$lib/client/editor/bindings";
-  import type { TagBindingKey } from "$lib/tagBindings";
-  import { evaluateTagBinding } from "$lib/client/editor/tagExpressions";
+  import { updateBinding } from "$lib/client/editor/bindings";
+  import { tagBindingKeys, type TagBindingKey } from "$lib/tagBindings";
+  import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
   import type { TagOptionsInput } from "$lib/server/tag/tag";
+  import { focusOnMount } from "$lib/client/util/use";
+  import { isEditableTarget } from "$lib/client/editor/editorKeyboard";
+  import { undoManager } from "$lib/client/history/undoManager";
+  import TagEditorPopover from "./TagEditorPopover.svelte";
+  import { materializeUdtRow } from "$lib/client/editor/udtBuilder";
+
+  type RootNode = {
+    kind: "root";
+    id: "udt-root";
+    name: string;
+  };
+  type DefinitionNode = {
+    kind: "definition";
+    id: string;
+    name: string;
+    definition: UdtDefinitionInput;
+  };
+  type ChildNode = {
+    kind: "child";
+    id: string;
+    name: string;
+    definitionId: string;
+    child: UdtDefinitionTagInput;
+  };
+  type UdtTreeNode = RootNode | DefinitionNode | ChildNode;
+  type ActiveEditor =
+    | { kind: "definition"; definitionId: string }
+    | { kind: "child"; definitionId: string; childId: string }
+    | null;
+  type UdtClipboardPayload =
+    | { kind: "definition"; definition: UdtDefinitionInput }
+    | { kind: "child"; definitionId: string; child: UdtDefinitionTagInput };
 
   const ability = getAbilityContext();
   const collection = getUdtDefinitionsContext();
 
-  let selectedId = $state<string | null>(null);
-  let propertiesText = $state("{}");
+  const rootNode: RootNode = {
+    kind: "root",
+    id: "udt-root",
+    name: "UDTs",
+  };
+
+  function compareNames(a: string, b: string) {
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  }
+
+  function sortedDefinitions() {
+    return Object.values(collection.state).sort((a, b) => compareNames(a.name, b.name));
+  }
+
+  function sortedChildren(definition: UdtDefinitionInput) {
+    return [...definition.children].sort((a, b) => compareNames(a.name, b.name));
+  }
+
+  function definitionNodeId(id: string) {
+    return `udt:def:${id}`;
+  }
+
+  function childNodeId(definitionId: string, childId: string) {
+    return `udt:child:${definitionId}:${childId}`;
+  }
+
+  function definitionNode(definition: UdtDefinitionInput): DefinitionNode {
+    return {
+      kind: "definition",
+      id: definitionNodeId(definition.id),
+      name: definition.name,
+      definition,
+    };
+  }
+
+  function childNode(definition: UdtDefinitionInput, child: UdtDefinitionTagInput): ChildNode {
+    return {
+      kind: "child",
+      id: childNodeId(definition.id, child.id),
+      name: child.name,
+      definitionId: definition.id,
+      child,
+    };
+  }
+
+  function childrenOf(node: UdtTreeNode): UdtTreeNode[] {
+    if (node.kind === "root") return sortedDefinitions().map(definitionNode);
+    if (node.kind === "definition") {
+      return sortedChildren(node.definition).map((child) => childNode(node.definition, child));
+    }
+    return [];
+  }
+
+  let collectionView = $state(
+    createTreeViewCollection<UdtTreeNode>({
+      nodeToValue: (node) => node.id,
+      nodeToString: (node) => node.name,
+      nodeToChildren: childrenOf,
+      rootNode,
+    }),
+  );
+
+  let treeView = useTreeView({
+    id: "UDTS_TREE",
+    collection: collectionView,
+    selectionMode: "single",
+    defaultExpandedValue: sortedDefinitions().map((definition) => definitionNodeId(definition.id)),
+  });
+
+  let activeEditor = $state<ActiveEditor>(null);
+  let contextMenuNode = $state<UdtTreeNode | null>(null);
+  let renamingId = $state<string | null>(null);
   let formError = $state<string | null>(null);
 
-  let selectedDefinition = $derived(
-    selectedId ? collection.state[selectedId] : undefined,
-  );
-
-  let definitions = $derived(
-    Object.values(collection.state).sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
-    ),
-  );
+  let definitions = $derived(sortedDefinitions());
 
   let dataTypes = $derived(
-    [...baseTypeKeys, ...definitions.map((definition) => definition.name)].sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
-    ),
+    [...baseTypeKeys, ...definitions.map((definition) => definition.name)].sort(compareNames),
+  );
+
+  let activeDefinition = $derived(
+    activeEditor ? collection.state[activeEditor.definitionId] : undefined,
+  );
+
+  let activeChild = $derived.by(() => {
+    const editor = activeEditor;
+    if (!editor || editor.kind !== "child" || !activeDefinition) return undefined;
+    return activeDefinition.children.find((child) => child.id === editor.childId);
+  });
+
+  /**
+   * Materializes the active child definition so the popover can display binding results
+   * directly from the top-level fields.
+   */
+  let activeChildTag = $derived(
+    activeDefinition && activeChild
+      ? materializeUdtRow(childAsTag(activeDefinition, activeChild))
+      : undefined,
   );
 
   function defaultChild(): UdtDefinitionTagInput {
@@ -59,12 +187,49 @@
     };
   }
 
-  function selectDefinition(id: string) {
-    const definition = collection.state[id];
-    if (!definition) return;
-    selectedId = id;
-    propertiesText = JSON.stringify(definition.properties, null, 2);
+  function uniqueName(base: string) {
+    const names = new Set(definitions.map((definition) => definition.name));
+    let name = base;
+    let count = 1;
+    while (names.has(name)) name = `${base}${count++}`;
+    return name;
+  }
+
+  function updateDefinitionById(id: string, changes: Partial<Omit<UdtDefinitionInput, "id">>) {
+    const current = collection.state[id];
+    if (!current) return false;
+
+    const next = {
+      ...current,
+      ...changes,
+      children: [...(changes.children ?? current.children)].sort((a, b) =>
+        compareNames(a.name, b.name),
+      ),
+    };
+    const parsed = z_UdtDefinitionInput.safeParse(next);
+    if (!parsed.success) {
+      formError = parsed.error.message;
+      return false;
+    }
+
+    const { id: definitionId, ...rest } = parsed.data;
+    collection.update(definitionId, rest);
     formError = null;
+    return true;
+  }
+
+  function updateChild(
+    definitionId: string,
+    childId: string,
+    changes: Partial<UdtDefinitionTagInput>,
+  ) {
+    const definition = collection.state[definitionId];
+    if (!definition) return false;
+    return updateDefinitionById(definitionId, {
+      children: definition.children.map((child) =>
+        child.id === childId ? { ...child, ...changes } : child,
+      ),
+    });
   }
 
   function addDefinition() {
@@ -76,412 +241,730 @@
       children: [],
     };
     collection.add(definition);
-    selectDefinition(id);
+    renamingId = definitionNodeId(id);
+    treeView().expand([rootNode.id]);
   }
 
-  function uniqueName(base: string) {
-    const names = new Set(definitions.map((definition) => definition.name));
-    let name = base;
-    let count = 1;
-    while (names.has(name)) name = `${base}${count++}`;
-    return name;
+  function addChild(definitionId: string) {
+    const definition = collection.state[definitionId];
+    if (!definition) return;
+    const child = defaultChild();
+    updateDefinitionById(definitionId, {
+      children: [...definition.children, child],
+    });
+    renamingId = childNodeId(definitionId, child.id);
+    treeView().expand([definitionNodeId(definitionId)]);
   }
 
-  function updateDefinition(changes: Partial<Omit<UdtDefinitionInput, "id">>) {
-    const current = selectedDefinition;
-    if (!current) return false;
+  function deleteDefinition(id: string) {
+    collection.remove(id);
+    if (activeEditor?.definitionId === id) activeEditor = null;
+    renamingId = null;
+  }
 
-    const next = {
-      ...current,
-      ...changes,
-      children: [...(changes.children ?? current.children)].sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
-      ),
-    };
-
-    const parsed = z_UdtDefinitionInput.safeParse(next);
-    if (!parsed.success) {
-      formError = parsed.error.message;
-      return false;
+  function removeChild(definitionId: string, childId: string) {
+    const definition = collection.state[definitionId];
+    if (!definition) return;
+    updateDefinitionById(definitionId, {
+      children: definition.children.filter((child) => child.id !== childId),
+    });
+    if (activeEditor?.kind === "child" && activeEditor.childId === childId) {
+      activeEditor = null;
     }
-
-    const { id, ...rest } = parsed.data;
-    collection.update(id, rest);
-    formError = null;
-    return true;
   }
 
-  function updateChild(childId: string, changes: Partial<UdtDefinitionTagInput>) {
-    if (!selectedDefinition) return false;
-
-    return updateDefinition({
-      children: selectedDefinition.children.map((child) =>
-        child.id === childId ? { ...child, ...changes } : child,
-      ),
-    });
+  function childAsTag(
+    definition: UdtDefinitionInput,
+    child: UdtDefinitionTagInput,
+  ): TagOptionsInput {
+    return {
+      ...child,
+      folderId: null,
+      parentTagId: null,
+      udtDefinitionId: definition.id,
+      udtDefinitionChildId: child.id,
+      udtOverrides: null,
+    };
   }
 
-  function saveChildBinding(child: UdtDefinitionTagInput, key: TagBindingKey, expression: string) {
-    updateChild(child.id, {
-      bindings: updateBinding(child.bindings, key, null, expression),
-    });
+  function childChanges(changes: Partial<Omit<TagOptionsInput, "id">>) {
+    const {
+      folderId: _folderId,
+      parentTagId: _parentTagId,
+      udtDefinitionId: _udtDefinitionId,
+      udtDefinitionChildId: _udtDefinitionChildId,
+      udtOverrides: _udtOverrides,
+      ...rest
+    } = changes;
+    return rest;
   }
 
   function isChildBound(child: UdtDefinitionTagInput, key: TagBindingKey) {
     return Boolean(child.bindings?.[key]?.trim());
   }
 
-  function childBindingResult(child: UdtDefinitionTagInput, key: TagBindingKey) {
-    const expression = child.bindings?.[key];
-    if (!expression?.trim()) return "";
+  /**
+   * Caches binding errors for the active child definition.
+   */
+  let childBindingErrors = $derived.by(() => {
+    const errors = new Map<TagBindingKey, string | null>();
+    if (!activeChild || !activeDefinition) return errors;
 
-    const evaluation = evaluateTagBinding(expression, {
-      tagConfig: child as TagOptionsInput,
-      properties: selectedDefinition?.properties ?? {},
-    });
+    const tag = childAsTag(activeDefinition, activeChild);
+    for (const key of tagBindingKeys) {
+      const expression = activeChild.bindings?.[key];
+      if (!expression?.trim()) continue;
 
-    if (evaluation.isErr()) return "";
-    return formatBindingResult(evaluation.value);
-  }
-
-  function udtBindingError(child: UdtDefinitionTagInput, key: TagBindingKey) {
-    const expression = child.bindings?.[key];
-    if (!expression?.trim()) return null;
-
-    const evaluation = evaluateTagBinding(expression, {
-      tagConfig: child as TagOptionsInput,
-      properties: selectedDefinition?.properties ?? {},
-    });
-
-    return evaluation.isErr() ? neverThrowErrorToString(evaluation.error) : null;
-  }
-
-  function saveProps() {
-    const parsed = attempt(() => JSON.parse(propertiesText));
-    if (parsed.isErr) {
-      formError = `properties JSON: ${errorToString(parsed.error)}`;
-      return;
+      const evaluation = scriptEvaluator.evaluateTag(expression, {
+        tagConfig: tag,
+        properties: activeDefinition.properties,
+      });
+      errors.set(
+        key,
+        evaluation.isErr() ? neverThrowErrorToString(evaluation.error) : null,
+      );
     }
 
-    updateDefinition({ properties: parsed.data });
+    return errors;
+  });
+
+  /**
+   * Returns whether the active child binding exists for a key.
+   */
+  function childBindingState(key: TagBindingKey) {
+    return {
+      bound: Boolean(activeChild && isChildBound(activeChild, key)),
+      mixed: false,
+    };
   }
 
-  function deleteDefinition() {
-    if (!selectedId) return;
-    collection.remove(selectedId);
-    selectedId = null;
-    propertiesText = "{}";
-    formError = null;
+  /**
+   * Returns the cached binding error for the active child.
+   */
+  function childBindingError(key: TagBindingKey) {
+    return childBindingErrors.get(key) ?? null;
   }
 
-  function addChild() {
-    if (!selectedDefinition) return;
-    updateDefinition({
-      children: [...selectedDefinition.children, defaultChild()],
+  function saveChildBinding(child: UdtDefinitionTagInput, key: TagBindingKey, expression: string) {
+    if (!activeDefinition) return;
+    updateChild(activeDefinition.id, child.id, {
+      bindings: updateBinding(child.bindings, key, null, expression),
     });
   }
 
-  function removeChild(id: string) {
-    if (!selectedDefinition) return;
-    updateDefinition({
-      children: selectedDefinition.children.filter((child) => child.id !== id),
+  function childBindingValue(key: TagBindingKey) {
+    return activeChild?.bindings?.[key] ?? "";
+  }
+
+  function saveActiveChild(changes: Partial<Omit<TagOptionsInput, "id">>) {
+    if (!activeDefinition || !activeChild) return;
+    updateChild(
+      activeDefinition.id,
+      activeChild.id,
+      childChanges(changes) as Partial<UdtDefinitionTagInput>,
+    );
+  }
+
+  function saveActiveChildProperties(
+    updater: (
+      properties: NonNullable<UdtDefinitionTagInput["properties"]>,
+    ) => NonNullable<UdtDefinitionTagInput["properties"]>,
+  ) {
+    if (!activeDefinition || !activeChild) return;
+    updateChild(activeDefinition.id, activeChild.id, {
+      properties: updater(activeChild.properties ?? {}),
     });
+  }
+
+  function saveActiveChildBinding(key: TagBindingKey, expression: string) {
+    if (!activeChild) return;
+    saveChildBinding(activeChild, key, expression);
+  }
+
+  function saveDefinitionProperties(
+    updater: (properties: UdtDefinitionInput["properties"]) => UdtDefinitionInput["properties"],
+  ) {
+    if (!activeDefinition) return;
+    updateDefinitionById(activeDefinition.id, {
+      properties: updater(activeDefinition.properties),
+    });
+  }
+
+  function openDefinitionEditor(definition: UdtDefinitionInput) {
+    activeEditor = { kind: "definition", definitionId: definition.id };
+  }
+
+  function openChildEditor(definition: UdtDefinitionInput, child: UdtDefinitionTagInput) {
+    activeEditor = { kind: "child", definitionId: definition.id, childId: child.id };
+  }
+
+  function closeEditor() {
+    activeEditor = null;
+  }
+
+  function finalizeDefinitionRename(definitionId: string, newName: string) {
+    renamingId = null;
+    const name = newName.trim();
+    if (name) updateDefinitionById(definitionId, { name });
+  }
+
+  function finalizeChildRename(definitionId: string, childId: string, newName: string) {
+    renamingId = null;
+    const name = newName.trim();
+    if (name) updateChild(definitionId, childId, { name });
+  }
+
+  function handleTreeContextMenu(event: MouseEvent) {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+
+    const childId = target.closest<HTMLElement>("[data-udt-child-id]")?.dataset.udtChildId;
+    const definitionId = target.closest<HTMLElement>("[data-udt-definition-id]")?.dataset
+      .udtDefinitionId;
+    if (!definitionId) {
+      contextMenuNode = null;
+      return;
+    }
+    const definition = collection.state[definitionId];
+    if (!definition) return;
+
+    if (childId) {
+      const child = definition.children.find((item) => item.id === childId);
+      contextMenuNode = child ? childNode(definition, child) : null;
+      if (contextMenuNode) treeView().setSelectedValue([contextMenuNode.id]);
+      return;
+    }
+    contextMenuNode = definitionNode(definition);
+    treeView().setSelectedValue([contextMenuNode.id]);
+  }
+
+  function handleMenuSelect(value: string) {
+    const node = contextMenuNode;
+    contextMenuNode = null;
+    if (!node) return;
+
+    if (node.kind === "definition") {
+      switch (value) {
+        case "addChild":
+          addChild(node.definition.id);
+          break;
+        case "rename":
+          renamingId = node.id;
+          break;
+        case "delete":
+          deleteDefinition(node.definition.id);
+          break;
+        case "copy":
+          void copyNode(node);
+          break;
+        case "cut":
+          void cutNode(node);
+          break;
+        case "paste":
+          void pasteFromClipboard(node);
+          break;
+      }
+    } else if (node.kind === "child") {
+      switch (value) {
+        case "rename":
+          renamingId = node.id;
+          break;
+        case "delete":
+          removeChild(node.definitionId, node.child.id);
+          break;
+        case "copy":
+          void copyNode(node);
+          break;
+        case "cut":
+          void cutNode(node);
+          break;
+        case "paste":
+          void pasteFromClipboard(node);
+          break;
+      }
+    }
   }
 
   function canManage() {
     return ability.can("manage", "UdtDefinition");
   }
+
+  async function copyToClipboard(text: string) {
+    const result = await attempt(() => navigator.clipboard.writeText(text));
+    if (result.isErr) {
+      formError = `Clipboard write failed: ${errorToString(result.error)}`;
+      return false;
+    }
+    return true;
+  }
+
+  async function readClipboard() {
+    const result = await attempt(() => navigator.clipboard.readText());
+    if (result.isErr) {
+      formError = `Clipboard read failed: ${errorToString(result.error)}`;
+      return null;
+    }
+    return result.data;
+  }
+
+  function selectedTreeNode(): UdtTreeNode | null {
+    const selected = treeView().selectedValue[0];
+    if (!selected) return null;
+    return collectionView.findNode(selected) ?? null;
+  }
+
+  function definitionForNode(node: UdtTreeNode | null) {
+    if (!node) return undefined;
+    if (node.kind === "definition") return node.definition;
+    if (node.kind === "child") return collection.state[node.definitionId];
+    return undefined;
+  }
+
+  function clipboardPayload(node: UdtTreeNode): UdtClipboardPayload | null {
+    if (node.kind === "definition") {
+      return { kind: "definition", definition: node.definition };
+    }
+    if (node.kind === "child") {
+      const definition = collection.state[node.definitionId];
+      if (!definition) return null;
+      const child = definition.children.find((item) => item.id === node.child.id);
+      return child ? { kind: "child", definitionId: definition.id, child } : null;
+    }
+    return null;
+  }
+
+  async function copyNode(node: UdtTreeNode) {
+    const payload = clipboardPayload(node);
+    if (!payload) return false;
+    formError = null;
+    return copyToClipboard(JSON.stringify(payload));
+  }
+
+  async function cutNode(node: UdtTreeNode) {
+    if (!(await copyNode(node))) return;
+    undoManager.beginTransaction();
+    if (node.kind === "definition") deleteDefinition(node.definition.id);
+    else if (node.kind === "child") removeChild(node.definitionId, node.child.id);
+    undoManager.endTransaction();
+  }
+
+  function uniqueChildName(definition: UdtDefinitionInput, base: string) {
+    const names = new Set(definition.children.map((child) => child.name));
+    if (!names.has(base)) return base;
+    let count = 1;
+    let name = `${base}${count}`;
+    while (names.has(name)) {
+      count++;
+      name = `${base}${count}`;
+    }
+    return name;
+  }
+
+  function parseClipboardPayload(text: string): UdtClipboardPayload | null {
+    const parsed = attempt(() => JSON.parse(text));
+    if (parsed.isErr) {
+      formError = `Invalid clipboard payload: ${errorToString(parsed.error)}`;
+      return null;
+    }
+    const value = parsed.data as Partial<UdtClipboardPayload> | null;
+    if (value?.kind === "definition" && value.definition) {
+      return value as UdtClipboardPayload;
+    }
+    if (value?.kind === "child" && value.child && value.definitionId) {
+      return value as UdtClipboardPayload;
+    }
+    formError = "Clipboard does not contain a UDT definition or child";
+    return null;
+  }
+
+  function pastePayload(payload: UdtClipboardPayload, target: UdtTreeNode | null) {
+    if (payload.kind === "definition") {
+      const definition: UdtDefinitionInput = {
+        id: newId(),
+        name: uniqueName(payload.definition.name),
+        properties: { ...payload.definition.properties },
+        children: payload.definition.children.map((child) => ({ ...child, id: newId() })),
+      };
+      collection.add(definition);
+      treeView().expand([rootNode.id]);
+      formError = null;
+      return true;
+    }
+
+    const definition = definitionForNode(target);
+    if (!definition) {
+      formError = "Select a UDT definition to paste the child into";
+      return false;
+    }
+    const child: UdtDefinitionTagInput = {
+      ...payload.child,
+      id: newId(),
+      name: uniqueChildName(definition, payload.child.name),
+    };
+    const pasted = updateDefinitionById(definition.id, {
+      children: [...definition.children, child],
+    });
+    if (pasted) treeView().expand([definitionNodeId(definition.id)]);
+    return pasted;
+  }
+
+  async function pasteFromClipboard(target: UdtTreeNode | null) {
+    const text = await readClipboard();
+    if (text === null) return;
+    const payload = parseClipboardPayload(text);
+    if (!payload) return;
+    pastePayload(payload, target);
+  }
+
+  async function handleTreePaste(event: ClipboardEvent) {
+    event.stopPropagation();
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    const payload = parseClipboardPayload(text);
+    if (!payload) return;
+    pastePayload(payload, selectedTreeNode());
+  }
+
+  function handleTreeKeyup(event: KeyboardEvent) {
+    if (isEditableTarget(event.target)) return;
+    const node = selectedTreeNode();
+    if (!node || node.kind === "root") return;
+    const modifier = event.ctrlKey || event.metaKey;
+
+    if (event.key === "Delete") {
+      event.preventDefault();
+      undoManager.beginTransaction();
+      if (node.kind === "definition") deleteDefinition(node.definition.id);
+      else removeChild(node.definitionId, node.child.id);
+      undoManager.endTransaction();
+      return;
+    }
+
+    if (event.key === "F2") {
+      event.preventDefault();
+      renamingId = node.id;
+      return;
+    }
+
+    if (event.altKey && event.key.toLowerCase() === "c" && node.kind === "definition") {
+      event.preventDefault();
+      addChild(node.definition.id);
+      return;
+    }
+
+    if (modifier && event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      void copyNode(node);
+      return;
+    }
+
+    if (modifier && event.key.toLowerCase() === "x") {
+      event.preventDefault();
+      void cutNode(node);
+    }
+  }
+
+  $effect(() => {
+    if (!activeEditor) return;
+    if (!activeDefinition || (activeEditor.kind === "child" && !activeChild)) {
+      activeEditor = null;
+    }
+  });
 </script>
 
-{#snippet childBindingEditor(
-  child: UdtDefinitionTagInput,
-  key: TagBindingKey,
-  label: string,
-)}
-  <BindingEditor
-    {label}
-    binding={child.bindings?.[key] ?? ""}
-    contextDescription="tagConfig and properties"
-    scope="tag"
-    savedError={udtBindingError(child, key)}
-    onBindingSave={(expression) => saveChildBinding(child, key, expression)}
-    onBindingRemove={() => saveChildBinding(child, key, "")}
-  />
-{/snippet}
-
-<div class="flex h-full min-h-0 flex-col gap-2 p-2">
-  <div class="flex items-center gap-2">
-    <button class="btn btn-sm preset-filled flex-1" onclick={addDefinition} disabled={!canManage()}>
-      <Plus class="size-4" /> New UDT
-    </button>
-  </div>
-
-  <div class="max-h-44 overflow-y-auto rounded border border-surface-300-700">
-    {#each definitions as definition (definition.id)}
+{#snippet definitionLabel(node: DefinitionNode)}
+  <span class="relative flex min-w-0 grow items-center gap-2">
+    {#if renamingId === node.id}
+      <input
+        class="input h-7 min-w-0 flex-1 px-1"
+        value={node.definition.name}
+        use:focusOnMount
+        onclick={(event) => event.stopPropagation()}
+        ondblclick={(event) => event.stopPropagation()}
+        onblur={(event) => finalizeDefinitionRename(node.definition.id, event.currentTarget.value)}
+        onkeydown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            renamingId = null;
+            event.currentTarget.value = node.definition.name;
+          }
+        }}
+      />
+    {:else}
       <button
         type="button"
-        class="flex w-full items-center justify-between gap-2 border-b border-surface-200-800 px-2 py-1 text-left last:border-b-0 hover:bg-surface-200-800"
-        class:bg-surface-300-700={selectedId === definition.id}
-        onclick={() => selectDefinition(definition.id)}
+        tabindex={-1}
+        class="flex min-w-0 grow items-center gap-2 text-left"
+        onclick={(event) => event.preventDefault()}
+        ondblclick={() => openDefinitionEditor(node.definition)}
       >
-        <span class="truncate">{definition.name}</span>
-        <span class="text-[10px] opacity-60">{definition.children.length}</span>
+        <TimelineIcon class="size-5 shrink-0 opacity-60" />
+        <span class="truncate font-semibold">{node.definition.name}</span>
+        <span class="text-[10px] opacity-50">{node.definition.children.length}</span>
       </button>
+    {/if}
+
+    {#if activeEditor?.kind === "definition" && activeEditor.definitionId === node.definition.id}
+      <Popover.Anchor class="pointer-events-none absolute inset-0" />
+    {/if}
+  </span>
+{/snippet}
+
+{#snippet childLabel(node: ChildNode)}
+  <span class="flex min-w-0 grow items-center gap-2">
+    {#if renamingId === node.id}
+      <input
+        class="input h-7 min-w-0 flex-1 px-1"
+        value={node.child.name}
+        use:focusOnMount
+        onclick={(event) => event.stopPropagation()}
+        ondblclick={(event) => event.stopPropagation()}
+        onblur={(event) =>
+          finalizeChildRename(node.definitionId, node.child.id, event.currentTarget.value)}
+        onkeydown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            renamingId = null;
+            event.currentTarget.value = node.child.name;
+          }
+        }}
+      />
     {:else}
-      <p class="p-2 opacity-60">No UDT definitions.</p>
-    {/each}
-  </div>
+      <TagIcon class="size-4 shrink-0 opacity-60" />
+      <span class="truncate">{node.child.name}</span>
+      {#if node.child.bindings}
+        <Link2Icon class="size-5 shrink-0 opacity-85" />
+      {/if}
+      <span class="ml-auto truncate opacity-50">{node.child.dataType}</span>
+    {/if}
+  </span>
+{/snippet}
 
-  {#if selectedDefinition}
-    <fieldset
-      class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto"
-      disabled={!canManage()}
-    >
-      <div class="flex items-center gap-2">
-        <label class="w-16 opacity-60" for="udt-name">Name</label>
-        <input
-          id="udt-name"
-          class="input flex-1 py-0"
-          value={selectedDefinition.name}
-          onblur={(event) => {
-            if (!updateDefinition({ name: event.currentTarget.value })) {
-              event.currentTarget.value = selectedDefinition.name;
-            }
-          }}
-          onkeydown={(event) => {
-            if (event.key === "Enter") event.currentTarget.blur();
-          }}
-        />
-      </div>
-
-      <label class="opacity-60" for="udt-properties">Properties (JSON)</label>
-      <textarea
-        id="udt-properties"
-        class="input min-h-20 font-mono text-xs"
-        bind:value={propertiesText}
-        onchange={saveProps}
-      ></textarea>
-
-      <div class="flex items-center justify-between">
-        <p class="font-semibold">Children</p>
-        <button type="button" class="btn btn-sm preset-tonal" onclick={addChild}>
-          <Plus class="size-3.5" /> Child
-        </button>
-      </div>
-
-      {#each selectedDefinition.children as child (child.id)}
-        <div class="rounded border border-surface-300-700 p-2">
-          <div class="mb-2 flex items-center gap-2">
-            <input
-              class="input flex-1 py-0"
-              value={child.name}
-              placeholder="Name"
-              onblur={(event) => {
-                if (!updateChild(child.id, { name: event.currentTarget.value })) {
-                  event.currentTarget.value = child.name;
-                }
-              }}
-              onkeydown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-              }}
-            />
+{#snippet treeNode(node: UdtTreeNode, indexPath: number[])}
+  {@const children = childrenOf(node)}
+  <TreeView.NodeProvider value={{ node, indexPath }}>
+    {#if node.kind === "definition"}
+      <TreeView.Branch>
+        <TreeView.BranchControl data-udt-definition-id={node.definition.id}>
+          <TreeView.BranchIndicator />
+          <div class="flex min-w-0 grow items-center justify-between gap-2">
+            <TreeView.BranchText>
+              {@render definitionLabel(node)}
+            </TreeView.BranchText>
             <button
               type="button"
-              class="btn-icon btn-icon-sm preset-tonal-error"
-              onclick={() => removeChild(child.id)}
-              aria-label="Remove child"
+              class="rounded-full p-1 hover:bg-surface-300-700"
+              title="Add child"
+              onclick={(event) => {
+                event.stopPropagation();
+                addChild(node.definition.id);
+              }}
             >
-              <Trash2 class="size-4" />
+              <Plus class="size-3.5" />
             </button>
           </div>
+        </TreeView.BranchControl>
+        {#if children.length > 0}
+          <TreeView.BranchContent>
+            <TreeView.BranchIndentGuide />
+            {#each children as child, index (child.id)}
+              {@render treeNode(child, [...indexPath, index])}
+            {/each}
+          </TreeView.BranchContent>
+        {/if}
+      </TreeView.Branch>
+    {:else if node.kind === "child"}
+      <TreeView.Item
+        data-udt-definition-id={node.definitionId}
+        data-udt-child-id={node.child.id}
+        ondblclick={() => {
+          const definition = collection.state[node.definitionId];
+          if (definition) openChildEditor(definition, node.child);
+        }}
+      >
+        {@render childLabel(node)}
+        {#if activeEditor?.kind === "child" && activeEditor.childId === node.child.id}
+          <Popover.Anchor class="pointer-events-none absolute inset-0" />
+        {/if}
+      </TreeView.Item>
+    {/if}
+  </TreeView.NodeProvider>
+{/snippet}
 
-          <div class="grid grid-cols-2 gap-2">
-            <label class="flex flex-col gap-1">
-              <span class="opacity-60">Data type</span>
-              {#if isChildBound(child, "dataType")}
-                <input
-                  class="input py-0"
-                  value={childBindingResult(child, "dataType")}
-                  disabled
-                />
-              {:else}
-                <select
-                  class="select py-0"
-                  value={child.dataType}
-                  onchange={(event) =>
-                    updateChild(child.id, { dataType: event.currentTarget.value })}
-                >
-                  {#each dataTypes as dataType}
-                    <option value={dataType}>{dataType}</option>
-                  {/each}
-                </select>
-              {/if}
-            </label>
-            {@render childBindingEditor(child, "dataType", "Data Type")}
+<Popover
+  open={activeEditor !== null}
+  onOpenChange={(details) => {
+    if (!details.open) closeEditor();
+  }}
+  positioning={{ placement: "right-end", offset: { mainAxis: 48 } }}
+>
+  <div class="flex h-full min-h-0 flex-col gap-2 p-2 text-xs">
+    <div class="flex items-center gap-2">
+      <button
+        class="btn preset-filled btn-sm flex-1"
+        onclick={addDefinition}
+        disabled={!canManage()}
+      >
+        <Plus class="size-4" /> New UDT
+      </button>
+    </div>
 
-            <label class="flex flex-col gap-1">
-              <span class="opacity-60">Write level</span>
-              <select
-                class="select py-0"
-                value={child.writeLevel}
-                onchange={(event) =>
-                  updateChild(child.id, {
-                    writeLevel: event.currentTarget.value as TagWriteLevel,
-                  })}
-              >
-                {#each tagWriteLevels as level}
-                  <option value={level}>{level}</option>
-                {/each}
-              </select>
-            </label>
+    <Menu onSelect={(details) => handleMenuSelect(details.value)}>
+      <Menu.ContextTrigger class="flex flex-1 overflow-y-auto">
+        <TreeView.Provider value={treeView}>
+          <TreeView.Tree
+            class="w-full"
+            onkeyup={handleTreeKeyup}
+            oncontextmenu={handleTreeContextMenu}
+            onpaste={(event) => void handleTreePaste(event)}
+          >
+            {#each childrenOf(rootNode) as node, index (node.id)}
+              {@render treeNode(node, [index])}
+            {/each}
+          </TreeView.Tree>
+        </TreeView.Provider>
+      </Menu.ContextTrigger>
+      <Portal>
+        <Menu.Positioner>
+          <Menu.Content class="border-none bg-surface-100-900 text-xs">
+            {#if contextMenuNode?.kind === "definition"}
+              <Menu.Item value="addChild">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <Plus class="size-4" />
+                  <span>Add child</span>
+                  <span class="ml-auto text-xs text-neutral-500">Alt+C</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item value="rename">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <PencilIcon class="size-4" />
+                  <span>Rename</span>
+                  <span class="ml-auto text-xs text-neutral-500">F2</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item value="copy">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <Copy class="size-4" />
+                  <span>Copy</span>
+                  <span class="ml-auto text-xs text-neutral-500">Ctrl+C</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item value="cut">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <Scissors class="size-4" />
+                  <span>Cut</span>
+                  <span class="ml-auto text-xs text-neutral-500">Ctrl+X</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item value="paste">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <ClipboardPaste class="size-4" />
+                  <span>Paste</span>
+                  <span class="ml-auto text-xs text-neutral-500">Ctrl+V</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item value="delete" class="text-error-600-400">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <Trash2 class="size-4" />
+                  <span>Delete UDT</span>
+                  <span class="ml-auto text-xs text-neutral-500">Del</span>
+                </Menu.ItemText>
+              </Menu.Item>
+            {:else if contextMenuNode?.kind === "child"}
+              <Menu.Item value="rename">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <PencilIcon class="size-4" />
+                  <span>Rename</span>
+                  <span class="ml-auto text-xs text-neutral-500">F2</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item value="copy">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <Copy class="size-4" />
+                  <span>Copy</span>
+                  <span class="ml-auto text-xs text-neutral-500">Ctrl+C</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item value="cut">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <Scissors class="size-4" />
+                  <span>Cut</span>
+                  <span class="ml-auto text-xs text-neutral-500">Ctrl+X</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Item value="paste">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <ClipboardPaste class="size-4" />
+                  <span>Paste</span>
+                  <span class="ml-auto text-xs text-neutral-500">Ctrl+V</span>
+                </Menu.ItemText>
+              </Menu.Item>
+              <Menu.Separator />
+              <Menu.Item value="delete" class="text-error-600-400">
+                <Menu.ItemText class="flex w-full items-center gap-2">
+                  <Trash2 class="size-4" />
+                  <span>Delete child</span>
+                  <span class="ml-auto text-xs text-neutral-500">Del</span>
+                </Menu.ItemText>
+              </Menu.Item>
+            {/if}
+          </Menu.Content>
+        </Menu.Positioner>
+      </Portal>
+    </Menu>
 
-            <label class="col-span-2 flex flex-col gap-1">
-              <span class="opacity-60">Driver path</span>
-              <input
-                class="input py-0"
-                value={isChildBound(child, "driverPath")
-                  ? childBindingResult(child, "driverPath")
-                  : (child.driverPath ?? "")}
-                placeholder={isChildBound(child, "driverPath") ? "" : "[device]path"}
-                disabled={isChildBound(child, "driverPath")}
-                onblur={(event) =>
-                  updateChild(child.id, { driverPath: event.currentTarget.value || null })}
-              />
-            </label>
-            {@render childBindingEditor(child, "driverPath", "Driver Path")}
+    {#if formError}
+      <p class="text-error-700-300">{formError}</p>
+    {/if}
+    {#if collection.syncError}
+      <p class="text-error-700-300">
+        {typeof collection.syncError === "string"
+          ? collection.syncError
+          : neverThrowErrorToString(collection.syncError)}
+      </p>
+    {/if}
+  </div>
 
-            <label class="flex flex-col gap-1">
-              <span class="opacity-60">Unit</span>
-              <input
-                class="input py-0"
-                value={isChildBound(child, "unit")
-                  ? childBindingResult(child, "unit")
-                  : child.unit}
-                disabled={isChildBound(child, "unit")}
-                onblur={(event) => updateChild(child.id, { unit: event.currentTarget.value })}
-              />
-            </label>
-            {@render childBindingEditor(child, "unit", "Unit")}
-
-            <label class="flex items-center gap-2 pt-4">
-              <input
-                type="checkbox"
-                class="checkbox"
-                checked={isChildBound(child, "readonly")
-                  ? childBindingResult(child, "readonly") === "true"
-                  : (child.readonly ?? false)}
-                disabled={isChildBound(child, "readonly")}
-                onchange={(event) =>
-                  updateChild(child.id, { readonly: event.currentTarget.checked })}
-              />
-              <span>Readonly</span>
-            </label>
-            {@render childBindingEditor(child, "readonly", "Readonly")}
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                class="checkbox"
-                checked={isChildBound(child, "exposeOverOpcua")
-                  ? childBindingResult(child, "exposeOverOpcua") === "true"
-                  : (child.exposeOverOpcua ?? true)}
-                disabled={isChildBound(child, "exposeOverOpcua")}
-                onchange={(event) =>
-                  updateChild(child.id, { exposeOverOpcua: event.currentTarget.checked })}
-              />
-              <span>Expose OPC UA</span>
-            </label>
-            {@render childBindingEditor(child, "exposeOverOpcua", "Expose OPC UA")}
-
-            <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-                class="checkbox"
-                checked={isChildBound(child, "trendEnabled")
-                  ? childBindingResult(child, "trendEnabled") === "true"
-                  : (child.trendEnabled ?? false)}
-                disabled={isChildBound(child, "trendEnabled")}
-                onchange={(event) =>
-                  updateChild(child.id, { trendEnabled: event.currentTarget.checked })}
-              />
-              <span>Trend</span>
-            </label>
-            {@render childBindingEditor(child, "trendEnabled", "Trend Enabled")}
-
-            <label class="col-span-2 flex flex-col gap-1">
-              <span class="opacity-60">Trend interval (ms)</span>
-              <input
-                type="number"
-                min="100"
-                class="input py-0"
-                value={isChildBound(child, "trendMinimumSamplingIntervalMs")
-                  ? childBindingResult(child, "trendMinimumSamplingIntervalMs")
-                  : (child.trendMinimumSamplingIntervalMs ?? 1000)}
-                disabled={isChildBound(child, "trendMinimumSamplingIntervalMs")}
-                onchange={(event) => {
-                  const value = Number(event.currentTarget.value);
-                  if (!updateChild(child.id, { trendMinimumSamplingIntervalMs: value })) {
-                    event.currentTarget.value = String(
-                      child.trendMinimumSamplingIntervalMs ?? 1000,
-                    );
-                  }
-                }}
-              />
-            </label>
-            {@render childBindingEditor(
-              child,
-              "trendMinimumSamplingIntervalMs",
-              "Trend Interval",
-            )}
-
-            <label class="col-span-2 flex flex-col gap-1">
-              <span class="opacity-60">Properties</span>
-              <textarea
-                class="input min-h-20 py-0 font-mono text-xs"
-                value={isChildBound(child, "properties")
-                  ? childBindingResult(child, "properties")
-                  : child.properties
-                    ? JSON.stringify(child.properties, null, 2)
-                    : ""}
-                disabled={isChildBound(child, "properties")}
-                onblur={(event) => {
-                  const raw = event.currentTarget.value;
-                  if (!raw.trim()) {
-                    updateChild(child.id, { properties: null });
-                    return;
-                  }
-                  const parsed = attempt(() => JSON.parse(raw));
-                  if (parsed.isErr) {
-                    event.currentTarget.value = child.properties
-                      ? JSON.stringify(child.properties, null, 2)
-                      : "";
-                    return;
-                  }
-                  updateChild(child.id, { properties: parsed.data });
-                }}
-              ></textarea>
-            </label>
-            {@render childBindingEditor(child, "properties", "Properties")}
-          </div>
-        </div>
-      {/each}
-
-      {#if formError}
-        <p class="text-error-700-300">{formError}</p>
-      {/if}
-      {#if collection.syncError}
-        <p class="text-error-700-300">
-          {typeof collection.syncError === "string"
-            ? collection.syncError
-            : neverThrowErrorToString(collection.syncError)}
-        </p>
-      {/if}
-
-      <div class="flex gap-2">
-        <button type="button" class="btn preset-tonal-error" onclick={deleteDefinition}>
-          Delete
-        </button>
-      </div>
-    </fieldset>
+  {#if activeDefinition && activeChild && activeChildTag}
+    <TagEditorPopover
+      tags={[activeChildTag]}
+      {dataTypes}
+      canUpdate={canManage()}
+      canManage={canManage()}
+      bindingValue={childBindingValue}
+      bindingMixed={() => false}
+      bindingError={childBindingError}
+      bindingState={childBindingState}
+      hasOverride={() => false}
+      onSave={saveActiveChild}
+      onBindingSave={saveActiveChildBinding}
+      onBindingRemove={(key) => saveActiveChildBinding(key, "")}
+      onClearOverride={() => {}}
+      onPropertiesChange={saveActiveChildProperties}
+    />
+  {:else if activeDefinition}
+    <TagEditorPopover
+      mode="udtDefinition"
+      tags={[]}
+      {dataTypes}
+      canUpdate={canManage()}
+      canManage={canManage()}
+      bindingValue={() => ""}
+      bindingMixed={() => false}
+      bindingError={() => null}
+      bindingState={() => ({ bound: false, mixed: false })}
+      hasOverride={() => false}
+      onSave={() => {}}
+      onBindingSave={() => {}}
+      onBindingRemove={() => {}}
+      onClearOverride={() => {}}
+      onPropertiesChange={() => {}}
+      definitionProperties={activeDefinition.properties}
+      onDefinitionPropertiesChange={saveDefinitionProperties}
+    />
   {/if}
-</div>
+</Popover>

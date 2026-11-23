@@ -49,7 +49,7 @@ const elementGlobals = `declare global {
   interface ScriptTagPaths {}
 
 ${tagReaders}
-  const props: ScriptElementAttributes;
+  const props: ScriptProperties;
   const element: ScriptElement;
 }
 
@@ -59,7 +59,7 @@ const eventGlobals = `declare global {
   interface ScriptTagPaths {}
 
 ${tagReaders}
-  const props: ScriptElementAttributes;
+  const props: ScriptProperties;
   const element: ScriptElement;
   const event: ScriptEvent;
   const writeTag: ScriptEventGlobals["writeTag"];
@@ -71,7 +71,7 @@ export {};`;
 
 const tagGlobals = `declare global {
   const tagConfig: ScriptTagOptions;
-  const properties: ScriptElementAttributes;
+  const properties: ScriptProperties;
 }
 
 export {};`;

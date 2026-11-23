@@ -32,7 +32,7 @@
         class="size-4 stroke-0
         {stream.value.isErr ? 'fill-error-500' : ''}
         {stream.value.isOk && stream.value.value == 'Disabled' ? 'fill-surface-600-400' : ''}
-        {stream.value.isOk && stream.value.value == 'Connected' ? 'fill-green-600' : ''}
+        {stream.value.isOk && stream.value.value == 'Connected' ? 'fill-success-600-400' : ''}
           {stream.value.isOk && stream.value.value == 'Reconnecting'
           ? 'fill-warning-500 animate-pulse'
           : ''}"

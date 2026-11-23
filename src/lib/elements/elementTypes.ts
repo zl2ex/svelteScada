@@ -1,21 +1,18 @@
 import type { ElementSelect } from "$lib/sqlite/tables/elements";
 import type {
   z_AttributeValue,
-  z_ContainerType,
   z_ElementAttributes,
   z_ElementBindings,
   z_ElementKind,
+  z_ElementProperties,
   z_ElementStyle,
 } from "./elementValidation";
 import type { z } from "zod";
+import type { PropertyValue } from "$lib/propertyValue";
 
 export const elementKinds = ["html", "svg", "base-component", "user-component"] as const;
 
 export type ElementKind = (typeof elementKinds)[number];
-
-export const containerTypes = ["none", "absolute", "flex", "grid", "block"] as const;
-
-export type ContainerType = (typeof containerTypes)[number];
 
 export type ElementStyle = z.infer<typeof z_ElementStyle>;
 
@@ -24,6 +21,8 @@ export type AttributeValue = z.infer<typeof z_AttributeValue>;
 export type ElementAttributeValue = AttributeValue;
 
 export type ElementAttributes = z.infer<typeof z_ElementAttributes>;
+
+export type ElementProperties = z.infer<typeof z_ElementProperties>;
 
 export type ElementBindings = z.infer<typeof z_ElementBindings>;
 
@@ -35,7 +34,7 @@ export type UserComponentPropDefinition = {
   key: string;
   label: string;
   type: UserComponentPropType;
-  defaultValue?: AttributeValue;
+  defaultValue?: PropertyValue;
   required?: boolean;
 };
 
@@ -80,28 +79,6 @@ export function isSvgDrawingElement(element: ElementShape | null | undefined) {
   return !!element && element.kind === "svg" && element.tag !== "svg";
 }
 
-export function containerTypeStyle(containerType: ContainerType): ElementStyle {
-  switch (containerType) {
-    case "flex":
-      return {
-        display: "flex",
-        "flex-wrap": "wrap",
-        "align-content": "flex-start",
-      };
-    case "grid":
-      return {
-        display: "grid",
-        "grid-template-columns": "repeat(12, minmax(0, 1fr))",
-      };
-    case "block":
-      return { display: "block" };
-    case "absolute":
-      return { position: "relative" };
-    default:
-      return {};
-  }
-}
-
 export function findContainerInsertionTarget(
   elements: Record<string, ElementRecord>,
   selectedId: string | null,
@@ -131,14 +108,6 @@ export function elementParentError(child: ElementShape, parent: ElementShape | n
   return null;
 }
 
-export function elementContainerTypeError(
-  element: ElementShape & { containerType: ContainerType },
-) {
-  if (!isContainerElement(element) && element.containerType !== "none") {
-    return "only div, svg, and g containers can set a container type";
-  }
-  return null;
-}
 
 export function sortedChildren<
   T extends { id: string; parentId: string | null; sortIndex: number },

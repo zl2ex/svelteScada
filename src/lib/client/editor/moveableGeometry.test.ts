@@ -26,8 +26,8 @@ function record(overrides: Partial<ElementRecord> = {}): ElementRecord {
     referencedComponentId: null,
     name: "element",
     text: null,
-    containerType: "none",
     attributes: {},
+    properties: {},
     style: {},
     styleClass: [],
     bindings: null,
@@ -132,16 +132,58 @@ describe("moveableGeometry changes", () => {
     expect(second).toMatchObject({ x: 22, y: 38 });
   });
 
-  it("converts screen drag and resize deltas through canvas zoom", () => {
+  it("uses moveable content-space drag and resize deltas directly", () => {
     const html = record({
       style: { position: "absolute", left: "10px", top: "20px", width: "100px", height: "50px" },
     });
     const start = readBox(html, element);
     const dragged = applyDrag(start, [10, 20], element, 2);
-    const resized = applyResize(start, 110, 60, [10, 20], element, 2);
+    const resized = applyResize(start, start, [10, 20], [10, 20], element, 2);
 
-    expect(dragged).toMatchObject({ x: 15, y: 30 });
-    expect(resized).toMatchObject({ x: 15, y: 30, w: 110, h: 60 });
+    expect(dragged).toMatchObject({ x: 20, y: 40 });
+    expect(resized).toMatchObject({ x: 20, y: 40, w: 110, h: 70 });
+  });
+
+  it("adds resize size distance to the start box", () => {
+    const html = record({
+      style: { position: "absolute", left: "10px", top: "20px", width: "100px", height: "50px" },
+    });
+    const start = readBox(html, element);
+    const resized = applyResize(start, start, [50, 20], [0, 0], element, 0.5);
+
+    expect(resized).toMatchObject({ w: 150, h: 70 });
+  });
+
+  it("writes only the moving edge for east and south resizes", () => {
+    const html = record({
+      style: { position: "absolute", left: "100px", top: "100px", width: "100px", height: "50px" },
+    });
+    const start = readBox(html, element);
+    const east = applyResize(start, start, [10, 0], [0, 0], element);
+    const south = applyResize(start, start, [0, 10], [0, 0], element);
+
+    expect(captureBoxChanges(html, start, east, readUnits(html), element)).toEqual({
+      style: { width: "110px" },
+    });
+    expect(captureBoxChanges(html, start, south, readUnits(html), element)).toEqual({
+      style: { height: "60px" },
+    });
+  });
+
+  it("keeps the anchored edge when resizing from the west and north", () => {
+    const html = record({
+      style: { position: "absolute", left: "100px", top: "100px", width: "100px", height: "50px" },
+    });
+    const start = readBox(html, element);
+    const west = applyResize(start, start, [-10, 0], [-10, 0], element);
+    const north = applyResize(start, start, [0, -10], [0, -10], element);
+
+    expect(captureBoxChanges(html, start, west, readUnits(html), element)).toEqual({
+      style: { left: "90px", width: "110px" },
+    });
+    expect(captureBoxChanges(html, start, north, readUnits(html), element)).toEqual({
+      style: { top: "90px", height: "60px" },
+    });
   });
 
   it("captures SVG attribute position changes", () => {

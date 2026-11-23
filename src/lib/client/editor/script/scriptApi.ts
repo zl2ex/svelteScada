@@ -3,9 +3,16 @@ export type ScriptValue =
 
 export type ScriptElementKind = "html" | "svg" | "base-component" | "user-component";
 
-export type ScriptContainerType = "none" | "absolute" | "flex" | "grid" | "block";
 
 export type ScriptAttributeValue = string | number | boolean;
+
+export type ScriptPropertyValue = {
+  value: ScriptAttributeValue;
+  description?: string;
+  required?: boolean;
+};
+
+export type ScriptProperties = Record<string, ScriptPropertyValue>;
 
 export type ScriptElementStyle = Record<string, string>;
 
@@ -34,6 +41,7 @@ export type ScriptTagBindings = ScriptBindings<{
   unit: string;
   trendEnabled: string;
   trendMinimumSamplingIntervalMs: string;
+  writeLevel: string;
 }>;
 
 export type ScriptNeverThrowError = {
@@ -66,7 +74,7 @@ export type ScriptTagOptions = {
   driverPath?: string | null;
   readonly?: boolean | null;
   exposeOverOpcua?: boolean | null;
-  properties?: unknown;
+  properties?: ScriptProperties | null;
   unit?: string;
   writeLevel?: "operator" | "engineer" | "admin";
   bindings?: ScriptTagBindings | null;
@@ -100,8 +108,8 @@ export type ScriptElement = {
   referencedComponentId: string | null;
   name: string;
   text: string | null;
-  containerType: ScriptContainerType;
   attributes: ScriptElementAttributes;
+  properties?: ScriptProperties;
   style: ScriptElementStyle;
   styleClass: string[];
   bindings?: ScriptElementBindings | null;
@@ -142,13 +150,13 @@ export type ScriptCommonBindingGlobals = {
 };
 
 export type ScriptBindingGlobals = ScriptCommonBindingGlobals & {
-  props: ScriptElementAttributes;
+  props: ScriptProperties;
   element: ScriptElement;
 };
 
 export type ScriptTagBindingGlobals = {
   tagConfig: ScriptTagOptions;
-  properties: ScriptElementAttributes;
+  properties: ScriptProperties;
 };
 
 export type ScriptEventTarget = {

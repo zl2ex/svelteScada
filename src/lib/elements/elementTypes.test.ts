@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ElementRecord } from "./elementTypes";
 import {
-  elementContainerTypeError,
   elementParentError,
   findContainerInsertionTarget,
   isContainerElement,
@@ -31,7 +30,6 @@ function record(
     referencedComponentId: null,
     name: tag ?? kind,
     text: null,
-    containerType: "none",
     attributes: {},
     style: {},
     styleClass: [],
@@ -66,11 +64,6 @@ describe("SVG group containers", () => {
 
   it("rejects a root-level g", () => {
     expect(elementParentError(shape("svg", "g"), null)).toContain("inside an <svg> or <g>");
-  });
-
-  it("allows g to use a container type", () => {
-    const group = { ...shape("svg", "g"), containerType: "flex" as const };
-    expect(elementContainerTypeError(group)).toBeNull();
   });
 
   it("selects a g as the insertion target", () => {

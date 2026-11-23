@@ -2,7 +2,8 @@
   import { Trash2Icon } from "@lucide/svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import { evaluateExpression, type BindingContext } from "$lib/client/editor/elementExpressions";
+  import type { BindingContext } from "$lib/client/editor/elementExpressions";
+  import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
   import { setBinding } from "$lib/client/editor/elementBindingRows";
   import { extractCssClassNames } from "$lib/themes/css";
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
@@ -35,7 +36,7 @@
   function bindingResult(className: string) {
     const expression = bindingFor(className);
     if (!expression.trim()) return { result: false, error: null };
-    const evaluation = evaluateExpression(expression, bindingContext);
+    const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext);
     return evaluation.isErr()
       ? { result: false, error: neverThrowErrorToString(evaluation.error) }
       : { result: Boolean(evaluation.value), error: null };

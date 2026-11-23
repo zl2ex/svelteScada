@@ -46,12 +46,14 @@
     LoaderIcon,
     SaveIcon,
     TagIcon,
+    TimelineIcon,
     Trash2Icon,
     XIcon,
   } from "@lucide/svelte";
   import { getAllTags, getAllTagFolders, getOpcuaStatusCodeMap } from "$lib/remote/tag.remote";
   import type { ClosureTableNodeWithPath } from "$lib/server/sqlite/util/tagClosureTable";
   import type { HTMLAttributes } from "svelte/elements";
+  import { isUdtTag } from "$lib/util/tag";
 
   export type SelectedTag = { id: string; name: string; folderId: string | null; path: string };
 
@@ -862,6 +864,33 @@
                   }}
                 >
                   <FolderIcon class="size-4 shrink-0 opacity-75" />
+                  {node.name}
+                </TreeView.BranchText>
+              </TreeView.BranchControl>
+              <TreeView.BranchContent>
+                <TreeView.BranchIndentGuide />
+                {#if children.length > 0}
+                  {#each children as child, i (child.id)}
+                    {@render tagTreeNode(child, [...indexPath, i])}
+                  {/each}
+                {/if}
+              </TreeView.BranchContent>
+            </TreeView.Branch>
+          {:else if isUdtTag(node)}
+            {@const children = visibleChildren(node)}
+
+            <TreeView.Branch>
+              <TreeView.BranchControl>
+                <TreeView.BranchIndicator />
+                <TreeView.BranchText
+                  class="truncate"
+                  onclick={(ev) => {
+                    tagQuery = node.path;
+                    wasSearching = false;
+                    tagTree().expand();
+                  }}
+                >
+                  <TimelineIcon class="size-4 shrink-0 opacity-75" />
                   {node.name}
                 </TreeView.BranchText>
               </TreeView.BranchControl>

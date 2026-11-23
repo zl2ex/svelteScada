@@ -2,27 +2,22 @@
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { handleEditorKeyup, isEditableTarget } from "$lib/client/editor/editorKeyboard";
   import type { EditorMode, UserComponentDefinition } from "$lib/client/editor/editorState.svelte";
-  import type { ContainerType, ElementRecord } from "$lib/elements/elementTypes";
+  import type { ElementRecord } from "$lib/elements/elementTypes";
   import { attempt } from "$lib/util/attempt";
-  import { onMount, tick } from "svelte";
-  import {
-    containerTypeStyle,
-    elementStyleToString,
-    sortedChildren,
-  } from "$lib/elements/elementTypes";
+  import { onMount, tick, untrack } from "svelte";
+  import { elementStyleToString, sortedChildren } from "$lib/elements/elementTypes";
   import { Menu, Portal } from "@skeletonlabs/skeleton-svelte";
   import PageElement from "./PageElement.svelte";
   import PageCanvasMoveable from "./PageCanvasMoveable.svelte";
 
   type Props = {
     elements: Record<string, ElementRecord>;
-    containerType?: ContainerType;
     mode?: EditorMode;
     userComponents?: UserComponentDefinition[];
     themeName?: string;
   };
 
-  let { elements, containerType = "absolute", mode, userComponents, themeName }: Props = $props();
+  let { elements, mode, userComponents, themeName }: Props = $props();
 
   const editorResult = attempt(() => getEditorContext());
   const editor = editorResult.isOk ? editorResult.data : undefined;
@@ -31,9 +26,80 @@
   let activeMode = $derived(mode ?? editor?.mode ?? "preview");
   let componentDefinitions = $derived(userComponents ?? editor?.userComponents ?? []);
   let roots = $derived(sortedChildren(elements, null));
-  let canvasStyle = $derived(elementStyleToString(containerTypeStyle(containerType)));
   let moveableTargets = $state<Array<HTMLElement | SVGElement>>([]);
   let selectedElements = $derived(editor?.selectedElements ?? []);
+
+  type PanGesture = {
+    pointerId: number;
+    button: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  };
+
+  let ctrlPressed = $state(false);
+  let lastCursor = $state<{ x: number; y: number } | null>(null);
+  let panGesture: PanGesture | null = null;
+  let suppressClick = false;
+  let previousZoom = editor?.canvasZoom ?? 1;
+  let lastResetToken = editor?.canvasViewResetToken ?? 0;
+
+  function canvasPoint(clientX: number, clientY: number) {
+    if (!canvasElement) return null;
+    const rect = canvasElement.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top, rect };
+  }
+
+  function updateLastCursor(event: PointerEvent) {
+    const point = canvasPoint(event.clientX, event.clientY);
+    if (!point) return;
+    const inside =
+      point.x >= 0 && point.y >= 0 && point.x <= point.rect.width && point.y <= point.rect.height;
+    if (inside || panGesture) lastCursor = { x: point.x, y: point.y };
+  }
+
+  function handleCanvasPointerDown(event: PointerEvent) {
+    if (isEditableTarget(event.target)) return;
+    canvasElement?.focus({ preventScroll: true });
+
+    const shouldPan = event.button === 1 || (event.button === 0 && ctrlPressed);
+    if (!shouldPan || !canvasElement || !editor) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    updateLastCursor(event);
+    canvasElement.setPointerCapture(event.pointerId);
+    panGesture = {
+      pointerId: event.pointerId,
+      button: event.button,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: editor.canvasPanX,
+      originY: editor.canvasPanY,
+      moved: false,
+    };
+  }
+
+  function handlePointerMove(event: PointerEvent) {
+    updateLastCursor(event);
+    if (!panGesture || event.pointerId !== panGesture.pointerId || !editor) return;
+
+    const dx = event.clientX - panGesture.startX;
+    const dy = event.clientY - panGesture.startY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) panGesture.moved = true;
+    editor.setCanvasPan(panGesture.originX + dx, panGesture.originY + dy);
+  }
+
+  function endPan(event: PointerEvent) {
+    if (!panGesture || event.pointerId !== panGesture.pointerId) return;
+    if (panGesture.moved && panGesture.button === 0) suppressClick = true;
+    if (canvasElement?.hasPointerCapture(event.pointerId)) {
+      canvasElement.releasePointerCapture(event.pointerId);
+    }
+    panGesture = null;
+  }
 
   function handleZoomKeydown(event: KeyboardEvent) {
     if (activeMode !== "edit" || !editor) return;
@@ -67,28 +133,72 @@
 
       event.preventDefault();
 
-      const oldZoom = editor.canvasZoom;
-      const rect = canvasElement.getBoundingClientRect();
-      const cursorX = event.clientX - rect.left;
-      const cursorY = event.clientY - rect.top;
-      const contentX = (canvasElement.scrollLeft + cursorX) / oldZoom;
-      const contentY = (canvasElement.scrollTop + cursorY) / oldZoom;
+      const point = canvasPoint(event.clientX, event.clientY);
+      if (point) {
+        lastCursor = { x: point.x, y: point.y };
+      }
 
       if (event.deltaY < 0) editor.zoomIn();
       else editor.zoomOut();
+    };
 
-      const newZoom = editor.canvasZoom;
-      if (newZoom === oldZoom) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Control" || event.repeat) return;
+      if (activeMode !== "edit" || isEditableTarget(event.target)) return;
+      if (document.activeElement !== canvasElement) return;
+      event.preventDefault();
+      ctrlPressed = true;
+    };
 
-      void tick().then(() => {
-        if (!canvasElement) return;
-        canvasElement.scrollLeft = contentX * newZoom - cursorX;
-        canvasElement.scrollTop = contentY * newZoom - cursorY;
-      });
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Control") return;
+      ctrlPressed = false;
     };
 
     canvasElement.addEventListener("wheel", handleWheel, { passive: false });
-    return () => canvasElement?.removeEventListener("wheel", handleWheel);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", endPan);
+    window.addEventListener("pointercancel", endPan);
+
+    return () => {
+      canvasElement?.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", endPan);
+      window.removeEventListener("pointercancel", endPan);
+    };
+  });
+
+  $effect(() => {
+    if (!editor || !canvasElement) return;
+    const zoom = editor.canvasZoom;
+    const resetToken = editor.canvasViewResetToken;
+
+    if (resetToken !== lastResetToken) {
+      lastResetToken = resetToken;
+      previousZoom = zoom;
+      return;
+    }
+
+    if (zoom === previousZoom) return;
+
+    const oldZoom = previousZoom;
+    previousZoom = zoom;
+    const rect = canvasElement.getBoundingClientRect();
+    const cursor = lastCursor ?? { x: rect.width / 2, y: rect.height / 2 };
+    const scrollLeft = canvasElement.scrollLeft;
+    const scrollTop = canvasElement.scrollTop;
+    const panX = untrack(() => editor.canvasPanX);
+    const panY = untrack(() => editor.canvasPanY);
+    const contentX = (scrollLeft + cursor.x - panX) / oldZoom;
+    const contentY = (scrollTop + cursor.y - panY) / oldZoom;
+    const nextPanX = scrollLeft + cursor.x - contentX * zoom;
+    const nextPanY = scrollTop + cursor.y - contentY * zoom;
+
+    untrack(() => editor.setCanvasPan(nextPanX, nextPanY));
   });
 
   $effect(() => {
@@ -119,18 +229,20 @@
 
 <div
   bind:this={canvasElement}
-  class="relative min-h-full w-full overflow-auto bg-surface-50-950 outline-none"
+  id="editor-canvas"
+  class="relative min-h-full w-full overflow-clip bg-surface-50-950 outline-none"
   role="presentation"
   tabindex="-1"
-  onpointerdowncapture={(event) => {
-    if (isEditableTarget(event.target)) return;
-    canvasElement?.focus({ preventScroll: true });
-  }}
+  onpointerdowncapture={handleCanvasPointerDown}
   onkeydown={(event) => {
     if (handleZoomKeydown(event)) return;
     if (editor) handleEditorKeyup(editor, event);
   }}
   onclick={(event) => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
     if (activeMode !== "edit") return;
     const target = event.target instanceof Element ? event.target : null;
     if (
@@ -140,7 +252,7 @@
     ) {
       return;
     }
-    const element = target?.closest<HTMLElement>("[data-element-id]");
+    const element = target?.closest("[data-element-id]");
     const id = element?.dataset.elementId;
     if (id) {
       editor?.selectElement(id, {
@@ -155,8 +267,8 @@
   <div
     class="page-canvas"
     class:page-grid={editor?.grid.enabled}
-    style="{canvasStyle};--grid-spacing:{editor?.grid.spacing ?? 20}px"
-    style:zoom={editor?.canvasZoom ?? 1}
+    style="--grid-spacing:{editor?.grid.spacing ?? 20}px;transform:translate({editor?.canvasPanX ??
+      0}px, {editor?.canvasPanY ?? 0}px) scale({editor?.canvasZoom ?? 1});transform-origin:top left"
     data-theme={themeName}
   >
     {#if roots.length === 0}
@@ -178,6 +290,8 @@
   .page-canvas {
     position: relative;
     min-height: 80vh;
+    transform-origin: top left;
+    will-change: transform;
   }
 
   .page-grid {

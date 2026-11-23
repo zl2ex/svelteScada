@@ -10,6 +10,7 @@ import type {
   ElementRecord,
   ElementKind,
   ElementAttributes,
+  ElementProperties,
   ElementStyle,
 } from "$lib/elements/elementTypes";
 import {
@@ -41,7 +42,7 @@ export type EditorGrid = {
   enabled: boolean;
 };
 
-export type EditorLeftPanelTab = "tags" | "udts" | "pages";
+export type EditorLeftPanelTab = "tags" | "udts" | "projects";
 
 export type EditorFocusSnapshot = {
   projectId: string | null;
@@ -85,6 +86,9 @@ export class EditorState {
   mode = $state<EditorMode>("edit");
   grid = $state<EditorGrid>({ spacing: 5, enabled: true });
   canvasZoom = $state(1);
+  canvasPanX = $state(0);
+  canvasPanY = $state(0);
+  canvasViewResetToken = $state(0);
 
   #pageCollections = $state.raw<Record<string, PatchCollection<ElementRecord, NeverThrowError>>>(
     {},
@@ -172,12 +176,19 @@ export class EditorState {
   }
 
   setElementSelection(ids: string[], primaryId: string | null = null) {
+    console.debug(ids);
     const unique = [...new Set(ids)].filter((id) => this.elementsCollection?.state[id]);
     if (primaryId && unique.includes(primaryId)) {
       this.selectedElementIds = [...unique.filter((id) => id !== primaryId), primaryId];
-      return;
+    } else {
+      this.selectedElementIds = unique;
     }
-    this.selectedElementIds = unique;
+
+    /*this.selectedElementIds.forEach((id) => {
+      const element = document.querySelector<HTMLElement>(`#editor-canvas [data-element-id=${id}]`);
+      element?.focus();
+      // TD WIP focus not working...
+    });*/
   }
 
   clearElementSelection() {
@@ -195,6 +206,7 @@ export class EditorState {
   }
 
   selectElement(id: string, options: { additive?: boolean; range?: boolean } = {}) {
+    console.debug("selectElement");
     if (options.range) {
       const order = this.#elementOrder();
       const targetIndex = order.indexOf(id);
@@ -339,8 +351,21 @@ export class EditorState {
     this.canvasZoom = stepCanvasZoom(this.canvasZoom, -1);
   }
 
+  setCanvasPan(x: number, y: number) {
+    this.canvasPanX = x;
+    this.canvasPanY = y;
+  }
+
+  panBy(dx: number, dy: number) {
+    this.canvasPanX += dx;
+    this.canvasPanY += dy;
+  }
+
   resetCanvasZoom() {
     this.canvasZoom = 1;
+    this.canvasPanX = 0;
+    this.canvasPanY = 0;
+    this.canvasViewResetToken++;
   }
 
   setActivePage(id: string | null) {
@@ -458,7 +483,6 @@ export class EditorState {
       id: newId(),
       projectId,
       name,
-      containerType: "absolute",
       sortIndex: Math.max(-1, ...siblings.map((item) => item.sortIndex)) + 1,
       createdAt: now,
       updatedAt: now,
@@ -489,6 +513,7 @@ export class EditorState {
       referencedComponentId?: string | null;
       name?: string;
       attributes?: ElementAttributes;
+      properties?: ElementProperties;
       style?: ElementStyle;
     } = {},
   ) {
@@ -502,6 +527,16 @@ export class EditorState {
     const now = Date.now();
     const id = newId();
     const defaults = getDefaultElementConfig(kind, options);
+    const componentDefinition =
+      kind === "user-component"
+        ? this.userComponents.find((item) => item.component.id === options.referencedComponentId)
+        : undefined;
+    const componentProperties = Object.fromEntries(
+      (componentDefinition?.component.props ?? []).map((prop) => [
+        prop.key,
+        prop.defaultValue ?? { value: "", required: prop.required ?? true },
+      ]),
+    );
     const element: ElementRecord = {
       id,
       parentId,
@@ -512,8 +547,12 @@ export class EditorState {
       referencedComponentId: options.referencedComponentId ?? null,
       name: options.name ?? options.tag ?? options.baseComponent ?? kind,
       text: null,
-      containerType: "none",
       attributes: { ...defaults.attributes, ...options.attributes },
+      properties: {
+        ...defaults.properties,
+        ...componentProperties,
+        ...options.properties,
+      },
       style: { ...defaults.style, ...options.style },
       styleClass: [],
       bindings: null,
@@ -609,6 +648,9 @@ export class EditorState {
     this.clearElementSelection();
     this.leftPanelTab = "tags";
     this.canvasZoom = 1;
+    this.canvasPanX = 0;
+    this.canvasPanY = 0;
+    this.canvasViewResetToken++;
     this.#focusHistory = [];
     this.#focusFuture = [];
     this.#lastFocus = this.snapshotFocus();

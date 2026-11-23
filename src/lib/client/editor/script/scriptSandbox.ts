@@ -46,6 +46,8 @@ function createSandbox(quota: bigint) {
 
 const expressionSandbox = createSandbox(EXPRESSION_EXECUTION_QUOTA);
 const expressionCache = new Map<string, Result<Executor<unknown>, ScriptEvaluationError>>();
+const scriptValidationSandbox = createSandbox(EVENT_EXECUTION_QUOTA);
+const scriptValidationCache = new Map<string, Result<void, ScriptEvaluationError>>();
 
 function compileExpression(expression: string): Result<Executor<unknown>, ScriptEvaluationError> {
   const cached = expressionCache.get(expression);
@@ -100,6 +102,29 @@ export function evaluateSandboxExpression<Scope extends Record<string, unknown>>
   }
 
   return ok(result.data);
+}
+
+export function validateSandboxScript(script: string): Result<void, ScriptEvaluationError> {
+  if (!script.trim()) return ok(undefined);
+
+  const cached = scriptValidationCache.get(script);
+  if (cached !== undefined) return cached;
+
+  const compiled = attempt(() => scriptValidationSandbox.compileAsync<unknown>(script));
+
+  if (compiled.isErr) {
+    console.error(`[script sandbox] could not compile event script`, compiled.error);
+    const failure = err({
+      reason: "SCRIPT_COMPILE_ERROR",
+      cause: errorToString(compiled.error),
+    } as const satisfies ScriptEvaluationError);
+    scriptValidationCache.set(script, failure);
+    return failure;
+  }
+
+  const success = ok(undefined);
+  scriptValidationCache.set(script, success);
+  return success;
 }
 
 export async function executeSandboxEvent(

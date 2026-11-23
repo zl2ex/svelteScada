@@ -24,8 +24,8 @@
   <button
     type="button"
     class="btn btn-sm min-w-14 px-1 text-xs"
-    title="Reset zoom"
-    aria-label="Reset zoom"
+    title="Reset view"
+    aria-label="Reset view"
     onclick={() => editor.resetCanvasZoom()}
   >
     {Math.round(editor.canvasZoom * 100)}%

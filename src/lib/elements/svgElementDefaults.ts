@@ -10,6 +10,7 @@ const strokedShapeStyle = {
   fill: "none",
   stroke: "var(--color-surface-600-400)",
   "stroke-width": "2",
+  "stroke-linecap": "round",
 };
 
 const textStyle = {
@@ -19,16 +20,15 @@ const textStyle = {
 };
 
 const defaultPosition = {
-  x: "50%",
-  y: "50%",
+  x: "50px",
+  y: "50px",
 };
 
 export const svgElementDefaults = {
   svg: {
     attributes: {
       ...defaultPosition,
-      width: "100%",
-      height: "100%",
+      viewBox: "0 0 1000 1000",
     },
   },
   g: {},
@@ -69,7 +69,7 @@ export const svgElementDefaults = {
     },
   },
   line: {
-    attributes: { x1: defaultPosition.x, y1: defaultPosition.y, x2: "60%", y2: "60%" },
+    attributes: { x1: defaultPosition.x, y1: defaultPosition.y, x2: "60px", y2: "60px" },
     style: { ...strokedShapeStyle },
   },
   polyline: {
@@ -108,13 +108,13 @@ export const svgElementDefaults = {
     attributes: { width: "10", height: "10", patternUnits: "userSpaceOnUse" },
   },
   linearGradient: {
-    attributes: { x1: "0%", y1: "0%", x2: "100%", y2: "0%" },
+    attributes: { x1: "0px", y1: "0px", x2: "100px", y2: "0px" },
   },
   radialGradient: {
-    attributes: { cx: "50%", cy: "50%", r: "50%" },
+    attributes: { cx: "50px", cy: "50px", r: "50px" },
   },
   stop: {
-    attributes: { offset: "0%" },
+    attributes: { offset: "0px" },
     style: { "stop-color": "var(--color-surface-600-400)" },
   },
   filter: {},

@@ -69,3 +69,68 @@ input[type="number"] {
     color: var(--color-error-600-400);
   }
 }
+
+/* drag and drop outline for multiple areas in the ui*/
+[data-drop="inside"] {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: -2px;
+}
+
+/* skeleton <Tabs> change selected apperance */
+[data-scope="tabs"][data-part="indicator"] {
+  background: var(--color-primary-400-600);
+}
+
+/* custom moveable control handles */
+
+:root {
+  --custom-moveable-color: var(--color-primary-800-200);
+}
+
+.moveable-origin {
+  --custom-moveable-color: var(--color-red-500);
+  mix-blend-mode: difference;
+}
+.moveable-line {
+  background: var(--custom-moveable-color) !important;
+  mix-blend-mode: difference;
+}
+.moveable-control {
+  --size: 20px;
+  width: var(--size) !important;
+  height: var(--size) !important;
+  margin-left: calc(-1 * var(--size) / 2) !important;
+  margin-top: calc(-1 * var(--size) / 2) !important;
+  border: none !important;
+  background: none !important;
+  mix-blend-mode: difference;
+}
+
+.moveable-control:hover {
+  outline: 1px solid var(--custom-moveable-color) !important;
+  /*outline-offset: calc(-1 * var(--size) / 4);*/
+  background-color: color-mix(in srgb, var(--color-surface-200-800) 50%, transparent) !important;
+}
+.moveable-control::before,
+.moveable-control::after {
+  content: "";
+  position: absolute;
+  background-color: var(--custom-moveable-color); /* Color of the plus sign */
+  /*border: 1px solid var(--color-surface-950-50);
+  /* Center the elements perfectly */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Horizontal bar */
+.moveable-control::before {
+  width: 100%;
+  height: 1px;
+}
+
+/* Vertical bar */
+.moveable-control::after {
+  width: 1px;
+  height: 100%;
+}

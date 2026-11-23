@@ -33,7 +33,8 @@ describe("element insertion defaults", () => {
     for (const name of baseComponentNames) {
       const config = getDefaultElementConfig("base-component", { baseComponent: name });
 
-      expect(config.attributes).toEqual(baseComponents[name].defaultAttributes);
+      expect(config.properties).toEqual(baseComponents[name].defaultProperties);
+      expect(config.attributes).toEqual({});
       expect(config.style).toEqual({});
     }
   });
@@ -41,6 +42,7 @@ describe("element insertion defaults", () => {
   it("returns empty defaults for user components", () => {
     expect(getDefaultElementConfig("user-component", {})).toEqual({
       attributes: {},
+      properties: {},
       style: {},
     });
   });

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BracesIcon, Unlink2Icon } from "@lucide/svelte";
+  import { BracesIcon, Link2Icon, Unlink2Icon } from "@lucide/svelte";
   import { Popover, Portal } from "@skeletonlabs/skeleton-svelte";
   import type { ScriptScope } from "$lib/client/editor/script/scriptScopes";
   import ScriptEditor from "./ScriptEditor.svelte";
@@ -46,7 +46,7 @@
 <Popover positioning={{ placement: "left-end" }}>
   <Popover.Trigger
     type="button"
-    class="btn btn-sm {hasError
+    class="btn p-1.5 {hasError
       ? 'preset-filled-error-500'
       : isBound
         ? 'preset-filled'
@@ -54,7 +54,7 @@
     aria-invalid={hasError}
     title={hasError ? savedError : isBound ? binding : "Add binding"}
   >
-    <BracesIcon class="size-4" />
+    <Link2Icon class="size-4" />
   </Popover.Trigger>
 
   <Portal>

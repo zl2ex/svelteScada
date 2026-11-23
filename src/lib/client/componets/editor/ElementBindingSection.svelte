@@ -55,7 +55,8 @@
       result={row.result}
       savedError={row.error}
       placeholder={row.placeholder}
-      removable
+      description={row.description}
+      required={row.required}
       onValueCommit={(value) => onValueCommit(row, value)}
       onBindingSave={(expression) => onBindingSave(row, expression)}
       onBindingRemove={() => onBindingRemove(row)}

@@ -2,6 +2,7 @@
   import { Trash2Icon } from "@lucide/svelte";
   import BindingEditor from "./BindingEditor.svelte";
   import { commitOrRevert } from "$lib/client/util/use";
+  import { fieldStyle } from "$lib/client/util/bindingStyle";
 
   let {
     label,
@@ -10,8 +11,9 @@
     result,
     savedError = null,
     placeholder = "",
+    description,
+    required = true,
     multiline = false,
-    removable = false,
     onValueCommit,
     onBindingSave,
     onBindingRemove,
@@ -23,8 +25,9 @@
     result: string;
     savedError?: string | null;
     placeholder?: string;
+    description?: string;
+    required?: boolean;
     multiline?: boolean;
-    removable?: boolean;
     onValueCommit: (value: string) => void;
     onBindingSave: (expression: string) => void;
     onBindingRemove: () => void;
@@ -32,12 +35,13 @@
   } = $props();
 
   let isBound = $derived(binding.trim().length > 0);
+  let removable = $derived(!required);
   let displayedValue = $derived(isBound ? result : value);
 </script>
 
 <div class="flex flex-col gap-1">
   <div class="flex items-center justify-between gap-2">
-    <span class="opacity-60 truncate">{label}</span>
+    <span class="opacity-60 truncate" title={description}>{label}</span>
   </div>
 
   <div class="flex items-stretch gap-1 min-w-0">
@@ -47,6 +51,7 @@
         rows="2"
         value={displayedValue}
         disabled={isBound}
+        style={fieldStyle({ bound: isBound })}
         placeholder={isBound ? "No result" : placeholder}
         onblur={(event) => {
           if (!isBound) onValueCommit(event.currentTarget.value);
@@ -58,6 +63,7 @@
         disabled={isBound}
         placeholder={isBound ? "No result" : placeholder}
         //use:commitOrRevert(this, onValueCommit, () => {})
+        style={fieldStyle({ bound: isBound })}
         onblur={(event) => {
           if (!isBound) onValueCommit(event.currentTarget.value);
         }}
@@ -77,7 +83,7 @@
       <button
         type="button"
         class="btn-icon btn-sm preset-tonal"
-        title={`Remove ${label}`}
+        title={description ? `${description} — remove ${label}` : `Remove ${label}`}
         onclick={onRemove}
       >
         <Trash2Icon class="size-3.5" />

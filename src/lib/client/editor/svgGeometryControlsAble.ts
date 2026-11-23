@@ -28,10 +28,7 @@ type ActiveDrag = {
   previewAttributes: ElementAttributes | null;
 };
 
-export function createSvgGeometryControlsAble({
-  preview,
-  commit,
-}: SvgGeometryControlHandlers) {
+export function createSvgGeometryControlsAble({ preview, commit }: SvgGeometryControlHandlers) {
   return {
     name: "svgGeometryControls",
     always: true,

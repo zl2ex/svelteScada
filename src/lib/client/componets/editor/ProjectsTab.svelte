@@ -7,6 +7,8 @@
     ArrowUpIcon,
     BlocksIcon,
     BoxIcon,
+    CircleAlertIcon,
+    CodeXmlIcon,
     FilePlus2Icon,
     FileTextIcon,
     Link2Icon,
@@ -23,6 +25,7 @@
     useTreeView,
   } from "@skeletonlabs/skeleton-svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import { getScriptEvaluatorContext } from "$lib/client/editor/scriptEvaluatorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { handleEditorKeyup } from "$lib/client/editor/editorKeyboard";
   import type { ElementRecord } from "$lib/elements/elementTypes";
@@ -47,6 +50,7 @@
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
+  const editorEvaluator = getScriptEvaluatorContext();
 
   let renamingId = $state<string | null>(null);
   let contextMenuProjectId = $state<string | null>(null);
@@ -209,6 +213,7 @@
       const selectedElements = details.selectedNodes.filter(
         (node): node is ElementNode => node.kind === "element",
       );
+
       editor.setElementSelection(
         selectedElements.map((node) => node.element.id),
         last.element.id,
@@ -682,8 +687,9 @@
 {/snippet}
 
 {#snippet elementLabel(element: ElementRecord)}
+  {@const bindingError = editorEvaluator.elementError(element)}
   <div class="flex grow gap-2 min-w-0">
-    <BoxIcon class="size-4 shrink-0 opacity-60" />
+    <CodeXmlIcon class="size-4 shrink-0 opacity-60" />
     {#if renamingId === element.id}
       <input
         class="input p-0 text-xs grow"
@@ -713,6 +719,15 @@
         {#if element.bindings}
           <Link2Icon class="size-5 opacity-85" title="bindings" />
         {/if}
+        <CircleAlertIcon
+          class={bindingError
+            ? "size-4 shrink-0 text-error-600-400 opacity-100"
+            : "size-4 shrink-0 text-error-600-400 opacity-0"}
+          aria-hidden={!bindingError}
+          title={bindingError
+            ? `${bindingError.scope}${bindingError.key ? `.${bindingError.key}` : ""}: ${bindingError.message}`
+            : undefined}
+        />
         <span class="truncate opacity-50">{element.kind}</span>
       </div>
     {/if}

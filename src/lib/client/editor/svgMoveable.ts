@@ -14,7 +14,7 @@ const scalable = { resizable: false, scalable: true, controls: [] } as const;
 const resizable = { resizable: true, scalable: false, controls: [] } as const;
 
 export const svgMoveableSupport: Record<SvgTag, MoveableSupport> = {
-  svg: none,
+  svg: resizable,
   g: scalable,
   defs: none,
   symbol: scalable,
@@ -155,7 +155,7 @@ export function svgDragAttributes(
 }
 
 /***
-
+TD 
 change svgDragAttributes() and svgScaleAttributes() to use a lookup toPositionAttributes()  instead of switch statement's. also fix the type errors in toPositionAttributes and sujjest changes to the implimentation
  */
 

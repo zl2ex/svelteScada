@@ -142,6 +142,9 @@
     <section class="flex min-h-0 min-w-0 flex-col gap-2">
       {#if !selected}
         <p class="opacity-60">Select or create a theme.</p>
+        <p class="opacity-50 text-xs">
+          "open another tab with a project that uses this theme to see live results"
+        </p>
       {:else}
         <fieldset
           class="flex min-h-0 flex-1 flex-col gap-2"
