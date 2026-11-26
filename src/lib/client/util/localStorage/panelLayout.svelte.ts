@@ -42,6 +42,12 @@ export class PanelLayout {
     }
     this.width = parsed.data;
 
+    const stopResize = () => {
+      if (this.dragging.left) this.dragging.left = false;
+      if (this.dragging.right) this.dragging.right = false;
+      this.setWidth();
+    };
+
     const listened = attempt(() => {
       document.addEventListener("pointermove", (ev) => {
         if (this.dragging.left) {
@@ -58,11 +64,8 @@ export class PanelLayout {
         }
       });
 
-      document.addEventListener("pointerup", (ev) => {
-        if (this.dragging.left) this.dragging.left = false;
-        if (this.dragging.right) this.dragging.right = false;
-        this.setWidth();
-      });
+      document.addEventListener("pointerup", stopResize);
+      document.addEventListener("pointercancel", stopResize);
     });
     if (listened.isErr) {
       return err({

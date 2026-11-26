@@ -4,3 +4,7 @@ export function filterAutocompleteItems(items: string[], query: string, limit = 
     .filter((item) => item.toLowerCase().includes(normalized))
     .slice(0, Math.max(0, limit));
 }
+
+export function findExactAutocompleteItem(items: string[], query: string) {
+  return items.find((item) => item === query) ?? null;
+}

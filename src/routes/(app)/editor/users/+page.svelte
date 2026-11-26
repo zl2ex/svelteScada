@@ -5,6 +5,7 @@
   import { toast } from "$lib/client/toast.svelte";
   import { attempt } from "$lib/util/attempt";
   import { errorToString } from "$lib/util/neverThrow";
+  import { commitOrRevert } from "$lib/client/util/use";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -104,7 +105,14 @@
   <form class="card p-4 flex flex-wrap items-end gap-2" onsubmit={addUser}>
     <label class="flex flex-col gap-1">
       <span class="opacity-60">Name</span>
-      <input class="input" bind:value={name} required />
+      <input
+        class="input"
+        bind:value={name}
+        required
+        {@attach commitOrRevert((value) => { name = value; }, "string", undefined, {
+          allowNativeEnter: true,
+        })}
+      />
     </label>
     <label class="flex flex-col gap-1">
       <span class="opacity-60">Email</span>
@@ -116,7 +124,13 @@
     </label>
     <label class="flex flex-col gap-1">
       <span class="opacity-60">Role</span>
-      <select class="input" bind:value={role}>
+      <select
+        class="input"
+        bind:value={role}
+        {@attach commitOrRevert((value) => { role = value as UserRole; }, "string", undefined, {
+          allowNativeEnter: true,
+        })}
+      >
         {#each userRoles as option}
           <option value={option}>{option}</option>
         {/each}
@@ -136,7 +150,7 @@
           <select
             class="input w-40"
             value={user.role}
-            onchange={(event) => changeRole(user.id, event.currentTarget.value as UserRole)}
+            {@attach commitOrRevert((value) => changeRole(user.id, value as UserRole))}
           >
             {#each userRoles as option}
               <option value={option}>{option}</option>

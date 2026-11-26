@@ -8,7 +8,9 @@
     BlocksIcon,
     BoxIcon,
     CircleAlertIcon,
+    ClipboardPasteIcon,
     CodeXmlIcon,
+    CopyIcon,
     FilePlus2Icon,
     FileTextIcon,
     Link2Icon,
@@ -27,18 +29,40 @@
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getScriptEvaluatorContext } from "$lib/client/editor/scriptEvaluatorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
-  import { handleEditorKeyup } from "$lib/client/editor/editorKeyboard";
+  import { handleEditorKeyup, isEditableTarget } from "$lib/client/editor/editorKeyboard";
+  import { getProjectElements } from "$lib/remote/editor.remote";
+  import { undoManager } from "$lib/client/history/undoManager";
   import type { ElementRecord } from "$lib/elements/elementTypes";
   import {
     elementParentError,
+    findContainerInsertionTarget,
     isContainerElement,
     sortedChildren,
   } from "$lib/elements/elementTypes";
   import type { PageRecord } from "$lib/elements/pageTypes";
   import type { ProjectSelect } from "$lib/sqlite/tables";
-  import { focusOnMount } from "$lib/client/util/use";
+  import { commitOrRevert, focusOnMount } from "$lib/client/util/use";
   import { toast } from "$lib/client/toast.svelte";
-  import { neverThrowErrorToString } from "$lib/util/neverThrow";
+  import { attempt } from "$lib/util/attempt";
+  import {
+    errorToString,
+    neverThrowErrorToString,
+    type NeverThrowError,
+  } from "$lib/util/neverThrow";
+  import { err, ok } from "neverthrow";
+  import {
+    collectElementSubtree,
+    createElementCopy,
+    createPageCopy,
+    createProjectCopy,
+    nextElementSortIndex,
+    parseProjectClipboard,
+    toClipboardElement,
+    toClipboardPage,
+    toClipboardProject,
+    type ProjectClipboardItem,
+    type ProjectClipboardItemInput,
+  } from "$lib/client/editor/projectClipboard";
   import {
     getDropPosition,
     readTreeDragData,
@@ -537,11 +561,12 @@
         description: neverThrowErrorToString(result.error),
         duration: 3000,
       });
-      return;
+      return err(result.error);
     }
     if (routePage.url.pathname !== "/editor") {
       await goto("/editor", { keepFocus: true });
     }
+    return ok(null);
   }
 
   async function addPage(projectId: string) {
@@ -553,6 +578,450 @@
   function removePage(id: string) {
     editor.deletePage(id);
     contextMenuPageId = null;
+  }
+
+  type ClipboardTarget =
+    | { kind: "element"; pageId: string; parentId: string | null }
+    | { kind: "page"; projectId: string; pageId: string }
+    | { kind: "project"; projectId: string };
+
+  function selectedTreeNodes() {
+    const nodes: TreeNode[] = [];
+    for (const id of treeView().selectedValue) {
+      const node = treeView().collection.findNode(id);
+      if (node) nodes.push(node);
+    }
+    return nodes;
+  }
+
+  function primarySelectedNode() {
+    return selectedTreeNodes().at(-1) ?? null;
+  }
+
+  function contextTreeNode() {
+    if (contextMenuElement && editor.activePageId) {
+      return elementNode(contextMenuElement, editor.activePageId);
+    }
+    if (contextMenuPage) return pageNode(contextMenuPage);
+    if (contextMenuProject) return projectNode(contextMenuProject);
+    return undefined;
+  }
+
+  function isCoveredBySelection(node: TreeNode, selected: TreeNode[]) {
+    if (node.kind === "root") return true;
+    for (const other of selected) {
+      if (other.id === node.id) continue;
+      if (other.kind === "project") {
+        if (node.kind === "page" && node.page.projectId === other.project.id) return true;
+        if (
+          node.kind === "element" &&
+          editor.pagesCollection.state[node.pageId]?.projectId === other.project.id
+        ) {
+          return true;
+        }
+      }
+      if (other.kind === "page" && node.kind === "element" && node.pageId === other.page.id) {
+        return true;
+      }
+      if (
+        other.kind === "element" &&
+        node.kind === "element" &&
+        isElementDescendant(node.element.id, other.element.id)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function sortedElementValues(elements: Record<string, ElementRecord>) {
+    return Object.values(elements).sort(
+      (a, b) =>
+        a.sortIndex - b.sortIndex || a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
+    );
+  }
+
+  async function copyToClipboard(text: string) {
+    const result = await attempt(() => navigator.clipboard.writeText(text));
+    if (result.isErr) {
+      return err({
+        reason: "CLIPBOARD_WRITE_FAILED",
+        cause: errorToString(result.error),
+      } as const satisfies NeverThrowError);
+    }
+    return ok(null);
+  }
+
+  async function readClipboard() {
+    const result = await attempt(() => navigator.clipboard.readText());
+    if (result.isErr) {
+      return err({
+        reason: "CLIPBOARD_READ_FAILED",
+        cause: errorToString(result.error),
+      } as const satisfies NeverThrowError);
+    }
+    return ok(result.data);
+  }
+
+  async function projectElementsForCopy(projectId: string) {
+    if (editor.activeProjectId === projectId) {
+      const elementsByPage: Record<string, Record<string, ElementRecord>> = {};
+      for (const page of editor.children(projectId)) {
+        elementsByPage[page.id] = editor.getPageElementsSnapshot(page.id) ?? {};
+      }
+      return ok(elementsByPage);
+    }
+
+    const loaded = await attempt(() => getProjectElements(projectId));
+    if (loaded.isErr) {
+      return err({
+        reason: "COPY_ELEMENTS_FAILED",
+        cause: errorToString(loaded.error),
+      } as const satisfies NeverThrowError);
+    }
+    if (loaded.data.isErr) return err(loaded.data.error);
+    return ok(loaded.data.value);
+  }
+
+  async function buildClipboardItems(nodes: TreeNode[]) {
+    const items: ProjectClipboardItemInput[] = [];
+    const cache = new Map<string, Record<string, Record<string, ElementRecord>>>();
+
+    async function loadProjectElements(projectId: string) {
+      const cached = cache.get(projectId);
+      if (cached) return ok(cached);
+
+      const result = await projectElementsForCopy(projectId);
+      if (result.isErr()) return err(result.error);
+      cache.set(projectId, result.value);
+      return ok(result.value);
+    }
+
+    for (const node of nodes) {
+      if (node.kind === "project") {
+        const elements = await loadProjectElements(node.project.id);
+        if (elements.isErr()) return err(elements.error);
+
+        items.push({
+          type: "project",
+          project: toClipboardProject(node.project),
+          pages: editor.children(node.project.id).map((page) => ({
+            page: toClipboardPage(page),
+            elements: sortedElementValues(elements.value[page.id] ?? {}).map(toClipboardElement),
+          })),
+        });
+        continue;
+      }
+
+      if (node.kind === "page") {
+        const elements = await loadProjectElements(node.page.projectId);
+        if (elements.isErr()) return err(elements.error);
+
+        items.push({
+          type: "page",
+          page: toClipboardPage(node.page),
+          elements: sortedElementValues(elements.value[node.page.id] ?? {}).map(toClipboardElement),
+        });
+        continue;
+      }
+
+      if (node.kind === "element") {
+        const subtree = collectElementSubtree(
+          editor.elementsCollection?.state ?? {},
+          node.element.id,
+        );
+        if (subtree.length === 0) continue;
+
+        items.push({
+          type: "element",
+          rootId: node.element.id,
+          elements: subtree.map(toClipboardElement),
+        });
+      }
+    }
+
+    return ok(items);
+  }
+
+  async function copyNodes(nodes: TreeNode[]) {
+    const roots = nodes.filter(
+      (node) => node.kind !== "root" && !isCoveredBySelection(node, nodes),
+    );
+    if (roots.length === 0) return;
+
+    const built = await buildClipboardItems(roots);
+    if (built.isErr()) {
+      console.error(`copyNodes() ${neverThrowErrorToString(built.error)}`);
+      return;
+    }
+
+    const copied = await copyToClipboard(JSON.stringify(built.value));
+    if (copied.isErr()) {
+      console.error(`copyNodes() ${neverThrowErrorToString(copied.error)}`);
+    }
+  }
+
+  function resolvePasteTarget(node: TreeNode | null | undefined) {
+    if (!node || node.kind === "root") {
+      return err({
+        reason: "PASTE_NO_TARGET",
+        cause: "Select an element, page, or project to paste into",
+      } as const satisfies NeverThrowError);
+    }
+
+    if (node.kind === "element") {
+      const parentId = findContainerInsertionTarget(
+        editor.elementsCollection?.state ?? {},
+        node.element.id,
+      );
+      if (!parentId) {
+        return err({
+          reason: "PASTE_INVALID_TARGET",
+          cause: "No viable container found for paste",
+        } as const satisfies NeverThrowError);
+      }
+      return ok({
+        kind: "element",
+        pageId: node.pageId,
+        parentId,
+      } as const);
+    }
+
+    if (node.kind === "page") {
+      return ok({
+        kind: "page",
+        projectId: node.page.projectId,
+        pageId: node.page.id,
+      } as const);
+    }
+
+    return ok({ kind: "project", projectId: node.project.id } as const);
+  }
+
+  function projectIdForTarget(target: ClipboardTarget) {
+    if (target.kind === "project") return target.projectId;
+    if (target.kind === "page") return target.projectId;
+    return editor.pagesCollection.state[target.pageId]?.projectId ?? null;
+  }
+
+  function validatePasteSupport(items: ProjectClipboardItem[], target: ClipboardTarget) {
+    if (items.some((item) => item.type === "element") && target.kind === "project") {
+      return err({
+        reason: "PASTE_INVALID_TARGET",
+        cause: "Paste elements onto a page or a container element",
+      } as const satisfies NeverThrowError);
+    }
+    if (items.some((item) => item.type === "page") && !projectIdForTarget(target)) {
+      return err({
+        reason: "PASTE_INVALID_TARGET",
+        cause: "Could not resolve a target project for the pasted page",
+      } as const satisfies NeverThrowError);
+    }
+    return ok(null);
+  }
+
+  async function ensureProjectOpen(projectId: string) {
+    const opened = await editor.openProject(projectId);
+    if (opened.isErr()) {
+      toast({
+        kind: "error",
+        title: "Open Project Error",
+        description: neverThrowErrorToString(opened.error),
+        duration: 3000,
+      });
+      return err(opened.error);
+    }
+    return ok(null);
+  }
+
+  async function pasteElementItem(item: ProjectClipboardItem, target: ClipboardTarget) {
+    if (item.type !== "element") {
+      return err({
+        reason: "PASTE_INVALID_ITEM",
+        cause: "Expected an element clipboard item",
+      } as const satisfies NeverThrowError);
+    }
+    if (target.kind === "project") {
+      return err({
+        reason: "PASTE_INVALID_TARGET",
+        cause: "Elements can only be pasted onto a page or container element",
+      } as const satisfies NeverThrowError);
+    }
+
+    const parentId = target.kind === "element" ? target.parentId : null;
+    const opened = await open(target.pageId);
+    if (opened.isErr()) return err(opened.error);
+
+    const elements = createElementCopy(
+      item,
+      parentId,
+      nextElementSortIndex(editor.getPageElementsSnapshot(target.pageId), parentId),
+    );
+    const root = elements.find((element) => element.parentId === parentId);
+    const parent = parentId ? (editor.elementsCollection?.state[parentId] ?? null) : null;
+    const parentError = root ? elementParentError(root, parent) : null;
+    if (parentError) {
+      return err({
+        reason: "PASTE_INVALID_TARGET",
+        cause: parentError,
+      } as const satisfies NeverThrowError);
+    }
+
+    const added = editor.addElementsToPage(target.pageId, elements);
+    if (added.isErr()) return err(added.error);
+    return ok(elements.map((element) => element.id));
+  }
+
+  async function pastePageItem(item: ProjectClipboardItem, targetProjectId: string) {
+    if (item.type !== "page") {
+      return err({
+        reason: "PASTE_INVALID_ITEM",
+        cause: "Expected a page clipboard item",
+      } as const satisfies NeverThrowError);
+    }
+
+    const opened = await ensureProjectOpen(targetProjectId);
+    if (opened.isErr()) return err(opened.error);
+
+    const copied = createPageCopy(item, targetProjectId, editor.children(targetProjectId));
+    editor.pagesCollection.add(copied.page);
+    const added = editor.addElementsToPage(copied.page.id, copied.elements);
+    if (added.isErr()) {
+      editor.deletePage(copied.page.id);
+      return err(added.error);
+    }
+    return ok(copied.page.id);
+  }
+
+  async function pasteProjectItem(item: ProjectClipboardItem) {
+    if (item.type !== "project") {
+      return err({
+        reason: "PASTE_INVALID_ITEM",
+        cause: "Expected a project clipboard item",
+      } as const satisfies NeverThrowError);
+    }
+
+    const copied = createProjectCopy(item, editor.projectList);
+    editor.projects.add(copied.project);
+    editor.pagesCollection.addMany(copied.pages.map((page) => page.page));
+
+    const opened = await editor.openProject(copied.project.id);
+    if (opened.isErr()) {
+      editor.pagesCollection.removeMany(copied.pages.map((page) => page.page.id));
+      editor.projects.remove(copied.project.id);
+      return err(opened.error);
+    }
+
+    for (const page of copied.pages) {
+      const added = editor.addElementsToPage(page.page.id, page.elements);
+      if (added.isErr()) {
+        editor.removeProject(copied.project.id);
+        editor.pagesCollection.removeMany(copied.pages.map((entry) => entry.page.id));
+        return err(added.error);
+      }
+    }
+
+    return ok(copied.project.id);
+  }
+
+  async function pasteClipboardText(text: string, node: TreeNode | null | undefined) {
+    const parsed = parseProjectClipboard(text);
+    if (parsed.isErr()) {
+      console.error(`pasteClipboardText() ${neverThrowErrorToString(parsed.error)}`);
+      toast({
+        kind: "error",
+        title: "Paste Error",
+        description: neverThrowErrorToString(parsed.error),
+        duration: 3000,
+      });
+      return err(parsed.error);
+    }
+
+    const targetResult = resolvePasteTarget(node);
+    if (targetResult.isErr()) {
+      console.error(`pasteClipboardText() ${neverThrowErrorToString(targetResult.error)}`);
+      toast({
+        kind: "error",
+        title: "Paste Error",
+        description: neverThrowErrorToString(targetResult.error),
+        duration: 3000,
+      });
+      return err(targetResult.error);
+    }
+    const target = targetResult.value;
+
+    const supported = validatePasteSupport(parsed.value, target);
+    if (supported.isErr()) {
+      console.error(`pasteClipboardText() ${neverThrowErrorToString(supported.error)}`);
+      toast({
+        kind: "error",
+        title: "Paste Error",
+        description: neverThrowErrorToString(supported.error),
+        duration: 3000,
+      });
+      return err(supported.error);
+    }
+
+    type PasteSelection =
+      | { kind: "element" }
+      | { kind: "page"; pageId: string }
+      | { kind: "project"; projectId: string };
+
+    const pastedElementIds: string[] = [];
+    undoManager.beginTransaction();
+    let selection: PasteSelection | null = null;
+    try {
+      const targetProjectId = projectIdForTarget(target);
+
+      for (const item of parsed.value) {
+        if (item.type === "element") {
+          const pasted = await pasteElementItem(item, target);
+          if (pasted.isErr()) return err(pasted.error);
+          pastedElementIds.push(...pasted.value);
+          selection = { kind: "element" };
+        } else if (item.type === "page") {
+          if (!targetProjectId) {
+            return err({
+              reason: "PASTE_INVALID_TARGET",
+              cause: "Could not resolve a target project for the pasted page",
+            } as const satisfies NeverThrowError);
+          }
+          const pasted = await pastePageItem(item, targetProjectId);
+          if (pasted.isErr()) return err(pasted.error);
+          selection = { kind: "page", pageId: pasted.value };
+        } else {
+          const pasted = await pasteProjectItem(item);
+          if (pasted.isErr()) return err(pasted.error);
+          selection = { kind: "project", projectId: pasted.value };
+        }
+      }
+
+      if (selection?.kind === "element") {
+        editor.setElementSelection(pastedElementIds);
+      } else if (selection?.kind === "page") {
+        const opened = await open(selection.pageId);
+        if (opened.isErr()) return err(opened.error);
+      } else if (selection?.kind === "project") {
+        editor.selectProject(selection.projectId);
+      }
+      return ok(null);
+    } finally {
+      undoManager.endTransaction();
+    }
+  }
+
+  async function handleTreePaste(event: ClipboardEvent) {
+    if (isEditableTarget(event.target)) return;
+
+    const text = event.clipboardData?.getData("text/plain");
+    event.preventDefault();
+    event.stopPropagation();
+    if (!text) return;
+
+    const result = await pasteClipboardText(text, primarySelectedNode());
+    if (result.isErr()) {
+      console.error(`handleTreePaste() ${neverThrowErrorToString(result.error)}`);
+    }
   }
 
   function handleTreeContextMenu(event: MouseEvent) {
@@ -599,7 +1068,36 @@
     return value;
   }
 
-  function handleMenuSelect(value: string) {
+  async function handleMenuSelect(value: string) {
+    const target = contextTreeNode();
+
+    if (value === "copy") {
+      const selected = selectedTreeNodes();
+      const nodes =
+        target && selected.some((node) => node.id === target.id)
+          ? selected
+          : target
+            ? [target]
+            : selected;
+      await copyNodes(nodes);
+      return;
+    }
+
+    if (value === "paste") {
+      const text = await readClipboard();
+      if (text.isErr()) {
+        console.error(`handleMenuSelect() ${neverThrowErrorToString(text.error)}`);
+        return;
+      }
+      if (!text.value) return;
+
+      const result = await pasteClipboardText(text.value, target ?? primarySelectedNode());
+      if (result.isErr()) {
+        console.error(`handleMenuSelect() ${neverThrowErrorToString(result.error)}`);
+      }
+      return;
+    }
+
     if (contextMenuProject) {
       if (value === "delete") {
         if (confirm(`Delete project "${contextMenuProject.name}" and all its pages?`)) {
@@ -637,7 +1135,15 @@
     }
   }
 
-  function handleTreeKeyup(ev: KeyboardEvent) {
+  async function handleTreeKeyup(ev: KeyboardEvent) {
+    if (isEditableTarget(ev.target)) return;
+
+    if (ev.key.toLowerCase() === "c" && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault();
+      await copyNodes(selectedTreeNodes());
+      return;
+    }
+
     if (ev.key === "F2") {
       renamingId = editor.primarySelectedElementId ?? editor.activePageId;
     }
@@ -661,21 +1167,14 @@
         value={page.name}
         use:focusOnMount
         onclick={(ev) => ev.stopPropagation()}
-        onblur={(ev) => {
-          const newName = formatRename(ev.currentTarget.value);
-          editor.renamePage(page.id, newName);
-        }}
-        onkeydown={(ev) => {
-          if (ev.key === "Enter") {
-            ev.stopPropagation();
-            ev.currentTarget.blur();
-          }
-          if (ev.key === "Escape") {
-            ev.stopPropagation();
-            ev.currentTarget.value = page.name;
+        {@attach commitOrRevert(
+          (value) => editor.renamePage(page.id, formatRename(value)),
+          "string",
+          () => {
             renamingId = null;
-          }
-        }}
+          },
+          { commitOnUnchanged: true },
+        )}
       />
     {:else}
       <span class="truncate">{page.name}</span>
@@ -696,21 +1195,14 @@
         value={element.name}
         use:focusOnMount
         onclick={(ev) => ev.stopPropagation()}
-        onblur={(ev) => {
-          const newName = formatRename(ev.currentTarget.value);
-          editor.elementsCollection?.update(element.id, { name: newName });
-        }}
-        onkeydown={(ev) => {
-          if (ev.key === "Enter") {
-            ev.stopPropagation();
-            ev.currentTarget.blur();
-          }
-          if (ev.key === "Escape") {
-            ev.stopPropagation();
-            ev.currentTarget.value = element.name;
+        {@attach commitOrRevert(
+          (value) => editor.elementsCollection?.update(element.id, { name: formatRename(value) }),
+          "string",
+          () => {
             renamingId = null;
-          }
-        }}
+          },
+          { commitOnUnchanged: true },
+        )}
       />
     {:else}
       <span class="truncate">{element.name}</span>
@@ -874,14 +1366,15 @@
         No projects exist yet. Insert a project row in the database to start creating pages.
       </p>
     {/if}
-    <Menu onSelect={(details) => handleMenuSelect(details.value)}>
+    <Menu onSelect={(details) => void handleMenuSelect(details.value)}>
       <Menu.ContextTrigger class="flex flex-1 overflow-y-auto ">
         <TreeView.Provider value={treeView}>
           <TreeView.Tree
             class="w-full"
             oncontextmenu={handleTreeContextMenu}
+            onpaste={(event) => void handleTreePaste(event)}
             onkeyup={(ev) => {
-              handleTreeKeyup(ev);
+              void handleTreeKeyup(ev);
               handleEditorKeyup(editor, ev);
             }}
           >
@@ -894,6 +1387,21 @@
       <Portal>
         <Menu.Positioner>
           <Menu.Content class="text-xs border-none bg-surface-100-900">
+            <Menu.Item value="copy">
+              <Menu.ItemText class="flex items-center w-full gap-2">
+                <CopyIcon class="size-4" />
+                <span>Copy</span>
+                <span class="text-xs text-neutral-500 ml-auto">Ctrl+C</span>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Item value="paste">
+              <Menu.ItemText class="flex items-center w-full gap-2">
+                <ClipboardPasteIcon class="size-4" />
+                <span>Paste</span>
+                <span class="text-xs text-neutral-500 ml-auto">Ctrl+V</span>
+              </Menu.ItemText>
+            </Menu.Item>
+            <Menu.Separator />
             {#if contextMenuProject}
               <Menu.Item value="delete" class="text-error-600-400">
                 <Menu.ItemText class="flex items-center w-full gap-2">

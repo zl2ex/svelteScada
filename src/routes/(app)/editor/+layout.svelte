@@ -53,7 +53,6 @@
   import PageProperties from "$lib/client/componets/editor/PageProperties.svelte";
   import ProjectEditor from "$lib/client/componets/editor/ProjectEditor.svelte";
   import ElementProperties from "$lib/client/componets/editor/ElementProperties.svelte";
-  import MultiElementProperties from "$lib/client/componets/editor/MultiElementProperties.svelte";
   import ElementsInsert from "$lib/client/componets/editor/ElementsInsert.svelte";
   import GridControls from "$lib/client/componets/editor/GridControls.svelte";
   import ZoomControls from "$lib/client/componets/editor/ZoomControls.svelte";
@@ -614,7 +613,7 @@
       </svelte:boundary>
     </aside>
     <button
-      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400 hover:px-1.5 hover:-mx-0.75"
+      class="w-1 shrink-0 touch-none bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400"
       onpointerdown={() => {
         panelLayout.dragging.left = true;
       }}
@@ -625,7 +624,7 @@
       {@render children?.()}
     </main>
     <button
-      class="w-1 bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400 hover:px-1.5 hover:-mx-0.75"
+      class="w-1 shrink-0 touch-none bg-surface-200-800 cursor-col-resize hover:bg-surface-300-700 active:bg-primary-600-400"
       onpointerdown={() => {
         panelLayout.dragging.right = true;
       }}
@@ -642,9 +641,7 @@
       {:else if editor.activePage}
         <ElementsInsert />
         <div class="border-t border-surface-200-800">
-          {#if editor.selectedElementIds.length > 1}
-            <MultiElementProperties />
-          {:else if editor.selectedElementIds.length === 1}
+          {#if editor.selectedElementIds.length > 0}
             <ElementProperties />
           {:else}
             <PageProperties />

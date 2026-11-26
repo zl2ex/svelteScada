@@ -34,4 +34,6 @@ export const z_PageSelect = createSelectSchema(pages);
 
 export const z_PageInsert = createInsertSchema(pages, {
   name: (schema) => schema.regex(routeSegmentPattern).min(1).max(64),
+  createdAt: (schema) => schema.default(() => Date.now()),
+  updatedAt: (schema) => schema.default(() => Date.now()),
 });

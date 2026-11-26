@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
@@ -54,7 +55,11 @@
 
       <label class="flex flex-col gap-1">
         <span class="opacity-60">Name</span>
-        <input class="input h-7 py-0 px-2" bind:value={name} onblur={saveName} />
+        <input
+          class="input h-7 py-0 px-2"
+          bind:value={name}
+          {@attach commitOrRevert(() => saveName())}
+        />
       </label>
 
       <label class="flex flex-col gap-1">
@@ -63,7 +68,7 @@
           class="select h-7 py-0 px-1"
           value={projectThemeId}
           disabled={!ability.can("update", "Project")}
-          onchange={(event) => void saveProjectTheme(event.currentTarget.value)}
+          {@attach commitOrRevert((value) => void saveProjectTheme(value))}
         >
           <option value="">Default fallback</option>
           {#each editor.themes as theme (theme.id)}

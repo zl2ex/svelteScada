@@ -1,6 +1,7 @@
 <script lang="ts">
   import { PlusIcon } from "@lucide/svelte";
   import type { ElementBindingRowData } from "$lib/client/editor/elementBindingRows";
+  import { commitOrRevert } from "$lib/client/util/use";
   import ElementBindingRow from "./ElementBindingRow.svelte";
 
   let {
@@ -26,14 +27,14 @@
   } = $props();
 
   let newKey = $state("");
-  let newValue = $state("");
+  let newKeyFocus = $state(""); /** focus input for new bindingRow when added */
 
   function addRow() {
     const key = newKey.trim();
+    newKeyFocus = key;
     if (!key) return;
-    if (!onAdd(key, newValue)) return;
+    if (!onAdd(key, "")) return;
     newKey = "";
-    newValue = "";
   }
 </script>
 
@@ -57,10 +58,12 @@
       placeholder={row.placeholder}
       description={row.description}
       required={row.required}
+      focus={row.key === newKeyFocus}
       onValueCommit={(value) => onValueCommit(row, value)}
       onBindingSave={(expression) => onBindingSave(row, expression)}
       onBindingRemove={() => onBindingRemove(row)}
       onRemove={() => onRemoveRow(row)}
+      onMounted={() => (newKeyFocus = "")}
     />
   {/each}
 
@@ -69,11 +72,7 @@
       class="input placeholder:opacity-50 h-7 min-w-0 flex-1 py-0 px-2"
       bind:value={newKey}
       placeholder={keyPlaceholder}
-    />
-    <input
-      class="input placeholder:opacity-50 h-7 min-w-0 flex-1 py-0 px-2"
-      bind:value={newValue}
-      placeholder={valuePlaceholder}
+      {@attach commitOrRevert(() => addRow(), "string", undefined, { commitOnBlur: false })}
     />
     <button
       type="button"

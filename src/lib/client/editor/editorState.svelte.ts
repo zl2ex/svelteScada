@@ -176,7 +176,6 @@ export class EditorState {
   }
 
   setElementSelection(ids: string[], primaryId: string | null = null) {
-    console.debug(ids);
     const unique = [...new Set(ids)].filter((id) => this.elementsCollection?.state[id]);
     if (primaryId && unique.includes(primaryId)) {
       this.selectedElementIds = [...unique.filter((id) => id !== primaryId), primaryId];
@@ -206,7 +205,6 @@ export class EditorState {
   }
 
   selectElement(id: string, options: { additive?: boolean; range?: boolean } = {}) {
-    console.debug("selectElement");
     if (options.range) {
       const order = this.#elementOrder();
       const targetIndex = order.indexOf(id);
@@ -276,6 +274,41 @@ export class EditorState {
       ),
     );
     return sortedPages(pages);
+  }
+
+  /**
+   * Returns the loaded element state for a page.
+   * @param pageId Page id to inspect.
+   * @returns The loaded element map, or null when the page collection is not loaded.
+   */
+  getPageElementsSnapshot(pageId: string) {
+    return this.#pageCollections[pageId]?.state ?? null;
+  }
+
+  /**
+   * Adds elements to a page in the active project.
+   * @param pageId Page that will own the elements.
+   * @param elements Element records to insert.
+   * @returns A neverthrow result indicating whether the elements were added.
+   */
+  addElementsToPage(pageId: string, elements: ElementRecord[]) {
+    const page = this.pagesCollection.state[pageId];
+    if (!page) {
+      return err({
+        reason: "PAGE_NOT_FOUND",
+        cause: `page ${pageId} does not exist`,
+      } as const satisfies NeverThrowError);
+    }
+    if (this.activeProjectId !== page.projectId || !this.#projectReady) {
+      return err({
+        reason: "PROJECT_NOT_LOADED",
+        cause: `project ${page.projectId} must be open before adding elements`,
+      } as const satisfies NeverThrowError);
+    }
+    if (elements.length === 0) return ok(null);
+
+    this.#ensurePageCollection(pageId).addMany(elements);
+    return ok(null);
   }
 
   async openProject(projectId: string) {

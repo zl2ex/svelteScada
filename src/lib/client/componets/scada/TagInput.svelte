@@ -9,6 +9,7 @@
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { canWriteTag } from "$lib/permissions/ability";
   import type { TagWriteLevel } from "$lib/permissions/constants";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   interface Props extends HTMLInputAttributes {
     id?: string;
@@ -53,6 +54,18 @@
 
   function canWrite(writeLevel: TagWriteLevel | undefined): boolean {
     return canWriteTag(ability, writeLevel ?? "operator");
+  }
+
+  async function commitNumber(value: number | null) {
+    if (value === null) return false;
+    const result = await write(value);
+    return result.isOk();
+  }
+
+  async function commitText(value: string) {
+    if (value === "") return false;
+    const result = await write(value);
+    return result.isOk();
   }
 
   function classWithError(base: string): string {
@@ -149,28 +162,13 @@
               name="input"
               class={classWithError("input")}
               value={isFocus ? undefined : tag.value}
-              onkeyup={(ev) => {
-                if (ev.currentTarget) {
-                  if (ev.key === "Enter") {
-                    ev.currentTarget.blur();
-                  }
-                  if (ev.key === "Escape") {
-                    ev.currentTarget.value = String(tag.value);
-                    ev.currentTarget.blur();
-                  }
-                }
-              }}
-              onblur={(ev) => {
-                if (ev.currentTarget.value) {
-                  write(Number(ev.currentTarget.value));
-                } else {
-                  ev.currentTarget.value = String(tag.value);
-                }
+              onblur={() => {
                 isFocus = false;
               }}
               onfocusin={() => {
                 isFocus = true;
               }}
+              {@attach commitOrRevert(commitNumber, "number")}
               disabled={tag.options.readonly || !canWrite(tag.options.writeLevel)}
               {...rest}
             />
@@ -180,28 +178,13 @@
               name="input"
               class={classWithError("input")}
               value={isFocus ? undefined : tag.value}
-              onkeyup={(ev) => {
-                if (ev.currentTarget) {
-                  if (ev.key === "Enter") {
-                    ev.currentTarget.blur();
-                  }
-                  if (ev.key === "Escape") {
-                    ev.currentTarget.value = String(tag.value);
-                    ev.currentTarget.blur();
-                  }
-                }
-              }}
-              onblur={(ev) => {
-                if (ev.currentTarget.value) {
-                  write(String(ev.currentTarget.value));
-                } else {
-                  ev.currentTarget.value = String(tag.value);
-                }
+              onblur={() => {
                 isFocus = false;
               }}
               onfocusin={() => {
                 isFocus = true;
               }}
+              {@attach commitOrRevert(commitText)}
               disabled={tag.options.readonly || !canWrite(tag.options.writeLevel)}
               {...rest}
             />

@@ -1,6 +1,6 @@
 import { type TagSelect } from "$lib/sqlite/tables";
 import { guard, getPlatform, live, LiveError } from "svelte-realtime/server";
-import { tagManager } from "../hooks.server";
+import { tagManager, udtManager } from "../hooks.server";
 import {
   type ClientTagValue,
   type FailedTag,
@@ -14,6 +14,12 @@ import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.sve
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 import { assertLiveCan } from "$lib/server/auth/authorize";
 import { tagValueSubject } from "$lib/permissions/ability";
+import {
+  publishTagReferenceUpdates,
+  rewritePersistedTagReferences,
+  type TagReferenceUpdateResult,
+} from "$lib/server/tag/tagReferenceManager";
+import { diffTagPathMappings } from "$lib/tagReferenceRewrite";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -68,6 +74,7 @@ export const applyTagPatches = live(
     if (patch.op !== "add") {
       childIdsBefore = tagManager.getSubtreeOptions(id).map((options) => options.id);
     }
+    const pathsBefore = patch.op === "replace" ? tagManager.getAllTagPaths() : null;
 
     if (patch.op === "add") {
       const result = tagManager.createTag(value);
@@ -125,6 +132,19 @@ export const applyTagPatches = live(
       }
     }
 
+    let referenceUpdates: TagReferenceUpdateResult | undefined;
+    if (pathsBefore) {
+      const mappings = diffTagPathMappings(pathsBefore, tagManager.getAllTagPaths());
+      if (mappings.length > 0) {
+        const rewritten = rewritePersistedTagReferences(mappings, { tagManager, udtManager });
+        if (rewritten.isErr()) {
+          logger.error(rewritten.error);
+        } else {
+          referenceUpdates = rewritten.value;
+        }
+      }
+    }
+
     const subtreeAfter = tagManager.getSubtreeOptions(id);
     const childIdsAfter = new Set(subtreeAfter.map((options) => options.id));
     const childPatches: PatchOp[] = [];
@@ -153,6 +173,7 @@ export const applyTagPatches = live(
     }
 
     ctx.publish("tag-patches", "created", { patches: [patch, ...childPatches] });
+    if (referenceUpdates) publishTagReferenceUpdates(ctx, referenceUpdates);
 
     return wireOk({ ok: true });
   },

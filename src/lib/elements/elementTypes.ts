@@ -62,23 +62,24 @@ export type ElementShape = Pick<ElementRecord, "kind" | "tag">;
 
 export function isContainerElement(element: ElementShape | null | undefined) {
   return (
-    !!element &&
-    ((element.kind === "html" && element.tag === "div") || isSvgContainer(element))
+    !!element && ((element.kind === "html" && element.tag === "div") || isSvgContainer(element))
   );
 }
 
 export function isSvgContainer(element: ElementShape | null | undefined) {
-  return (
-    !!element &&
-    element.kind === "svg" &&
-    (element.tag === "svg" || element.tag === "g")
-  );
+  return !!element && element.kind === "svg" && (element.tag === "svg" || element.tag === "g");
 }
 
 export function isSvgDrawingElement(element: ElementShape | null | undefined) {
   return !!element && element.kind === "svg" && element.tag !== "svg";
 }
 
+/**
+ * looks through selected elements and up the tree untill a parent element is found that is a "container" and allows children
+ * @param elements all elements to look in, usually the entire elements array for the page
+ * @param selectedId current selected element id to start the search from
+ * @returns id of a container or null if not found
+ */
 export function findContainerInsertionTarget(
   elements: Record<string, ElementRecord>,
   selectedId: string | null,
@@ -107,7 +108,6 @@ export function elementParentError(child: ElementShape, parent: ElementShape | n
   }
   return null;
 }
-
 
 export function sortedChildren<
   T extends { id: string; parentId: string | null; sortIndex: number },

@@ -34,6 +34,8 @@ export const z_ProjectInsert = createInsertSchema(projects, {
   name: (schema) => schema.regex(routeSegmentPattern).min(1).max(64),
   grid_spacing: (schema) => schema.min(1).max(200).default(5),
   grid_enabled: (schema) => schema.default(true),
+  createdAt: (schema) => schema.default(() => Date.now()),
+  updatedAt: (schema) => schema.default(() => Date.now()),
 });
 
 export const z_ProjectGrid = z_ProjectInsert.pick({

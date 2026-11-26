@@ -193,6 +193,7 @@ export class UnifiedUndoManager {
    */
   undo() {
     const entry = this.#peekUndoTimeline();
+    console.debug(entry);
     if (!entry) return;
 
     this.#recordMove("undo", entry);
@@ -212,6 +213,7 @@ export class UnifiedUndoManager {
    */
   redo() {
     const entry = this.#peekRedoTimeline();
+    console.debug(entry);
     if (!entry) return;
 
     this.#recordMove("redo", entry);

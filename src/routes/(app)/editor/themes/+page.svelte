@@ -7,6 +7,7 @@
   import { enforceThemeCss, wrapThemeCss } from "$lib/themes/css";
   import { newId } from "$lib/util/newId";
   import CssEditor from "$lib/client/componets/editor/CssEditor.svelte";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
@@ -152,7 +153,12 @@
         >
           <label for={`themeName-${selected.id}`} class="opacity-60">Name / data-theme</label>
           <div class="flex items-center gap-4">
-            <input id={`themeName-${selected.id}`} class="input py-1" bind:value={nameDraft} />
+            <input
+              id={`themeName-${selected.id}`}
+              class="input py-1"
+              bind:value={nameDraft}
+              {@attach commitOrRevert(() => saveTheme())}
+            />
             <button
               type="button"
               class="btn btn-sm preset-filled"

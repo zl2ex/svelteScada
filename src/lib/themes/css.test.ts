@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   enforceThemeCss,
   extractCssClassNames,
+  extractCssVariableNames,
   unwrapThemeCss,
   wrapThemeCss,
 } from "./css";
@@ -51,5 +52,13 @@ describe("theme css helpers", () => {
         '[data-theme="Default"] { & .input:hover, & .btn { color: red; } .input { padding: 1rem; } }',
       ),
     ).toEqual(["btn", "input"]);
+  });
+
+  it("extracts declared custom properties", () => {
+    expect(
+      extractCssVariableNames(
+        '[data-theme="Default"] { --color-primary-500: red; --radius-base: 0.33rem; color: var(--color-primary-500); }',
+      ),
+    ).toEqual(["--color-primary-500", "--radius-base"]);
   });
 });

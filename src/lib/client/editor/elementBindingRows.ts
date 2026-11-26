@@ -22,6 +22,15 @@ export type ElementBindingRowData = {
   required?: boolean;
 };
 
+export type ElementBindingRowControl = {
+  value: string;
+  disabled: boolean;
+  bound: boolean;
+  placeholder: string;
+  commit: (value: string) => void;
+  context?: unknown;
+};
+
 export function attributeBindingScope(element: ElementRecord): AttributeBindingScope {
   return element.kind === "user-component" || element.kind === "base-component"
     ? "props"

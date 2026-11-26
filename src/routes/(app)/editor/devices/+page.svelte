@@ -10,6 +10,7 @@
   import { newId } from "$lib/util/newId";
   import { getAvalibleDrivers } from "$lib/remote/devices.remote";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
+  import { commitOrRevert } from "$lib/client/util/use";
   let { data } = $props();
   const ability = getAbilityContext();
 
@@ -153,7 +154,7 @@
       id={`device-${device.id}-${key}`}
       class={"select " + clazz}
       value={text}
-      onchange={(ev) => setOption(device, key, ev.currentTarget.value)}
+      {@attach commitOrRevert((value) => setOption(device, key, value))}
     >
       {#each field.choices ?? [] as choice (choice)}
         <option value={choice}>{choice}</option>
@@ -165,27 +166,11 @@
       type={field.kind === "number" ? "number" : "text"}
       class={"input " + clazz}
       value={text}
-      onblur={(ev) => {
-        const value =
-          field.kind === "number"
-            ? numberFromInput(ev.currentTarget.value)
-            : ev.currentTarget.value;
-        if (value === undefined) {
-          // not a number, so put the stored value back rather than store NaN
-          ev.currentTarget.value = text;
-          return;
-        }
-        setOption(device, key, value);
-      }}
-      onkeydown={(ev) => {
-        if (ev.key === "Enter") {
-          ev.currentTarget.blur();
-        }
-        if (ev.key === "Escape") {
-          ev.currentTarget.value = text;
-          ev.currentTarget.blur();
-        }
-      }}
+      {@attach commitOrRevert((value) => {
+        const parsed = field.kind === "number" ? numberFromInput(value) : value;
+        if (parsed === undefined) return false;
+        setOption(device, key, parsed);
+      })}
     />
   {/if}
 {/snippet}
@@ -228,10 +213,12 @@
                   <EllipsisVerticalIcon class="size-6 m-4" />
                 </Popover.Trigger>
               </td>
-              <td class="font-bold text-lg">{device.name}</td>
+              <td class="font-bold text-lg">[{device.name}]</td>
               <td class="flex items-center gap-2">
                 <img src={availableDrivers[device.driverName]?.logo} alt="" class="w-24" />
-                {availableDrivers[device.driverName]?.displayName}
+                <span class="opacity-70 text-sm">
+                  {availableDrivers[device.driverName]?.displayName}
+                </span>
               </td>
               <td>
                 <DeviceStatus id={device.id} class="flex-row-reverse gap-6" />
@@ -262,8 +249,8 @@
                       type="text"
                       class="input"
                       value={device.name}
-                      onblur={(ev) => {
-                        const name = String(ev.currentTarget.value);
+                      {@attach commitOrRevert((value) => {
+                        const name = String(value);
                         if (popoverDeviceId == newDevice.id) {
                           newDevice.name = name;
                           return;
@@ -271,16 +258,7 @@
                         devicesPatchesCollection.update(popoverDeviceId, {
                           name,
                         });
-                      }}
-                      onkeydown={(ev) => {
-                        if (ev.key === "Enter") {
-                          ev.currentTarget.blur();
-                        }
-                        if (ev.key === "Escape") {
-                          ev.currentTarget.value = device.name;
-                          ev.currentTarget.blur();
-                        }
-                      }}
+                      })}
                     />
                   </div>
 
@@ -323,9 +301,9 @@
                     id={`device-${device.id}-driverName`}
                     class="select w-60"
                     value={device.driverName}
-                    onchange={(ev) => {
-                      const driverName = String(ev.currentTarget.value);
-                      if (!isDriverName(driverName)) return;
+                    {@attach commitOrRevert((value) => {
+                      const driverName = String(value);
+                      if (!isDriverName(driverName)) return false;
                       if (popoverDeviceId == newDevice.id) {
                         newDevice.driverName = driverName;
                         newDevice.options = availableDrivers[driverName].defaultOptions;
@@ -341,7 +319,7 @@
                         driverName,
                         options: availableDrivers[driverName].defaultOptions,
                       });
-                    }}
+                    })}
                   >
                     {#each Object.values(availableDrivers) as driver (driver.id)}
                       <option value={driver.id}>{driver.displayName}</option>

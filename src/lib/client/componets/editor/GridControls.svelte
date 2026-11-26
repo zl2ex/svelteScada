@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Grid3X3Icon } from "@lucide/svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   const editor = getEditorContext();
 
@@ -40,6 +41,12 @@
     max="200"
     value={editor.grid.spacing}
     aria-label="Grid spacing in pixels"
-    onchange={(event) => setSpacing(event.currentTarget.value)}
+    {@attach commitOrRevert(
+      (value) => {
+        if (value === null) return false;
+        setSpacing(String(value));
+      },
+      "number",
+    )}
   />
 </div>

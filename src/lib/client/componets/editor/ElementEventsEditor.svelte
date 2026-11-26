@@ -3,6 +3,7 @@
   import type { ElementBindings } from "$lib/elements/elementTypes";
   import { toast } from "$lib/client/toast.svelte";
   import ScriptEditor from "./ScriptEditor.svelte";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   const editor = getEditorContext();
   const eventNamePattern = /^[a-z][a-z0-9:_-]*$/i;
@@ -120,8 +121,8 @@
       <input
         class="input placeholder:opacity-50 h-7 py-0 px-2 min-w-0"
         bind:value={newEventName}
-        onkeydown={onNewEventKeydown}
         placeholder="click"
+        {@attach commitOrRevert(() => addEvent(), "string", undefined, { commitOnBlur: false })}
       />
       <button class="btn btn-sm preset-tonal shrink-0" onclick={addEvent}>Add</button>
     </div>

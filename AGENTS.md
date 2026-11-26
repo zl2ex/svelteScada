@@ -18,4 +18,4 @@ exception: keep the explicit return type on svelte-realtime $live functions (liv
 use `WireResult<T, E>` , `wireOk()` and `wireErr()` for any results sent over the network in a live or remote function.
 use `onerror={(error) => {console.error(error);}}` with <svelte:boundary> so that when the boundary catches i can actually see what threw.
 zod schema varibles are prefixed with a `z_` and only call `safeParse()` as `parse()` throws
-add comments in jsdoc style function descriptions for new and existing code
+add comments in jsdoc style function descriptions for new and existing code with @params, @returns and @throws descriptions as well.

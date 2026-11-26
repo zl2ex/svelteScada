@@ -120,6 +120,42 @@ export class TagManager {
     return this.getAllTags().flatMap((tag) => (tag.isOk() ? [tag.value] : []));
   }
 
+  /**
+   * Returns the current runtime path of every loaded tag keyed by tag id.
+   */
+  getAllTagPaths() {
+    const paths = new Map<string, string>();
+    for (const [id, tag] of this.#tags) {
+      const path = this.#pathOf(tag);
+      if (path) paths.set(id, path);
+    }
+    return paths;
+  }
+
+  /**
+   * Applies rewritten binding data to loaded tag options and returns the updated options.
+   */
+  applyBindingUpdates(
+    updates: Map<
+      string,
+      {
+        bindings: TagOptionsInput["bindings"];
+        udtOverrides: TagOptionsInput["udtOverrides"];
+      }
+    >,
+  ) {
+    const updated: TagOptionsInput[] = [];
+    for (const [id, update] of updates) {
+      const tag = this.#tags.get(id);
+      if (!tag) continue;
+      const options = this.#optionsOf(tag);
+      options.bindings = update.bindings;
+      options.udtOverrides = update.udtOverrides;
+      updated.push({ ...options });
+    }
+    return updated;
+  }
+
   getSubtreeOptions(id: string) {
     return [...this.#collectSubtreeOptions(id).values()];
   }

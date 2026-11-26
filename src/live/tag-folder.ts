@@ -1,11 +1,17 @@
 import { type ClosureTableNode } from "$lib/server/sqlite/util/tagClosureTable";
 import { guard, live, LiveError } from "svelte-realtime/server";
-import { folderManager, tagManager } from "../hooks.server";
+import { folderManager, tagManager, udtManager } from "../hooks.server";
 import { tagFoldersClosureTable } from "$lib/server/sqlite/util/tagClosureTable";
 import { logger } from "$lib/server/pino/logger";
 import type { PatchOp, PatchPayload } from "$lib/client/live/patchCollection.svelte";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 import { assertLiveCan } from "$lib/server/auth/authorize";
+import {
+  publishTagReferenceUpdates,
+  rewritePersistedTagReferences,
+  type TagReferenceUpdateResult,
+} from "$lib/server/tag/tagReferenceManager";
+import { diffTagPathMappings } from "$lib/tagReferenceRewrite";
 
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
@@ -41,6 +47,7 @@ export const applyTagFolderPatches = live(
     const value = patch.value as ClosureTableNode;
     const action = patch.op === "add" ? "create" : patch.op === "remove" ? "delete" : "update";
     assertLiveCan(ctx.user, action, "TagFolder");
+    const pathsBefore = patch.op === "replace" ? tagManager.getAllTagPaths() : null;
     if (patch.op == "add") {
       const result = folderManager.createFolder(value);
       if (result.isErr()) {
@@ -97,7 +104,21 @@ export const applyTagFolderPatches = live(
       }
     }
 
+    let referenceUpdates: TagReferenceUpdateResult | undefined;
+    if (pathsBefore) {
+      const mappings = diffTagPathMappings(pathsBefore, tagManager.getAllTagPaths());
+      if (mappings.length > 0) {
+        const rewritten = rewritePersistedTagReferences(mappings, { tagManager, udtManager });
+        if (rewritten.isErr()) {
+          logger.error(rewritten.error);
+        } else {
+          referenceUpdates = rewritten.value;
+        }
+      }
+    }
+
     ctx.publish("tag-folder-patches", "created", { patches: [patch] });
+    if (referenceUpdates) publishTagReferenceUpdates(ctx, referenceUpdates);
     return wireOk({ ok: true });
   },
 );

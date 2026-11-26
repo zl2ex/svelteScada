@@ -19,6 +19,11 @@ const textStyle = {
   "font-size": "16px",
 };
 
+const centerOrigin = {
+  "transform-box": "fill-box",
+  "transform-origin": "center",
+};
+
 const defaultPosition = {
   x: "50px",
   y: "50px",
@@ -40,16 +45,19 @@ export const svgElementDefaults = {
   rect: {
     style: {
       ...filledShapeStyle,
-      width: "100px",
-      height: "60px",
+
+      ...centerOrigin,
     },
     attributes: {
       ...defaultPosition,
+      width: "50px",
+      height: "50px",
     },
   },
   circle: {
     style: {
       ...filledShapeStyle,
+      ...centerOrigin,
     },
     attributes: {
       cx: defaultPosition.x,
@@ -60,6 +68,7 @@ export const svgElementDefaults = {
   ellipse: {
     style: {
       ...filledShapeStyle,
+      ...centerOrigin,
     },
     attributes: {
       cx: defaultPosition.x,
@@ -105,7 +114,7 @@ export const svgElementDefaults = {
   clipPath: {},
   mask: {},
   pattern: {
-    attributes: { width: "10", height: "10", patternUnits: "userSpaceOnUse" },
+    attributes: { width: "10px", height: "10px", patternUnits: "userSpaceOnUse" },
   },
   linearGradient: {
     attributes: { x1: "0px", y1: "0px", x2: "100px", y2: "0px" },
@@ -178,7 +187,7 @@ export const svgElementDefaults = {
     attributes: { operator: "erode", radius: "1" },
   },
   feOffset: {
-    attributes: { dx: "0", dy: "0", in: "SourceGraphic" },
+    attributes: { dx: "0px", dy: "0px", in: "SourceGraphic" },
   },
   feSpecularLighting: {
     attributes: {
@@ -200,14 +209,12 @@ export const svgElementDefaults = {
   },
   marker: {
     attributes: {
-      markerWidth: "6",
-      markerHeight: "6",
-      refX: "3",
-      refY: "3",
+      markerWidth: "6px",
+      markerHeight: "6px",
+      refX: "3px",
+      refY: "3px",
       orient: "auto",
     },
   },
-  foreignObject: {
-    style: { width: "160px", height: "90px" },
-  },
+  foreignObject: {},
 } satisfies Record<SvgTag, ElementDefaultsInput>;

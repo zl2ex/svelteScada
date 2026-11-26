@@ -48,7 +48,7 @@
     type NeverThrowError,
   } from "$lib/util/neverThrow";
   import { undoManager } from "$lib/client/history/undoManager";
-  import { focusOnMount } from "$lib/client/util/use";
+  import { commitOrRevert, focusOnMount } from "$lib/client/util/use";
   import TagEditorPopover from "./TagEditorPopover.svelte";
   import { buildEffectiveUdtRows } from "$lib/client/editor/udtBuilder";
   import { rebuildUdtInstances } from "$lib/client/editor/udtInstanceRebuild";
@@ -1365,14 +1365,15 @@
             class="input p-1 text-xs grow"
             value={node.name}
             use:focusOnMount
-            onblur={(e) => finalizeTagRename(node.id, e.currentTarget.value)}
-            onkeydown={(e) => {
-              if (e.key === "Enter") finalizeTagRename(node.id, e.currentTarget.value);
-              if (e.key === "Escape") cancelTagRename(node.id);
-            }}
+            {@attach commitOrRevert(
+              (value) => finalizeTagRename(node.id, value),
+              "string",
+              () => cancelTagRename(node.id),
+              { commitOnUnchanged: true },
+            )}
           />
         {:else}
-          <span class="truncate" title={node.dataType}>{node.name}</span>
+          <span class="truncate" title={`${node.name}\n${node.dataType}`}>{node.name}</span>
 
           {#if node.trendEnabled}
             <ChartNoAxesCombinedIcon class="size-4 shrink-0 opacity-85" title="trend active" />
@@ -1459,11 +1460,12 @@
                 class="input p-0 text-xs grow"
                 value={node.name}
                 use:focusOnMount
-                onblur={(e) => finalizeFolderRename(node.id, e.currentTarget.value)}
-                onkeydown={(e) => {
-                  if (e.key === "Enter") finalizeFolderRename(node.id, e.currentTarget.value);
-                  if (e.key === "Escape") cancelFolderRename(node.id);
-                }}
+                {@attach commitOrRevert(
+                  (value) => finalizeFolderRename(node.id, value),
+                  "string",
+                  () => cancelFolderRename(node.id),
+                  { commitOnUnchanged: true },
+                )}
               />
             {:else}
               {node.name}

@@ -42,6 +42,11 @@ input[type="number"] {
   appearance: textfield;
 }
 
+/* Target only inputs connected to a datalist to remove arrow */
+input[list]::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
 /* skeleton <TreeView> change selected apperance */
 [data-scope="tree-view"] [data-part="item"][data-selected],
 [data-scope="tree-view"] [data-part="branch-control"][data-selected] {
@@ -82,7 +87,6 @@ input[type="number"] {
 }
 
 /* custom moveable control handles */
-
 :root {
   --custom-moveable-color: var(--color-primary-800-200);
 }
@@ -93,7 +97,6 @@ input[type="number"] {
 }
 .moveable-line {
   background: var(--custom-moveable-color) !important;
-  mix-blend-mode: difference;
 }
 .moveable-control {
   --size: 20px;
@@ -102,13 +105,16 @@ input[type="number"] {
   margin-left: calc(-1 * var(--size) / 2) !important;
   margin-top: calc(-1 * var(--size) / 2) !important;
   border: none !important;
+  outline-offset: calc(-1 * var(--size) / 2.3);
+  outline: 1px solid var(--color-surface-950-50) !important;
+
   background: none !important;
-  mix-blend-mode: difference;
 }
 
 .moveable-control:hover {
-  outline: 1px solid var(--custom-moveable-color) !important;
-  /*outline-offset: calc(-1 * var(--size) / 4);*/
+  /* outline: 1px solid var(--custom-moveable-color) !important;*/
+
+  outline-offset: 0;
   background-color: color-mix(in srgb, var(--color-surface-200-800) 50%, transparent) !important;
 }
 .moveable-control::before,

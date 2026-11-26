@@ -54,6 +54,7 @@
   import type { ClosureTableNodeWithPath } from "$lib/server/sqlite/util/tagClosureTable";
   import type { HTMLAttributes } from "svelte/elements";
   import { isUdtTag } from "$lib/util/tag";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   export type SelectedTag = { id: string; name: string; folderId: string | null; path: string };
 
@@ -791,9 +792,12 @@
                           class="input placeholder:opacity-50"
                           placeholder="View name"
                           bind:value={saveViewName}
-                          onkeydown={(e) => {
-                            if (e.key === "Enter") handleSaveCurrentAs();
-                          }}
+                          {@attach commitOrRevert(
+                            () => handleSaveCurrentAs(),
+                            "string",
+                            undefined,
+                            { commitOnBlur: false },
+                          )}
                         />
                         {#if saveError}
                           <span class="text-xs text-error-500">{saveError}</span>

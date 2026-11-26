@@ -1,4 +1,5 @@
 const CLASS_NAME_PATTERN = /\.(-?[_a-zA-Z]+[_a-zA-Z0-9-]*)/g;
+const CSS_VARIABLE_PATTERN = /(--[a-zA-Z0-9-_]+)\s*:/g;
 const LEADING_THEME_SELECTOR =
   /^(\s*(?:\/\*[\s\S]*?\*\/\s*)*)\[data-theme=(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\]\s]+)\]/;
 
@@ -34,6 +35,14 @@ export function unwrapThemeCss(css: string) {
 export function extractCssClassNames(css: string) {
   const names = new Set<string>();
   for (const match of css.matchAll(CLASS_NAME_PATTERN)) {
+    if (match[1]) names.add(match[1]);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
+export function extractCssVariableNames(css: string) {
+  const names = new Set<string>();
+  for (const match of css.matchAll(CSS_VARIABLE_PATTERN)) {
     if (match[1]) names.add(match[1]);
   }
   return [...names].sort((a, b) => a.localeCompare(b));

@@ -33,7 +33,7 @@
   import { tagBindingKeys, type TagBindingKey } from "$lib/tagBindings";
   import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
   import type { TagOptionsInput } from "$lib/server/tag/tag";
-  import { focusOnMount } from "$lib/client/util/use";
+  import { commitOrRevert, focusOnMount } from "$lib/client/util/use";
   import { isEditableTarget } from "$lib/client/editor/editorKeyboard";
   import { undoManager } from "$lib/client/history/undoManager";
   import TagEditorPopover from "./TagEditorPopover.svelte";
@@ -682,14 +682,14 @@
         use:focusOnMount
         onclick={(event) => event.stopPropagation()}
         ondblclick={(event) => event.stopPropagation()}
-        onblur={(event) => finalizeDefinitionRename(node.definition.id, event.currentTarget.value)}
-        onkeydown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") {
+        {@attach commitOrRevert(
+          (value) => finalizeDefinitionRename(node.definition.id, value),
+          "string",
+          () => {
             renamingId = null;
-            event.currentTarget.value = node.definition.name;
-          }
-        }}
+          },
+          { commitOnUnchanged: true },
+        )}
       />
     {:else}
       <button
@@ -720,15 +720,14 @@
         use:focusOnMount
         onclick={(event) => event.stopPropagation()}
         ondblclick={(event) => event.stopPropagation()}
-        onblur={(event) =>
-          finalizeChildRename(node.definitionId, node.child.id, event.currentTarget.value)}
-        onkeydown={(event) => {
-          if (event.key === "Enter") event.currentTarget.blur();
-          if (event.key === "Escape") {
+        {@attach commitOrRevert(
+          (value) => finalizeChildRename(node.definitionId, node.child.id, value),
+          "string",
+          () => {
             renamingId = null;
-            event.currentTarget.value = node.child.name;
-          }
-        }}
+          },
+          { commitOnUnchanged: true },
+        )}
       />
     {:else}
       <TagIcon class="size-4 shrink-0 opacity-60" />

@@ -39,6 +39,20 @@ export class UdtManager {
     return [...this.udts.values()].find((udt) => udt.id === id);
   }
 
+  /**
+   * Applies rewritten child bindings to loaded UDT definitions.
+   */
+  applyBindingUpdates(updates: Map<string, UdtDefinitionTagInput[]>) {
+    const updated: UdtDefinitionInput[] = [];
+    for (const [id, children] of updates) {
+      const definition = this.getUdtById(id);
+      if (!definition) continue;
+      definition.children = children;
+      updated.push(definition.toInput());
+    }
+    return updated;
+  }
+
   async createUdt(input: UdtDefinitionInput, writeToDb = true) {
     const parsed = z_UdtDefinitionInput.safeParse(input);
     if (!parsed.success) {

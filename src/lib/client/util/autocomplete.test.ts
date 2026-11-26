@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterAutocompleteItems } from "./autocomplete";
+import { filterAutocompleteItems, findExactAutocompleteItem } from "./autocomplete";
 
 describe("filterAutocompleteItems", () => {
   const items = ["card", "btn-primary", "btn-danger", "input", "InputGroup"];
@@ -18,5 +18,11 @@ describe("filterAutocompleteItems", () => {
 
   it("returns no results for an unmatched query", () => {
     expect(filterAutocompleteItems(items, "missing")).toEqual([]);
+  });
+
+  it("finds exact autocomplete matches", () => {
+    expect(findExactAutocompleteItem(items, "input")).toBe("input");
+    expect(findExactAutocompleteItem(items, "inp")).toBeNull();
+    expect(findExactAutocompleteItem(items, "Input")).toBeNull();
   });
 });

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { Trash2Icon } from "@lucide/svelte";
   import BindingEditor from "./BindingEditor.svelte";
-  import { commitOrRevert } from "$lib/client/util/use";
+  import { commitOrRevert, focusOnMount } from "$lib/client/util/use";
   import { fieldStyle } from "$lib/client/util/bindingStyle";
+  import type { ElementBindingRowControl } from "$lib/client/editor/elementBindingRows";
+  import { onMount, type Snippet } from "svelte";
 
   let {
     label,
@@ -14,10 +16,14 @@
     description,
     required = true,
     multiline = false,
+    focus = false /** focus and select text when row is mounted*/,
     onValueCommit,
     onBindingSave,
     onBindingRemove,
     onRemove,
+    onMounted,
+    control,
+    controlContext,
   }: {
     label: string;
     value: string;
@@ -28,15 +34,21 @@
     description?: string;
     required?: boolean;
     multiline?: boolean;
+    focus?: boolean;
     onValueCommit: (value: string) => void;
     onBindingSave: (expression: string) => void;
     onBindingRemove: () => void;
     onRemove?: () => void;
+    onMounted?: () => void;
+    control?: Snippet<[ElementBindingRowControl]>;
+    controlContext?: unknown;
   } = $props();
 
   let isBound = $derived(binding.trim().length > 0);
   let removable = $derived(!required);
   let displayedValue = $derived(isBound ? result : value);
+
+  onMount(() => onMounted?.());
 </script>
 
 <div class="flex flex-col gap-1">
@@ -45,13 +57,23 @@
   </div>
 
   <div class="flex items-stretch gap-1 min-w-0">
-    {#if multiline}
+    {#if control}
+      {@render control({
+        value: displayedValue,
+        disabled: isBound,
+        bound: isBound,
+        placeholder: isBound ? "No result" : placeholder,
+        commit: onValueCommit,
+        context: controlContext,
+      })}
+    {:else if multiline}
       <textarea
         class="input placeholder:opacity-50 flex-1 min-w-0 py-1 px-2"
         rows="2"
         value={displayedValue}
         disabled={isBound}
         style={fieldStyle({ bound: isBound })}
+        use:focusOnMount={!focus}
         placeholder={isBound ? "No result" : placeholder}
         onblur={(event) => {
           if (!isBound) onValueCommit(event.currentTarget.value);
@@ -62,11 +84,9 @@
         value={displayedValue}
         disabled={isBound}
         placeholder={isBound ? "No result" : placeholder}
-        //use:commitOrRevert(this, onValueCommit, () => {})
         style={fieldStyle({ bound: isBound })}
-        onblur={(event) => {
-          if (!isBound) onValueCommit(event.currentTarget.value);
-        }}
+        use:focusOnMount={!focus}
+        {@attach commitOrRevert((value) => onValueCommit(value))}
       />
     {/if}
 

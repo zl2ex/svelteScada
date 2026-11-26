@@ -10,6 +10,7 @@
   import type { TagProperties } from "$lib/sqlite/tagProperties";
   import type { PropertyMap, PropertyValue } from "$lib/propertyValue";
   import { fieldStyle } from "$lib/client/util/bindingStyle";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   type Props = {
     tags: TagOptionsInput[];
@@ -390,10 +391,9 @@
                       class="select py-1.5"
                       value={dataTypeMixed ? "" : dataType.value}
                       disabled={!canUpdate}
-                      onchange={(event) => {
-                        if (event.currentTarget.value)
-                          onSave({ dataType: event.currentTarget.value });
-                      }}
+                      {@attach commitOrRevert((value) => {
+                        if (value) onSave({ dataType: value });
+                      })}
                     >
                       {#if dataTypeMixed}
                         <option value="" disabled>multiple</option>
@@ -452,7 +452,7 @@
                     value={driverPathMixed ? "" : driverPath.value}
                     placeholder={driverPathMixed ? "multiple" : "[deviceName]pathToTag"}
                     disabled={disabledFor("driverPath")}
-                    onblur={(event) => onSave({ driverPath: event.currentTarget.value || null })}
+                    {@attach commitOrRevert((value) => onSave({ driverPath: value || null }))}
                   />
                   {@render overrideIndicator("driverPath")}
                   <BindingEditor
@@ -516,11 +516,9 @@
                       class="select py-1.5 flex-1"
                       value={writeLevelMixed ? "" : writeLevel.value}
                       disabled={!canManage}
-                      onchange={(event) => {
-                        if (event.currentTarget.value) {
-                          onSave({ writeLevel: event.currentTarget.value as TagWriteLevel });
-                        }
-                      }}
+                      {@attach commitOrRevert((value) => {
+                        if (value) onSave({ writeLevel: value as TagWriteLevel });
+                      })}
                     >
                       {#if writeLevelMixed}
                         <option value="" disabled>multiple</option>
@@ -618,13 +616,13 @@
                     value={trendIntervalMixed ? "" : trendInterval.value}
                     placeholder={trendIntervalMixed ? "multiple" : "minimum interval ms"}
                     disabled={disabledFor("trendMinimumSamplingIntervalMs")}
-                    onblur={(event) => {
-                      if (event.currentTarget.value) {
-                        onSave({
-                          trendMinimumSamplingIntervalMs: Number(event.currentTarget.value),
-                        });
-                      }
-                    }}
+                    {@attach commitOrRevert(
+                      (value) => {
+                        if (value === null) return false;
+                        onSave({ trendMinimumSamplingIntervalMs: value });
+                      },
+                      "number",
+                    )}
                   />
                   <span class="text-xs opacity-60">ms</span>
                   {@render overrideIndicator("trendMinimumSamplingIntervalMs")}
@@ -662,7 +660,7 @@
                     value={unitMixed ? "" : unit.value}
                     placeholder={unitMixed ? "multiple" : ""}
                     disabled={disabledFor("unit")}
-                    onblur={(event) => onSave({ unit: event.currentTarget.value })}
+                    {@attach commitOrRevert((value) => onSave({ unit: value }))}
                   />
                   {@render overrideIndicator("unit")}
                   <BindingEditor

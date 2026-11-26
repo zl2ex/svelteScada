@@ -79,8 +79,6 @@
   <Autocomplete
     items={available}
     placeholder="Search theme classes…"
-    showFirstMatchButton
-    firstMatchButtonTitle="Apply first matching class"
     onSelect={addClass}
   />
 

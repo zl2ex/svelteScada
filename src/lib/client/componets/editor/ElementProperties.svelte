@@ -1,18 +1,15 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
+  import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
   import { toast } from "$lib/client/toast.svelte";
+  import { commitOrRevert } from "$lib/client/util/use";
   import {
-    attributeBindingScope,
     coerceAttributeValue,
-    formatBindingResult,
     getElementProperties,
-    getBindingMap,
     getStyle,
     getTopLevelAttributes,
-    removeElementPropertyRow,
     removeStyleRow,
-    removeTopLevelAttributeRow,
     setBinding,
     setElementPropertyValue,
     setStyleProperty,
@@ -21,234 +18,216 @@
     type BindingScope,
     type ElementBindingRowData,
   } from "$lib/client/editor/elementBindingRows";
-  import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import type { BindingContext } from "$lib/client/editor/elementExpressions";
-  import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
-  import { neverThrowErrorToString } from "$lib/util/neverThrow";
+  import {
+    buildAttributeRows,
+    buildStyleRows,
+    commonResult,
+    commonStrings,
+    evaluateElementBinding,
+    updateElements,
+  } from "$lib/client/editor/elementSelectionRows";
+  import { appearanceManagedStyleKeys } from "$lib/client/editor/elementAppearance";
   import ElementBindingRow from "./ElementBindingRow.svelte";
   import ElementBindingSection from "./ElementBindingSection.svelte";
   import ElementEventsEditor from "./ElementEventsEditor.svelte";
   import ElementStyleClassSection from "./ElementStyleClassSection.svelte";
+  import ElementAppearanceEditor from "./ElementAppearanceEditor.svelte";
 
   const editor = getEditorContext();
   const ability = getAbilityContext();
   const tagValueMap = getTagValueMapContext();
 
-
-  let selected = $derived(
-    editor.selectedElementIds.length === 1
-      ? editor.elementsCollection?.state[editor.selectedElementIds[0]]
-      : null,
-  );
-  let showStyle = $derived(!!selected && selected.kind !== "user-component");
+  let elements = $derived(editor.selectedElements);
+  let selected = $derived(elements.length === 1 ? elements[0] : null);
+  let isMulti = $derived(elements.length > 1);
   let attributeScope = $derived<AttributeBindingScope>(
-    selected ? attributeBindingScope(selected) : "attributes",
+    elements.length > 0 &&
+      elements.every(
+        (element) => element.kind === "user-component" || element.kind === "base-component",
+      )
+      ? "props"
+      : "attributes",
   );
-
-  let bindingContext = $derived.by(() => {
-    const element = selected;
-    if (!element) return null;
-    return {
-      tag: (lookup: string) => tagValueMap.tag(lookup),
-      tagValue: (lookup: string) => tagValueMap.tagValue(lookup),
-      tagStatus: (lookup: string) => tagValueMap.tagStatus(lookup),
-      props: {},
-      element,
-    } satisfies BindingContext;
-  });
-
-  function evaluateBinding(expression: string, context: BindingContext | null) {
-    if (!expression.trim() || !context) return { result: "", error: null };
-    const evaluation = scriptEvaluator.evaluateElement(expression, context);
-    if (evaluation.isErr()) {
-      return { result: "", error: neverThrowErrorToString(evaluation.error) };
-    }
-    return { result: formatBindingResult(evaluation.value), error: null };
-  }
+  let showStyle = $derived(
+    elements.length > 0 && (elements.length > 1 || selected?.kind !== "user-component"),
+  );
+  let appearanceKeys = $derived(appearanceManagedStyleKeys(elements));
+  let attributeRows = $derived(buildAttributeRows(elements, attributeScope, tagValueMap));
+  let styleRows = $derived(
+    buildStyleRows(elements, tagValueMap).filter((row) => !appearanceKeys.has(row.key)),
+  );
+  let commonName = $derived(commonStrings(elements.map((element) => element.name)));
 
   let textRow = $derived.by((): ElementBindingRowData | null => {
-    const element = selected;
-    if (!element) return null;
-    const binding = element.bindings?.text ?? "";
-    const evaluation = evaluateBinding(binding, bindingContext);
+    if (elements.length === 0) return null;
+
+    if (elements.length === 1) {
+      const element = elements[0];
+      const binding = element.bindings?.text ?? "";
+      const evaluation = evaluateElementBinding(element, binding, tagValueMap);
+      return {
+        key: "text",
+        value: element.text ?? "",
+        binding,
+        result: evaluation.result,
+        error: evaluation.error,
+      };
+    }
+
+    const bindings = elements.map((element) => element.bindings?.text ?? "");
+    if (!bindings.every((binding) => binding.trim().length > 0)) return null;
+
+    const binding = commonStrings(bindings);
+    if (binding.mixed) {
+      return {
+        key: "text",
+        value: "",
+        binding: "",
+        result: "Mixed",
+        error: null,
+        placeholder: "<multiple_values>",
+      };
+    }
+
+    const result = commonResult(elements, binding.value, tagValueMap);
+    const value = commonStrings(elements.map((element) => element.text ?? ""));
     return {
       key: "text",
-      value: element.text ?? "",
-      binding,
-      result: evaluation.result,
-      error: evaluation.error,
+      value: value.mixed ? "" : value.value,
+      binding: binding.value,
+      result: result.result,
+      error: result.error,
+      placeholder: value.mixed ? "<multiple_values>" : undefined,
     };
   });
 
-  let attributeRows = $derived.by((): ElementBindingRowData[] => {
-    const element = selected;
-    if (!element) return [];
-    const usesProperties = attributeScope === "props";
-    const base = usesProperties ? getElementProperties(element) : getTopLevelAttributes(element);
-    const bindings = getBindingMap(element, attributeScope);
-    const keys = [...new Set([...Object.keys(base), ...Object.keys(bindings)])].sort();
-    return keys.map((key) => {
-      const binding = bindings[key] ?? "";
-      const raw = base[key];
-      const value =
-        usesProperties && raw && typeof raw === "object" && "value" in raw
-          ? raw.value
-          : raw;
-      const property =
-        usesProperties && raw && typeof raw === "object" && "value" in raw
-          ? raw
-          : undefined;
-      const evaluation = evaluateBinding(binding, bindingContext);
-      return {
-        key,
-        value: value === undefined ? "" : String(value),
-        binding,
-        result: evaluation.result,
-        error: evaluation.error,
-        description: property?.description,
-        required: usesProperties ? (property?.required ?? true) : false,
-      };
-    });
-  });
-
-  let styleRows = $derived.by((): ElementBindingRowData[] => {
-    const element = selected;
-    if (!element) return [];
-    const base = getStyle(element);
-    const bindings = getBindingMap(element, "style");
-    const keys = [...new Set([...Object.keys(base), ...Object.keys(bindings)])].sort();
-    return keys.map((key) => {
-      const binding = bindings[key] ?? "";
-      const evaluation = evaluateBinding(binding, bindingContext);
-      return {
-        key,
-        value: base[key] ?? "",
-        binding,
-        result: evaluation.result,
-        error: evaluation.error,
-      };
-    });
-  });
-
   function saveText(value: string) {
-    if (!selected) return;
-    editor.elementsCollection?.update(selected.id, {
+    updateElements(editor.elementsCollection, elements, () => ({
       text: value === "" ? null : value,
-      updatedAt: Date.now(),
+    }));
+  }
+
+  function saveName(value: string) {
+    updateElements(editor.elementsCollection, elements, () => ({ name: value }));
+  }
+
+  function saveAttributeValue(row: ElementBindingRowData, raw: string) {
+    updateElements(editor.elementsCollection, elements, (element) => {
+      if (attributeScope === "props") {
+        const previous = getElementProperties(element)[row.key]?.value;
+        return {
+          properties: setElementPropertyValue(
+            element,
+            row.key,
+            raw === "" ? null : coerceAttributeValue(previous, raw),
+          ),
+        };
+      }
+
+      const previous = getTopLevelAttributes(element)[row.key];
+      return {
+        attributes: setTopLevelAttribute(
+          element,
+          row.key,
+          raw === "" ? null : coerceAttributeValue(previous, raw),
+        ),
+      };
     });
   }
 
-  function saveAttributeValue(key: string, raw: string) {
-    if (!selected) return;
-    const usesProperties = attributeScope === "props";
-    if (usesProperties) {
-      const previous = getElementProperties(selected)[key]?.value;
-      const value = raw === "" ? null : coerceAttributeValue(previous, raw);
-      editor.elementsCollection?.update(selected.id, {
-        properties: setElementPropertyValue(selected, key, value),
-        updatedAt: Date.now(),
-      });
-      return;
-    }
-    const previous = getTopLevelAttributes(selected)[key];
-    const value = raw === "" ? null : coerceAttributeValue(previous, raw);
-    editor.elementsCollection?.update(selected.id, {
-      attributes: setTopLevelAttribute(selected, key, value),
-      updatedAt: Date.now(),
-    });
-  }
-
-  function saveStyleValue(property: string, raw: string) {
-    if (!selected) return;
-    editor.elementsCollection?.update(selected.id, {
-      style: setStyleProperty(selected, property, raw === "" ? null : raw),
-      updatedAt: Date.now(),
-    });
+  function saveStyleValue(row: ElementBindingRowData, raw: string) {
+    updateElements(editor.elementsCollection, elements, (element) => ({
+      style: setStyleProperty(element, row.key, raw === "" ? null : raw),
+    }));
   }
 
   function saveBinding(scope: BindingScope, key: string, expression: string) {
-    if (!selected) return;
-    editor.elementsCollection?.update(selected.id, {
-      bindings: setBinding(selected, scope, key, expression),
-      updatedAt: Date.now(),
-    });
+    updateElements(editor.elementsCollection, elements, (element) => ({
+      bindings: setBinding(element, scope, key, expression),
+    }));
   }
 
   function addAttribute(key: string, value: string) {
-    if (!selected) return false;
-    const usesProperties = attributeScope === "props";
-    const base = usesProperties ? getElementProperties(selected) : getTopLevelAttributes(selected);
-    if (Object.hasOwn(base, key) || Object.hasOwn(getBindingMap(selected, attributeScope), key)) {
-      toast({ kind: "error", title: "Attribute already exists", description: key });
-      return false;
-    }
-    editor.elementsCollection?.update(selected.id, {
-      ...(usesProperties
+    if (!key.trim()) return false;
+    if (attributeRows.some((row) => row.key === key)) return false;
+
+    updateElements(editor.elementsCollection, elements, (element) =>
+      attributeScope === "props"
         ? {
-            properties: setElementPropertyValue(selected, key, coerceAttributeValue(undefined, value), {
-              required: false,
-            }),
+            properties: setElementPropertyValue(
+              element,
+              key,
+              coerceAttributeValue(undefined, value),
+              { required: false },
+            ),
           }
-        : { attributes: setTopLevelAttribute(selected, key, value) }),
-      updatedAt: Date.now(),
-    });
+        : {
+            attributes: setTopLevelAttribute(element, key, coerceAttributeValue(undefined, value)),
+          },
+    );
     return true;
   }
 
   function addStyleRow(key: string, value: string) {
-    if (!selected) return false;
-    if (
-      Object.hasOwn(getStyle(selected), key) ||
-      Object.hasOwn(getBindingMap(selected, "style"), key)
-    ) {
-      toast({ kind: "error", title: "Style property already exists", description: key });
+    if (!key.trim()) return false;
+    if (appearanceKeys.has(key)) {
+      toast({
+        kind: "error",
+        title: "Style managed by Appearance",
+        description: `Edit ${key} in the Appearance section.`,
+      });
       return false;
     }
-    editor.elementsCollection?.update(selected.id, {
-      style: setStyleProperty(selected, key, value),
-      updatedAt: Date.now(),
-    });
+    if (styleRows.some((row) => row.key === key)) return false;
+
+    updateElements(editor.elementsCollection, elements, (element) => ({
+      style: setStyleProperty(element, key, value),
+    }));
     return true;
   }
 
   function removeAttributeRow(row: ElementBindingRowData) {
-    if (!selected || row.required) return;
-    const next =
-      attributeScope === "props"
-        ? removeElementPropertyRow(selected, row.key)
-        : removeTopLevelAttributeRow(selected, attributeScope, row.key);
-    editor.elementsCollection?.update(selected.id, {
-      ...next,
-      updatedAt: Date.now(),
-    });
+    if (row.required) return;
+
+    updateElements(editor.elementsCollection, elements, (element) => ({
+      ...(attributeScope === "props"
+        ? { properties: setElementPropertyValue(element, row.key, null) }
+        : { attributes: setTopLevelAttribute(element, row.key, null) }),
+      bindings: setBinding(element, attributeScope, row.key, ""),
+    }));
   }
 
   function removeStyle(row: ElementBindingRowData) {
-    if (!selected) return;
-    const next = removeStyleRow(selected, row.key);
-    editor.elementsCollection?.update(selected.id, {
-      ...next,
-      updatedAt: Date.now(),
-    });
+    updateElements(editor.elementsCollection, elements, (element) => removeStyleRow(element, row.key));
   }
-
-
 </script>
 
 <div class="flex flex-col text-xs">
   <fieldset class="contents" disabled={!ability.can("update", "Element")}>
-    {#if !selected}
+    {#if elements.length === 0}
       <p class="p-3 opacity-50">Select an element to edit its properties.</p>
     {:else}
       <div class="p-3 flex flex-col gap-3">
-        <div class="flex items-center justify-between gap-2">
-          <div class="min-w-0">
-            <div class="font-semibold truncate">{selected.name || selected.id}</div>
-            <div class="opacity-50 truncate">
-              {selected.kind}{selected.tag ? ` · ${selected.tag}` : ""}
+        {#if isMulti}
+          <label class="flex flex-col gap-1">
+            <span class="opacity-60">Name</span>
+            <input
+              class="input placeholder:opacity-50 h-7 py-0 px-2"
+              value={commonName.mixed ? "" : commonName.value}
+              placeholder={commonName.mixed ? "Mixed" : ""}
+              {@attach commitOrRevert((value) => saveName(value))}
+            />
+          </label>
+        {:else if selected}
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <div class="font-semibold truncate">{selected.name || selected.id}</div>
+              <div class="opacity-50 truncate">
+                {selected.kind}{selected.tag ? ` · ${selected.tag}` : ""}
+              </div>
             </div>
           </div>
-        </div>
+        {/if}
 
         {#if textRow}
           <ElementBindingRow
@@ -256,6 +235,8 @@
             value={textRow.value}
             binding={textRow.binding}
             result={textRow.result}
+            savedError={textRow.error}
+            placeholder={textRow.placeholder}
             multiline
             onValueCommit={saveText}
             onBindingSave={(expression) => saveBinding("text", "text", expression)}
@@ -263,36 +244,38 @@
           />
         {/if}
 
-
         <ElementBindingSection
           title={attributeScope === "props" ? "Props" : "Attributes"}
           rows={attributeRows}
           keyPlaceholder={attributeScope === "props" ? "prop" : "attribute"}
           valuePlaceholder="value"
           onAdd={addAttribute}
-          onValueCommit={(row, value) => saveAttributeValue(row.key, value)}
+          onValueCommit={saveAttributeValue}
           onBindingSave={(row, expression) => saveBinding(attributeScope, row.key, expression)}
           onBindingRemove={(row) => saveBinding(attributeScope, row.key, "")}
           onRemoveRow={removeAttributeRow}
         />
 
         {#if showStyle}
+          <ElementAppearanceEditor {elements} />
+
           <ElementBindingSection
             title="Style"
             rows={styleRows}
             keyPlaceholder="property"
             valuePlaceholder="value"
             onAdd={addStyleRow}
-            onValueCommit={(row, value) => saveStyleValue(row.key, value)}
+            onValueCommit={saveStyleValue}
             onBindingSave={(row, expression) => saveBinding("style", row.key, expression)}
             onBindingRemove={(row) => saveBinding("style", row.key, "")}
             onRemoveRow={removeStyle}
           />
         {/if}
 
-        <ElementStyleClassSection element={selected} />
-
-        <ElementEventsEditor />
+        {#if selected}
+          <ElementStyleClassSection element={selected} />
+          <ElementEventsEditor />
+        {/if}
       </div>
     {/if}
   </fieldset>

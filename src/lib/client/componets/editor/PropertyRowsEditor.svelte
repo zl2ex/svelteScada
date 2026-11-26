@@ -1,5 +1,6 @@
 <script lang="ts">
   import { PlusIcon, Trash2Icon } from "@lucide/svelte";
+  import { commitOrRevert } from "$lib/client/util/use";
 
   export type PropertyRowsMode = "definition" | "view";
 
@@ -123,7 +124,7 @@
           value={row.value}
           placeholder={row.placeholder ?? valuePlaceholder}
           {disabled}
-          onchange={(event) => onValueCommit(row.key, event.currentTarget.value)}
+          {@attach commitOrRevert((value) => onValueCommit(row.key, value))}
         />
       </div>
       {#if mode === "definition"}
@@ -133,7 +134,7 @@
             value={row.description ?? ""}
             placeholder="description (shown as tooltip)"
             {disabled}
-            onchange={(event) => onDescriptionCommit(row.key, event.currentTarget.value)}
+            {@attach commitOrRevert((value) => onDescriptionCommit(row.key, value))}
           />
         {/if}
       {/if}
@@ -148,12 +149,14 @@
           bind:value={newKey}
           placeholder={keyPlaceholder}
           {disabled}
+          {@attach commitOrRevert(() => addRow(), "string", undefined, { commitOnBlur: false })}
         />
         <input
           class="input h-7 min-w-0 flex-1 py-0 px-2"
           bind:value={newValue}
           placeholder={valuePlaceholder}
           {disabled}
+          {@attach commitOrRevert(() => addRow(), "string", undefined, { commitOnBlur: false })}
         />
       </div>
       <input
@@ -161,6 +164,7 @@
         bind:value={newDescription}
         placeholder="description"
         {disabled}
+        {@attach commitOrRevert(() => addRow(), "string", undefined, { commitOnBlur: false })}
       />
       <div class="flex items-center justify-between">
         <label class="flex items-center gap-1 text-xs opacity-70">

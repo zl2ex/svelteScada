@@ -75,4 +75,7 @@ export type ElementInsert = typeof elements.$inferInsert;
 
 export const z_ElementSelect = createSelectSchema(elements);
 
-export const z_ElementInsert = createInsertSchema(elements);
+export const z_ElementInsert = createInsertSchema(elements, {
+  createdAt: (schema) => schema.default(() => Date.now()),
+  updatedAt: (schema) => schema.default(() => Date.now()),
+});

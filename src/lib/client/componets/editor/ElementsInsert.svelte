@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Box, Boxes, Plus } from "@lucide/svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import { commitOrRevert } from "$lib/client/util/use";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { baseComponentNames } from "$lib/elements/baseComponents";
   import { isSvgContainer } from "$lib/elements/elementTypes";
@@ -44,7 +45,6 @@
       name: component?.component.name ?? "component",
     });
   }
-
 </script>
 
 <div class="flex flex-col text-xs">
@@ -66,6 +66,9 @@
             class="input placeholder:opacity-50 py-0 px-1 h-7 min-w-0 flex-1"
             bind:value={customSvgTag}
             placeholder="svg tag"
+            {@attach commitOrRevert(() => addSvg(customSvgTag), "string", undefined, {
+              commitOnBlur: false,
+            })}
           />
           <button
             class="btn btn-sm preset-filled"
@@ -77,7 +80,11 @@
         </div>
       {:else}
         <div class="flex gap-1">
-          <input class="input py-0 px-1 h-7 min-w-0 flex-1" bind:value={customTag} />
+          <input
+            class="input py-0 px-1 h-7 min-w-0 flex-1"
+            bind:value={customTag}
+            {@attach commitOrRevert(() => addHtml(), "string", undefined, { commitOnBlur: false })}
+          />
           <button class="btn btn-sm preset-filled" onclick={addHtml} title="Add HTML element">
             <Plus class="size-3.5" /> HTML
           </button>
@@ -86,11 +93,7 @@
 
       <div class="flex flex-wrap gap-1">
         <button class="btn btn-sm preset-tonal" onclick={() => addSvg("svg")}>SVG container</button>
-        <button
-          class="btn btn-sm preset-tonal"
-          disabled={!targetIsSvg}
-          onclick={() => addSvg("g")}
-        >
+        <button class="btn btn-sm preset-tonal" disabled={!targetIsSvg} onclick={() => addSvg("g")}>
           Group
         </button>
         <button
@@ -118,7 +121,13 @@
 
       {#if !targetIsSvg}
         <div class="flex gap-1">
-          <select class="input py-0 px-1 h-7 min-w-0 flex-1" bind:value={baseComponent}>
+          <select
+            class="input py-0 px-1 h-7 min-w-0 flex-1"
+            bind:value={baseComponent}
+            {@attach commitOrRevert((value) => {
+              baseComponent = value;
+            })}
+          >
             {#each baseComponentNames as name}
               <option value={name}>{name}</option>
             {/each}
@@ -129,7 +138,13 @@
         </div>
 
         <div class="flex gap-1">
-          <select class="input py-0 px-1 h-7 min-w-0 flex-1" bind:value={userComponentId}>
+          <select
+            class="input py-0 px-1 h-7 min-w-0 flex-1"
+            bind:value={userComponentId}
+            {@attach commitOrRevert((value) => {
+              userComponentId = value;
+            })}
+          >
             {#each editor.userComponents as definition (definition.component.id)}
               <option value={definition.component.id}>{definition.component.name}</option>
             {/each}

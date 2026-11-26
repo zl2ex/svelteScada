@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
+  import { commitOrRevert } from "$lib/client/util/use";
   import { toast } from "$lib/client/toast.svelte";
   import { z_ProjectInsert, type ProjectSelect } from "$lib/sqlite/tables";
 
@@ -118,12 +119,20 @@
 
         <label class="flex flex-col gap-1">
           <span class="opacity-60">Name</span>
-          <input class="input h-7 px-1" bind:value={name} onchange={saveName} />
+          <input
+            class="input h-7 px-1"
+            bind:value={name}
+            {@attach commitOrRevert(() => saveName())}
+          />
         </label>
 
         <label class="flex flex-col gap-1">
           <span class="opacity-60">Version</span>
-          <input class="input h-7 px-1" bind:value={version} onchange={saveVersion} />
+          <input
+            class="input h-7 px-1"
+            bind:value={version}
+            {@attach commitOrRevert(() => saveVersion())}
+          />
         </label>
 
         <label class="flex flex-col gap-1">
@@ -141,7 +150,7 @@
           <select
             class="select h-7 py-0 px-1"
             value={themeId}
-            onchange={(event) => saveTheme(event.currentTarget.value)}
+            {@attach commitOrRevert((value) => saveTheme(value))}
           >
             <option value="">Default fallback</option>
             {#each editor.themes as theme (theme.id)}
@@ -168,7 +177,13 @@
             min="1"
             max="200"
             value={gridSpacing}
-            onchange={(event) => saveGridSpacing(event.currentTarget.value)}
+            {@attach commitOrRevert(
+              (value) => {
+                if (value === null) return false;
+                saveGridSpacing(String(value));
+              },
+              "number",
+            )}
           />
         </label>
 

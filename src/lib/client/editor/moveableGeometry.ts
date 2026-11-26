@@ -466,8 +466,8 @@ function boxWrites(
       if (dh) attributes.ry = fmt(target.h / 2, "h", units, el);
     }
   } else {
-    if (dw) style.width = fmt(target.w, "w", units, el);
-    if (dh) style.height = fmt(target.h, "h", units, el);
+    if (dw) attributes.width = fmt(target.w, "w", units, el);
+    if (dh) attributes.height = fmt(target.h, "h", units, el);
   }
 
   if (dorigin) {
