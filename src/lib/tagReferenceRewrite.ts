@@ -3,6 +3,12 @@ export type TagPathMapping = {
   newPath: string;
 };
 
+/**
+ * Decodes JavaScript string-literal escape sequences in raw literal contents.
+ *
+ * @param raw - Raw text between the quotes of a string literal
+ * @returns The decoded string, with invalid escapes left as literal text
+ */
 function decodeJsString(raw: string): string {
   let value = "";
   for (let index = 0; index < raw.length; index++) {
@@ -80,6 +86,13 @@ function decodeJsString(raw: string): string {
   return value;
 }
 
+/**
+ * Escapes a string for embedding inside a JavaScript literal with the given quote.
+ *
+ * @param value - Decoded string to escape
+ * @param quote - Quote character used by the target literal
+ * @returns The escaped literal contents
+ */
 function encodeJsString(value: string, quote: string): string {
   let encoded = "";
   for (let index = 0; index < value.length; index++) {
@@ -95,6 +108,14 @@ function encodeJsString(value: string, quote: string): string {
   return encoded;
 }
 
+/**
+ * Checks that a path match starts and ends on valid path boundaries.
+ *
+ * @param value - Text being scanned
+ * @param index - Start index of the candidate match
+ * @param length - Length of the candidate match
+ * @returns True when the surrounding characters do not continue the path
+ */
 function hasPathBoundary(value: string, index: number, length: number): boolean {
   const before = index === 0 ? undefined : value[index - 1];
   const after = value[index + length];
@@ -103,6 +124,13 @@ function hasPathBoundary(value: string, index: number, length: number): boolean 
   return true;
 }
 
+/**
+ * Replaces every boundary-matched old path in a value with its new path.
+ *
+ * @param value - Decoded string to rewrite
+ * @param mappings - Path mappings to apply
+ * @returns The rewritten string, or null when nothing changed
+ */
 function replacePath(value: string, mappings: TagPathMapping[]): string | null {
   let output = "";
   let index = 0;
@@ -131,10 +159,23 @@ function replacePath(value: string, mappings: TagPathMapping[]): string | null {
   return changed ? output : null;
 }
 
+/**
+ * Heuristically decides whether a slash may start a regular expression.
+ *
+ * @param previous - The previous significant non-whitespace character
+ * @returns True when the previous character can precede a regex literal
+ */
 function canStartRegex(previous: string): boolean {
   return !previous || "([{=,:;!&|?+-*%^~<>".includes(previous);
 }
 
+/**
+ * Skips over a regular expression literal starting at the given slash.
+ *
+ * @param text - Text being scanned
+ * @param start - Index of the opening slash
+ * @returns The index just past the closing slash, or the end of text
+ */
 function skipRegex(text: string, start: number): number {
   let index = start + 1;
   let escaped = false;
@@ -167,6 +208,10 @@ function skipRegex(text: string, start: number): number {
  * The scanner only changes JavaScript string literals ('...', "...", and backticks without
  * interpolation). It matches exact paths and descendant paths using "." or "/" boundaries,
  * and leaves comments, identifiers, dynamic template strings, and unrelated text unchanged.
+ *
+ * @param text - The binding expression or event script to rewrite
+ * @param mappings - Path changes to apply to quoted literals
+ * @returns The rewritten script with quoted tag paths updated
  */
 export function rewriteQuotedTagPaths(text: string, mappings: TagPathMapping[]): string {
   if (!text || mappings.length === 0) return text;
@@ -264,6 +309,10 @@ export function rewriteQuotedTagPaths(text: string, mappings: TagPathMapping[]):
 
 /**
  * Builds path-change mappings by comparing path maps before and after a rename or move.
+ *
+ * @param before - Map of tag id to path before the change
+ * @param after - Map of tag id to path after the change
+ * @returns Mappings for ids whose path changed
  */
 export function diffTagPathMappings(
   before: Map<string, string>,

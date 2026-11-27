@@ -6,6 +6,14 @@ import { err, ok } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
+/**
+ * Runs all pending Drizzle migrations with foreign keys temporarily disabled.
+ *
+ * Safe to call on every startup; foreign keys are re-enabled after migrating.
+ *
+ * @returns ok with undefined on success, or err when toggling foreign keys or
+ * migrating fails
+ */
 export async function runMigrations() {
   logger.info("[drizzle] runMigrations() ...");
 

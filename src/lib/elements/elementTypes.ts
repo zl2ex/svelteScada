@@ -47,10 +47,24 @@ export type ElementOwner =
 
 export const routeSegmentPattern = /^[a-z0-9][a-z0-9-]*$/;
 
+/**
+ * Checks whether a value is a valid lowercase route segment.
+ *
+ * @param value - Candidate route segment
+ * @returns True when the value matches the route segment pattern
+ */
 export function isValidRouteSegment(value: string) {
   return routeSegmentPattern.test(value);
 }
 
+/**
+ * Serializes an element style object into a CSS declaration string.
+ *
+ * Empty values are omitted.
+ *
+ * @param style - Style record to serialize
+ * @returns Semicolon-separated `property:value` declarations
+ */
 export function elementStyleToString(style: ElementStyle) {
   return Object.entries(style)
     .filter(([, value]) => value !== "")
@@ -60,24 +74,44 @@ export function elementStyleToString(style: ElementStyle) {
 
 export type ElementShape = Pick<ElementRecord, "kind" | "tag">;
 
+/**
+ * Checks whether an element can contain child elements.
+ *
+ * @param element - Element shape to inspect
+ * @returns True for div, svg, and g containers; false otherwise or when null
+ */
 export function isContainerElement(element: ElementShape | null | undefined) {
   return (
     !!element && ((element.kind === "html" && element.tag === "div") || isSvgContainer(element))
   );
 }
 
+/**
+ * Checks whether an element is an SVG container.
+ *
+ * @param element - Element shape to inspect
+ * @returns True when the element is an `svg` or `g` tag; false otherwise
+ */
 export function isSvgContainer(element: ElementShape | null | undefined) {
   return !!element && element.kind === "svg" && (element.tag === "svg" || element.tag === "g");
 }
 
+/**
+ * Checks whether an element is an SVG drawing element.
+ *
+ * @param element - Element shape to inspect
+ * @returns True for SVG elements other than the root `svg` tag; false otherwise
+ */
 export function isSvgDrawingElement(element: ElementShape | null | undefined) {
   return !!element && element.kind === "svg" && element.tag !== "svg";
 }
 
 /**
- * looks through selected elements and up the tree untill a parent element is found that is a "container" and allows children
- * @param elements all elements to look in, usually the entire elements array for the page
- * @param selectedId current selected element id to start the search from
+ * looks through selected elements and up the tree untill a parent element is found that is a
+ * "container" and allows children
+ *
+ * @param elements - all elements to look in, usually the entire elements array for the page
+ * @param selectedId - current selected element id to start the search from
  * @returns id of a container or null if not found
  */
 export function findContainerInsertionTarget(
@@ -95,6 +129,13 @@ export function findContainerInsertionTarget(
   return null;
 }
 
+/**
+ * Validates that a child element is allowed inside a given parent.
+ *
+ * @param child - The child element shape
+ * @param parent - The intended parent shape, or null for the root
+ * @returns A human-readable error message, or null when the placement is valid
+ */
 export function elementParentError(child: ElementShape, parent: ElementShape | null) {
   if (isSvgDrawingElement(child) && !isSvgContainer(parent)) {
     return "SVG drawing elements must be inside an <svg> or <g> container";
@@ -109,6 +150,13 @@ export function elementParentError(child: ElementShape, parent: ElementShape | n
   return null;
 }
 
+/**
+ * Returns the children of a parent sorted by sort index then id.
+ *
+ * @param items - Record of items keyed by id
+ * @param parentId - Parent id to filter by, or null for root items
+ * @returns An array of direct children in display order
+ */
 export function sortedChildren<
   T extends { id: string; parentId: string | null; sortIndex: number },
 >(items: Record<string, T>, parentId: string | null) {
@@ -117,6 +165,13 @@ export function sortedChildren<
     .sort((a, b) => a.sortIndex - b.sortIndex || a.id.localeCompare(b.id));
 }
 
+/**
+ * Builds the ancestor chain from the root down to the given item.
+ *
+ * @param items - Record of items keyed by id
+ * @param id - Id of the item whose chain to build
+ * @returns Ancestors ordered root-first, including the item itself; empty when missing
+ */
 export function parentChain<T extends { id: string; parentId: string | null; name: string }>(
   items: Record<string, T>,
   id: string,

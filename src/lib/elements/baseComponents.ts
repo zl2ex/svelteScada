@@ -36,6 +36,12 @@ export const baseComponentNames = Object.keys(baseComponents);
 
 export type BaseComponentNames = keyof typeof baseComponents;
 
+/**
+ * Checks whether a value is a known base component name.
+ *
+ * @param value - Candidate component name
+ * @returns True when the baseComponents registry contains the name
+ */
 export function isBaseComponentName(value: string) {
   return Object.hasOwn(baseComponents, value);
 }

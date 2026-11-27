@@ -84,6 +84,12 @@ const dangerousAttributeNames = new Set([
   "onwheel",
 ]);
 
+/**
+ * Validates the kind-specific fields of an element payload.
+ *
+ * @param element - The kind, tag, base component, and referenced component id
+ * @returns An error message when invalid, or null when valid
+ */
 export function validateElementKindPayload(element: {
   kind: ElementKind;
   tag: string | null;
@@ -125,6 +131,12 @@ export function validateElementKindPayload(element: {
   return null;
 }
 
+/**
+ * Validates element attribute names and values against unsafe input.
+ *
+ * @param attributes - Attribute record to validate
+ * @returns An error message when invalid, or null when valid
+ */
 export function validateElementAttributes(attributes: Record<string, unknown>) {
   for (const [key, value] of Object.entries(attributes)) {
     if (key.trim() === "") return "Attribute names cannot be empty";
@@ -148,6 +160,12 @@ export function validateElementAttributes(attributes: Record<string, unknown>) {
   return null;
 }
 
+/**
+ * Validates element style property names and values against unsafe input.
+ *
+ * @param style - Style record to validate
+ * @returns An error message when invalid, or null when valid
+ */
 export function validateElementStyle(style: Record<string, unknown>) {
   for (const [property, value] of Object.entries(style)) {
     if (property.trim() === "") return "Style property names cannot be empty";
@@ -164,6 +182,13 @@ export function validateElementStyle(style: Record<string, unknown>) {
   return null;
 }
 
+/**
+ * Normalizes element bindings for the given element kind.
+ *
+ * @param _kind - The element kind (currently unused)
+ * @param bindings - The bindings to normalize, or null
+ * @returns The bindings unchanged, or null
+ */
 export function normalizeBindings(
   _kind: ElementKind,
   bindings: ElementBindings | null,
@@ -171,10 +196,22 @@ export function normalizeBindings(
   return bindings;
 }
 
+/**
+ * Parses and validates an unknown element write payload.
+ *
+ * @param value - Unknown payload to parse
+ * @returns The Zod SafeParseResult for the element write schema
+ */
 export function parseElementWrite(value: unknown) {
   return z_ElementWrite.safeParse(value);
 }
 
+/**
+ * Copies a full element record into a new plain record.
+ *
+ * @param value - The element record to copy
+ * @returns A shallow copy containing the normalized element fields
+ */
 export function toElementRecord(value: ElementRecord): ElementRecord {
   return {
     id: value.id,

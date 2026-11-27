@@ -64,6 +64,12 @@ const roleRules: Record<UserRole, AppRawRule[]> = {
   viewer: [{ action: "read", subject: "all" }],
 };
 
+/**
+ * Converts a database permission record into a CASL raw rule.
+ *
+ * @param permission - The stored permission definition
+ * @returns A CASL raw rule with undefined options omitted
+ */
 function toRawRule(permission: AbilityPermission): AppRawRule {
   return {
     action: permission.action,
@@ -75,6 +81,14 @@ function toRawRule(permission: AbilityPermission): AppRawRule {
   };
 }
 
+/**
+ * Builds a CASL ability from a user's role and explicit permissions.
+ *
+ * Admin users receive only role rules; other roles receive role rules plus overrides.
+ *
+ * @param user - The user to build an ability for, or null/undefined for an empty ability
+ * @returns A MongoAbility honoring the user's role and permissions
+ */
 export function defineAbilityFor(user: AbilityUser | null | undefined): AppAbility {
   if (!user) return createMongoAbility<[PermissionAction, PermissionSubject]>([]);
 
@@ -86,10 +100,23 @@ export function defineAbilityFor(user: AbilityUser | null | undefined): AppAbili
   ]);
 }
 
+/**
+ * Creates a CASL subject for a tag value at the given write level.
+ *
+ * @param writeLevel - The minimum write level required for the tag
+ * @returns A TagValue subject carrying the write level condition
+ */
 export function tagValueSubject(writeLevel: TagWriteLevel) {
   return caslSubject("TagValue", { writeLevel });
 }
 
+/**
+ * Checks whether an ability may write a tag value at the given write level.
+ *
+ * @param ability - The ability to test
+ * @param writeLevel - The minimum write level required for the tag
+ * @returns True when the ability grants a write to the TagValue subject
+ */
 export function canWriteTag(ability: AppAbility, writeLevel: TagWriteLevel) {
   return ability.can("write", tagValueSubject(writeLevel) as unknown as PermissionSubject);
 }
