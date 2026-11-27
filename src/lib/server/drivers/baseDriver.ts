@@ -72,13 +72,24 @@ export interface Driver {
   readonly connectionState: DriverConnectionState;
   /** Called once immediately with the current state, then on every change. */
   onConnectedChange(cb: DriverConnectionListener): () => void;
+  /** Opens the transport and resolves when it is usable. */
   connect(): Promise<Result<void, DriverConnectError>>;
+  /** Closes the transport and releases any transport resources. */
   disconnect(): Promise<Result<void, DriverDisconnectError>>;
+  /**
+   * Registers interest in a path and returns a handle for reads and writes.
+   *
+   * @param path - Driver-specific address string.
+   * @param dataType - Tag data type used to size and decode the value.
+   * @param opts - Extra options such as string length.
+   * @returns Ok with a variable handle, or Err when the path cannot be subscribed.
+   */
   subscribe(
     path: string,
     dataType: BaseTypeStrings,
     opts?: SubscribeOptions,
   ): Result<DriverVariable<DriverValue>, DriverSubscribeError>;
+  /** Tears down all subscriptions and marks the driver disposed. */
   dispose(): void;
 }
 
@@ -99,15 +110,23 @@ export abstract class BaseDriver<O, N extends string> implements Driver {
   #isDisposed = false;
   #connectionListeners = new Set<DriverConnectionListener>();
 
+  /**
+   * Stores the driver name and options.
+   *
+   * @param driverName - Discriminator persisted on the device row.
+   * @param options - Driver-specific configuration.
+   */
   constructor(driverName: N, options: O) {
     this.driverName = driverName;
     this.options = options;
   }
 
+  /** Whether the transport is currently connected. */
   get connected(): boolean {
     return this.#connectionState.connected;
   }
 
+  /** Current connection state, including a terminal error if any. */
   get connectionState(): DriverConnectionState {
     return this.#connectionState;
   }
@@ -117,7 +136,15 @@ export abstract class BaseDriver<O, N extends string> implements Driver {
     return this.#isDisposed;
   }
 
+  /**
+   * Subscribes to connection state changes and passes the current state
+   * immediately, then again on every change.
+   *
+   * @param cb - Listener invoked with each connection state.
+   * @returns Function that removes the listener.
+   */
   onConnectedChange(cb: DriverConnectionListener) {
+    /** Wraps the callback so it can be removed as the same reference. */
     const entry: DriverConnectionListener = (state) => cb(state);
     this.#connectionListeners.add(entry);
     entry(this.#connectionState);
@@ -145,6 +172,12 @@ export abstract class BaseDriver<O, N extends string> implements Driver {
     this.#setConnectionState(this.#connectionState.connected, error);
   }
 
+  /**
+   * Applies a new connection state and notifies listeners when it changed.
+   *
+   * @param connected - Whether the transport is connected.
+   * @param error - Terminal connection failure, if any.
+   */
   #setConnectionState(connected: boolean, error: DriverConnectError | undefined) {
     const previous = this.#connectionState;
     if (previous.connected === connected && previous.error === error) return;
@@ -169,12 +202,23 @@ export abstract class BaseDriver<O, N extends string> implements Driver {
     logger.trace(`[${this.driverName}] dispose()`);
   }
 
+  /** Supports `using` blocks by delegating to `dispose()`. */
   [Symbol.dispose]() {
     this.dispose();
   }
 
+  /** Opens the transport; implemented by concrete drivers. */
   abstract connect(): Promise<Result<void, DriverConnectError>>;
+  /** Closes the transport; implemented by concrete drivers. */
   abstract disconnect(): Promise<Result<void, DriverDisconnectError>>;
+  /**
+   * Subscribes to a path; implemented by concrete drivers.
+   *
+   * @param path - Driver-specific address string.
+   * @param dataType - Tag data type.
+   * @param opts - Extra options such as string length.
+   * @returns Ok with a variable handle, or Err when subscription fails.
+   */
   abstract subscribe(
     path: string,
     dataType: BaseTypeStrings,

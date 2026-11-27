@@ -75,6 +75,13 @@ export class Device {
   /** fired whenever `status` changes, see onChange() */
   #statusListeners = new Set<DeviceStatusListener>();
 
+  /**
+   * Builds a device around an already-created driver and mirrors its connection
+   * state into the device status.
+   *
+   * @param config - Fully resolved device configuration.
+   * @param driver - Driver instance owned by this device.
+   */
   private constructor(config: DeviceConfig, driver: Driver) {
     this.name = config.name;
     // create new instance id
@@ -85,6 +92,12 @@ export class Device {
     this.#driverUnsubscribe = driver.onConnectedChange(() => this.#refreshStatus());
   }
 
+  /**
+   * Validates the input, creates its driver and connects if enabled.
+   *
+   * @param input - Unparsed device configuration.
+   * @returns Ok with the device, or Err describing the parse or driver failure.
+   */
   static async create(input: DeviceConfigInput) {
     const parsed = z_DeviceConfig.safeParse(input);
     if (!parsed.success) {
@@ -125,6 +138,7 @@ export class Device {
     }
   }
 
+  /** Supports `using` blocks; starts `dispose()` without awaiting it. */
   [Symbol.dispose]() {
     // the protocol is synchronous but the transport is not, so the async tail
     // is left running rather than blocking the enclosing scope
@@ -151,6 +165,7 @@ export class Device {
     logger.trace(`[Device] dispose() ${this.name}`);
   }
 
+  /** Marks the device enabled and connects its driver. */
   async enable() {
     this.options.enabled = true;
     const connected = await this.#driver.connect();
@@ -160,6 +175,7 @@ export class Device {
     this.#refreshStatus();
   }
 
+  /** Marks the device disabled and disconnects its driver. */
   async disable() {
     this.options.enabled = false;
     const disconnected = await this.#driver.disconnect();
@@ -171,6 +187,7 @@ export class Device {
     this.#refreshStatus();
   }
 
+  /** Current device status, derived from the driver connection state. */
   get status() {
     return this.#computeStatus();
   }
@@ -189,6 +206,11 @@ export class Device {
     } as const satisfies FailedDevice;
   }
 
+  /**
+   * Derives the status from the enabled flag and driver connection state.
+   *
+   * @returns Ok with the status, or Err with the driver's terminal failure.
+   */
   #computeStatus(): Result<DeviceStatus, NeverThrowError> {
     if (this.options.enabled) {
       // a driver that gave up is an Error, not a Reconnecting - the transport
@@ -217,6 +239,7 @@ export class Device {
    * status, then on every change. Returns an unsubscribe function.
    */
   onStatusChange(cb: DeviceStatusListener) {
+    /** Wraps the callback so it can be removed as the same reference. */
     const entry: DeviceStatusListener = (status) => cb(status);
     this.#statusListeners.add(entry);
     entry(this.#computeStatus());
@@ -225,6 +248,14 @@ export class Device {
     };
   }
 
+  /**
+   * Subscribes to a driver path, wrapping any failure with this device's options.
+   *
+   * @param path - Driver-specific address string.
+   * @param dataType - Tag data type.
+   * @param opts - Extra options such as string length.
+   * @returns Ok with a variable handle, or Err describing the subscribe failure.
+   */
   subscribe(
     path: string,
     dataType: BaseTypeStrings,
@@ -245,6 +276,7 @@ export class Device {
 export class DeviceManager {
   #devices: Map<string, Result<Device, FailedDevice>>;
 
+  /** Creates an empty device map. */
   constructor() {
     this.#devices = new Map();
   }
@@ -287,6 +319,11 @@ export class DeviceManager {
     });
   }
 
+  /**
+   * Loads every device row and its options from the database.
+   *
+   * @returns Ok true when the query succeeded, or Err describing the read failure.
+   */
   async loadAllFromDb() {
     const found = await attempt(() =>
       db.query.devices.findMany({
@@ -335,6 +372,12 @@ export class DeviceManager {
     return ok(true);
   }
 
+  /**
+   * Validates and persists a new device, then creates and tracks it.
+   *
+   * @param options - Unparsed device configuration.
+   * @returns Ok with the created device, or Err describing the failure.
+   */
   async addDevice(options: DeviceConfigInput) {
     if (this.#devices.has(options.id)) {
       return err({
@@ -381,6 +424,12 @@ export class DeviceManager {
     return ok(device.value);
   }
 
+  /**
+   * Deletes a device row and disposes its in-memory instance.
+   *
+   * @param id - Device id to remove.
+   * @returns Ok true when removed, or Err when missing or the delete failed.
+   */
   async removeDevice(id: string) {
     const oldDevice = this.#devices.get(id);
     if (!oldDevice) {
@@ -478,6 +527,14 @@ export class DeviceManager {
     return ok(device.value);
   }
 
+  /**
+   * Replaces a device's configuration, recreating it when non-enabled options
+   * change and merely toggling enablement otherwise.
+   *
+   * @param id - Device id to update.
+   * @param options - New unparsed device configuration.
+   * @returns Ok with the updated device, or Err describing the failure.
+   */
   async updateDevice(id: string, options: DeviceConfigInput) {
     const existing = this.#devices.get(id);
 
@@ -560,14 +617,31 @@ export class DeviceManager {
     return reloaded;
   }
 
+  /**
+   * Looks up a stored device by id.
+   *
+   * @param id - Device id.
+   * @returns The stored result, or undefined when no entry exists.
+   */
   getDevice(id: string) {
     return this.#devices.get(id);
   }
 
+  /**
+   * Returns every stored device result.
+   *
+   * @returns Array of device results in insertion order.
+   */
   getAllDevices() {
     return this.#devices.values().toArray() ?? [];
   }
 
+  /**
+   * Finds a device by its configured name.
+   *
+   * @param name - Device name to search for.
+   * @returns Ok with the device, or Err when missing or the device itself failed.
+   */
   getDeviceByName(name: string) {
     const [k, device] =
       this.#devices.entries().find(([key, device]) => {
@@ -584,6 +658,11 @@ export class DeviceManager {
     return ok(device.value);
   }
 
+  /**
+   * Returns the names of every known device, including failed ones.
+   *
+   * @returns Array of device names.
+   */
   getAvalibleDevices() {
     return this.#devices
       .values()

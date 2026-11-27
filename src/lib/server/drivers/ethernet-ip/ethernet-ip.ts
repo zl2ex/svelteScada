@@ -3,6 +3,11 @@ import { attempt } from "$lib/util/attempt";
 import { logger } from "../../pino/logger";
 import { errorToString } from "$lib/util/neverThrow";
 
+/**
+ * Registers Initialized and Changed handlers on every tag of a controller.
+ *
+ * @param plc - Controller whose tags should be instrumented.
+ */
 function registerTagEventHandlers(plc: Controller) {
   // Catch the Tag "Changed" and "Initialized" Events
   const registered = attempt(() =>
@@ -25,6 +30,10 @@ function registerTagEventHandlers(plc: Controller) {
   }
 }
 
+/**
+ * Creates and connects a demo Ethernet/IP controller, subscribes one tag and
+ * starts scanning, logging each failure rather than throwing.
+ */
 async function start() {
   const created = attempt(() => new Controller());
   if (created.isErr) {

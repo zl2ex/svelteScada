@@ -28,6 +28,11 @@ export class ModbusTCPDriver extends BaseModbusDriver<
   #socket = new net.Socket();
   #client: ModbusClientLike;
 
+  /**
+   * Creates the socket and binds a jsmodbus TCP client to it.
+   *
+   * @param config - Resolved Modbus TCP options.
+   */
   private constructor(config: DeviceModbusTcpOptionsConfig) {
     super("ModbusTCPDriver", config);
 
@@ -41,6 +46,12 @@ export class ModbusTCPDriver extends BaseModbusDriver<
     this.#socket.on("close", () => this.onTransportDown());
   }
 
+  /**
+   * Validates options and constructs a TCP driver.
+   *
+   * @param opts - Unparsed Modbus TCP options.
+   * @returns Ok with the driver, or Err when options are invalid or construction fails.
+   */
   static create(opts: DeviceModbusTcpOptionsInsert) {
     const parsed = z_DeviceModbusTcpOptionsInsert.safeParse(opts);
     if (!parsed.success) {
@@ -63,18 +74,26 @@ export class ModbusTCPDriver extends BaseModbusDriver<
 
   /* ---------------------------- transport seam ---------------------------- */
 
+  /** The jsmodbus TCP client bound to the socket. */
   protected get client(): ModbusClientLike {
     return this.#client;
   }
 
+  /** Human readable `ip:port` endpoint for log lines. */
   protected targetLabel() {
     return `${this.options.ip}:${this.options.port}`;
   }
 
+  /** Configured delay before retrying a dropped socket. */
   protected get reconnectIntervalMs() {
     return this.options.reconnectInervalMs;
   }
 
+  /**
+   * Opens the socket unless it is already connected or connecting.
+   *
+   * @returns Ok when connect was started, or Err when the socket could not connect.
+   */
   protected openTransport() {
     if (this.connected || this.#socket.connecting) return ok(undefined);
     const connecting = attempt(() => this.#socket.connect(this.options.port, this.options.ip));
@@ -91,6 +110,11 @@ export class ModbusTCPDriver extends BaseModbusDriver<
     return ok(undefined);
   }
 
+  /**
+   * Destroys the socket, dropping listeners first when the driver is disposed.
+   *
+   * @returns Always Ok; teardown cannot fail.
+   */
   protected closeTransport() {
     if (this.disposed) {
       // drop listeners first so a late socket error cannot reach a dead driver

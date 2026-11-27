@@ -6,6 +6,11 @@ import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export class ProjectManager {
+  /**
+   * Lists every project in the database.
+   *
+   * @returns ok with all project rows, or err on database failure
+   */
   getAll() {
     const result = attempt(() => db.select().from(projects).all());
     if (result.isErr) {
@@ -17,6 +22,12 @@ export class ProjectManager {
     return ok(result.data);
   }
 
+  /**
+   * Fetches a single project by id.
+   *
+   * @param id - the project id to fetch
+   * @returns ok with the project row, or err when missing or on database failure
+   */
   getById(id: string) {
     const result = attempt(() =>
       db.select().from(projects).where(eq(projects.id, id)).get(),
@@ -36,6 +47,12 @@ export class ProjectManager {
     return ok(result.data);
   }
 
+  /**
+   * Fetches a single project by its unique name.
+   *
+   * @param name - the project name to fetch
+   * @returns ok with the project row, or err when missing or on database failure
+   */
   getByName(name: string) {
     const result = attempt(() =>
       db.select().from(projects).where(eq(projects.name, name)).get(),
@@ -55,6 +72,12 @@ export class ProjectManager {
     return ok(result.data);
   }
 
+  /**
+   * Validates and inserts a new project.
+   *
+   * @param value - the project fields to insert, including its id
+   * @returns ok with the created project, or err on validation or database failure
+   */
   create(value: ProjectSelect) {
     const parsed = z_ProjectInsert.safeParse(value);
     if (!parsed.success) {
@@ -86,6 +109,13 @@ export class ProjectManager {
     return this.getById(value.id);
   }
 
+  /**
+   * Validates and updates an existing project's editable fields.
+   *
+   * @param id - the id of the project to replace
+   * @param value - the new project values
+   * @returns ok with the updated project, or err on validation or database failure
+   */
   replace(id: string, value: ProjectSelect) {
     const parsed = z_ProjectInsert.safeParse(value);
     if (!parsed.success) {
@@ -123,6 +153,12 @@ export class ProjectManager {
     return this.getById(id);
   }
 
+  /**
+   * Deletes a project by id.
+   *
+   * @param id - the id of the project to delete
+   * @returns ok with the deleted project id, or err when missing or on database failure
+   */
   delete(id: string) {
     const existing = this.getById(id);
     if (existing.isErr()) return err(existing.error);

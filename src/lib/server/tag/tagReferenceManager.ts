@@ -20,6 +20,13 @@ export type TagReferenceUpdateResult = {
   elementPatches: Array<{ pageId: string; patches: PatchOp[] }>;
 };
 
+/**
+ * Rewrites tag-path references inside the values of a string map.
+ *
+ * @param map - String map to rewrite, may be null or undefined.
+ * @param mappings - Path mappings to apply.
+ * @returns Object with the rewritten map and whether any value changed.
+ */
 function rewriteStringMap<T extends Record<string, string>>(
   map: T | null | undefined,
   mappings: TagPathMapping[],
@@ -39,6 +46,13 @@ function rewriteStringMap<T extends Record<string, string>>(
   return { value: next as T, changed };
 }
 
+/**
+ * Rewrites tag-path references inside the bindings of a UDT overrides object.
+ *
+ * @param overrides - UDT overrides object to rewrite, may be null or undefined.
+ * @param mappings - Path mappings to apply.
+ * @returns Object with the rewritten overrides and whether anything changed.
+ */
 function rewriteOverrides(
   overrides: Record<string, unknown> | null | undefined,
   mappings: TagPathMapping[],
@@ -61,6 +75,13 @@ function rewriteOverrides(
   };
 }
 
+/**
+ * Rewrites tag-path references in an element's text and binding scopes.
+ *
+ * @param bindings - Element bindings to rewrite, may be null or undefined.
+ * @param mappings - Path mappings to apply.
+ * @returns Object with the rewritten bindings and whether anything changed.
+ */
 function rewriteElementBindings(
   bindings: ElementBindings | null | undefined,
   mappings: TagPathMapping[],
@@ -92,6 +113,10 @@ function rewriteElementBindings(
 /**
  * Rewrites literal tag-path references across all persisted bindings affected by a path change.
  * Updates the database, in-memory tag/UDT managers, and returns patch operations for live clients.
+ *
+ * @param mappings - Path mappings describing old-to-new tag references.
+ * @param managers - In-memory tag and UDT managers to update.
+ * @returns Ok with patch operations, or Err when the database transaction fails.
  */
 export function rewritePersistedTagReferences(
   mappings: TagPathMapping[],
@@ -229,6 +254,9 @@ type PublishContext = {
 
 /**
  * Publishes rewritten binding patches to all affected live collections.
+ *
+ * @param ctx - Publish context used to emit live events.
+ * @param result - Patch operations to publish.
  */
 export function publishTagReferenceUpdates(ctx: PublishContext, result: TagReferenceUpdateResult) {
   if (result.tagPatches.length > 0) {

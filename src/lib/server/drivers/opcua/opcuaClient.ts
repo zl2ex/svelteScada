@@ -89,6 +89,12 @@ type Sub = {
   item?: ClientMonitoredItem;
 };
 
+/**
+ * Creates an OPC UA client with the retry budget and transport timeout used by
+ * this driver.
+ *
+ * @returns Ok with the client, or Err when construction throws.
+ */
 function createClient() {
   return attempt(() =>
     OPCUAClient.create({
@@ -151,6 +157,13 @@ export class OpcuaClientDriver extends BaseDriver<
     this.#listen(client);
   }
 
+  /**
+   * Validates options and constructs a client driver.
+   *
+   * @param options - Unparsed OPC UA client options.
+   * @returns Ok with the driver, or Err when options are invalid or the client
+   * cannot be created.
+   */
   static create(options: DeviceOpcuaClientOptionsInsert) {
     const parsed = z_DeviceOpcuaClientOptionsInsert.safeParse(options);
     if (!parsed.success) {
@@ -169,6 +182,12 @@ export class OpcuaClientDriver extends BaseDriver<
     return ok(new OpcuaClientDriver(parsed.data, client.data));
   }
 
+  /**
+   * Attaches the client lifecycle listeners that mirror transport state into the
+   * driver.
+   *
+   * @param client - Client whose events should be handled.
+   */
   #listen(client: OPCUAClient) {
     client.on("backoff", (retry, delay) => {
       this.#publishStatusAll(StatusCodes.BadNotConnected);
@@ -268,6 +287,8 @@ export class OpcuaClientDriver extends BaseDriver<
    * transaction timeout does not cover discovery, so every network step is
    * raced against a deadline. `work` goes through `attempt` first so its late
    * rejection is already handled once the timer wins the race.
+   *
+   * @returns Ok with the new client, or Err when it cannot be created.
    */
   #createClient() {
     const client = createClient();
@@ -303,6 +324,12 @@ export class OpcuaClientDriver extends BaseDriver<
     }
   }
 
+  /**
+   * Runs one setup pass: tears down stale state, creates the session and
+   * subscription, then re-arms every wanted node.
+   *
+   * @param generation - Setup generation this run belongs to.
+   */
   async #setupOnce(generation: number) {
     const client = this.#client;
     if (!client) return;
@@ -375,6 +402,9 @@ export class OpcuaClientDriver extends BaseDriver<
    * True once this run has been overtaken, either by a disconnect/dispose that
    * moved the generation on or by a newer run. Whatever the run created after
    * that point belongs to a channel nobody will use again.
+   *
+   * @param generation - Setup generation to compare against.
+   * @returns Whether this run is no longer current.
    */
   #superseded(generation: number) {
     return generation !== this.#setupGeneration;
@@ -385,6 +415,11 @@ export class OpcuaClientDriver extends BaseDriver<
    * channel that is already going away, so reporting the device as down would
    * blame a connection that is fine. `marksDeviceDown` is false for a step
    * that fails on a healthy channel.
+   *
+   * @param generation - Setup generation of the failed run.
+   * @param error - Error thrown by the step.
+   * @param message - Log message describing the failed step.
+   * @param marksDeviceDown - Whether this failure should report the device down.
    */
   #setupFailed(generation: number, error: unknown, message: string, marksDeviceDown = true) {
     if (this.#superseded(generation)) {
@@ -403,6 +438,9 @@ export class OpcuaClientDriver extends BaseDriver<
   /**
    * Closes what a superseded run built. It never published the handles, so
    * nothing else can close them and the server is left to time them out.
+   *
+   * @param session - Session created by the superseded run.
+   * @param subscription - Subscription created by the superseded run, if any.
    */
   async #discardSession(session: ClientSession, subscription?: ClientSubscription) {
     if (subscription) {
@@ -422,6 +460,12 @@ export class OpcuaClientDriver extends BaseDriver<
     }
   }
 
+  /**
+   * Connects the client, recreating it first if a prior disconnect dropped it.
+   *
+   * @returns Ok when the connect attempt started, or Err when disposed or the
+   * client cannot be recreated.
+   */
   async connect() {
     if (this.disposed) {
       return err({
@@ -456,6 +500,12 @@ export class OpcuaClientDriver extends BaseDriver<
     return ok(undefined);
   }
 
+  /**
+   * Browses one node's references.
+   *
+   * @param nodeId - Node to browse.
+   * @returns Ok with the browse result, or Err when disconnected or browsing fails.
+   */
   async browse(nodeId: BrowseDescriptionLike) {
     if (!this.#session) {
       return err({
@@ -481,6 +531,12 @@ export class OpcuaClientDriver extends BaseDriver<
     return ok(browseResult.data);
   }
 
+  /**
+   * Recursively browses folders and objects beneath a node.
+   *
+   * @param nodeId - Node to start from.
+   * @returns Ok when the walk finished, or Err describing the failing node.
+   */
   async browseRecursive(
     nodeId: BrowseDescriptionLike,
   ): Promise<Result<void, OpcuaClientDriverError>> {
@@ -524,6 +580,11 @@ export class OpcuaClientDriver extends BaseDriver<
     return ok(undefined);
   }
 
+  /**
+   * Tears down the session and disconnects the client.
+   *
+   * @returns Ok when disconnected, or Err when teardown or disconnect fails.
+   */
   async disconnect() {
     this.#publishStatusAll(StatusCodes.BadNotConnected);
     this.setConnected(false);
@@ -558,6 +619,8 @@ export class OpcuaClientDriver extends BaseDriver<
    * told its value is stale before that happens. This runs both on disconnect()
    * and at the top of each setup run, which is what makes a reconnect publish
    * BadNotConnected and then a fresh Good once the re-arm lands.
+   *
+   * @returns Ok when torn down, or Err when the subscription or session close failed.
    */
   async #teardownSession() {
     this.#publishStatusAll(StatusCodes.BadNotConnected);
@@ -598,6 +661,11 @@ export class OpcuaClientDriver extends BaseDriver<
    * sent anything - its reading starts at BadWaitingForInitialData and the
    * first notification supplies the initial value. If the driver is not
    * connected yet the sub is registered unarmed and the next setup run arms it.
+   *
+   * @param path - OPC UA NodeId string to watch.
+   * @param dataType - Tag data type used to validate incoming values.
+   * @param _opts - Unused; OPC UA has no per-subscribe options here.
+   * @returns Ok with a variable handle, or Err when disposed or the NodeId is invalid.
    */
   subscribe<D extends BaseTypeStrings>(path: string, dataType: D, _opts?: SubscribeOptions) {
     if (this.disposed) {
@@ -648,17 +716,25 @@ export class OpcuaClientDriver extends BaseDriver<
     return ok(this.#createHandle(sub) as DriverVariable<BaseTypeMap[D]>);
   }
 
+  /**
+   * Builds the per-handle view over a shared subscription.
+   *
+   * @param sub - Cached subscription backing the handle.
+   * @returns A variable handle scoped to the caller's listeners.
+   */
   #createHandle(sub: Sub): DriverVariable<DriverValue> {
     const mine = new Set<Listener>();
     let released = false;
 
     return {
+      /** Latest cached reading for this subscription. */
       get reading() {
         return sub.last;
       },
       onChange: (cb) => {
         if (released) return () => {};
         // unique per call so the same cb can be added twice
+        /** Wraps the callback so it can be removed from both sets. */
         const entry: Listener = (r) => cb(r);
         mine.add(entry);
         sub.listeners.add(entry);
@@ -699,6 +775,8 @@ export class OpcuaClientDriver extends BaseDriver<
    * Creates the monitored item for one sub. Idempotent: a sub that already has
    * an item is left alone, so the setup loop and a concurrent subscribe() cannot
    * end up watching the same node twice.
+   *
+   * @param sub - Subscription to arm on the live OPC UA subscription.
    */
   async #arm(sub: Sub) {
     const subscription = this.#subscription;
@@ -779,6 +857,12 @@ export class OpcuaClientDriver extends BaseDriver<
     });
   }
 
+  /**
+   * Handles a monitored item notification, publishing its value or bad status.
+   *
+   * @param sub - Subscription the notification belongs to.
+   * @param dataValue - Value and status sent by the server.
+   */
   #onChanged(sub: Sub, dataValue: DataValue) {
     // a server side fault (BadOutOfRange, BadNotWritable on a write, ...) is
     // reported as-is so the tag sees the real reason instead of a decode error
@@ -795,6 +879,12 @@ export class OpcuaClientDriver extends BaseDriver<
     this.#publish(sub, { value: decoded.data, status: StatusCodes.Good });
   }
 
+  /**
+   * Stores a new reading and notifies listeners, skipping no-op updates.
+   *
+   * @param sub - Subscription to update.
+   * @param next - New reading to publish.
+   */
   #publish(sub: Sub, next: Reading<DriverValue>) {
     if (Object.is(sub.last.value, next.value) && sub.last.status.value === next.status.value) {
       return;
@@ -814,6 +904,11 @@ export class OpcuaClientDriver extends BaseDriver<
     this.#publish(sub, { value: sub.last.value, status });
   }
 
+  /**
+   * Publishes a status to every subscription while keeping their last values.
+   *
+   * @param status - Status to apply to all subscriptions.
+   */
   #publishStatusAll(status: StatusCode) {
     this.#subs.forEach((sub) => {
       this.#publishStatus(sub, status);
@@ -822,6 +917,14 @@ export class OpcuaClientDriver extends BaseDriver<
 
   /* ---------------------------------- writing ------------------------------ */
 
+  /**
+   * Writes a value to a subscription's node through the current session.
+   *
+   * @param sub - Subscription whose node should be written.
+   * @param value - Value to write.
+   * @returns Ok when the server accepted it, or Err when there is no session or
+   * the write fails.
+   */
   async #write(sub: Sub, value: DriverValue) {
     const session = this.#session;
     if (!session) {
@@ -861,6 +964,7 @@ export class OpcuaClientDriver extends BaseDriver<
     return ok(undefined);
   }
 
+  /** Disposes base state, disconnects asynchronously and drops all subscriptions. */
   dispose() {
     super.dispose();
     logger.debug(`[opcuaClientDriver] dispose()`);
@@ -896,6 +1000,9 @@ const OPCUA_DATA_TYPE: Record<BaseTypeStrings, DataType> = {
  * node-opcua-client does not re-export the BigInt helpers that turn one into a
  * number, so the value is reassembled here rather than reaching into
  * node-opcua-basic-types, which is only a transitive dependency.
+ *
+ * @param pair - High and low 32-bit words as sent on the wire.
+ * @returns The signed 64-bit value as a JavaScript number.
  */
 function int64ToNumber(pair: [number, number]) {
   const [high, low] = pair;
@@ -909,6 +1016,11 @@ function int64ToNumber(pair: [number, number]) {
  * works and a String tag on a Double node does not.
  *
  * Throws on anything unconvertible - the caller turns that into BadTypeMismatch.
+ *
+ * @param dataType - Tag base type the value must satisfy.
+ * @param variant - Variant received from the server.
+ * @returns The decoded value as the tag's base type.
+ * @throws {Error} when the variant is an array/matrix or fails the type schema.
  */
 function decodeValue(dataType: BaseTypeStrings, variant: Variant): DriverValue {
   // a tag stores a scalar base type, so an array or matrix has no way to be

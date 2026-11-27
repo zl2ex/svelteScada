@@ -11,6 +11,13 @@ import { newId } from "$lib/util/newId";
 
 export const themeNamePattern = /^[a-zA-Z0-9][a-zA-Z0-9 _-]*$/;
 
+/**
+ * Wraps a database failure in the standard DB_ERROR result.
+ *
+ * @param error - the thrown database error to stringify
+ * @param cause - context describing which operation failed
+ * @returns an err Result carrying the DB_ERROR reason
+ */
 function dbError(error: unknown, cause: string) {
   return err({
     reason: "DB_ERROR",
@@ -18,6 +25,12 @@ function dbError(error: unknown, cause: string) {
   } as const satisfies NeverThrowError);
 }
 
+/**
+ * Builds the invalid theme name error result.
+ *
+ * @param name - the rejected theme name
+ * @returns an err Result carrying the INVALID_THEME_NAME reason
+ */
 function invalidName(name: string) {
   return err({
     reason: "INVALID_THEME_NAME",
@@ -32,12 +45,23 @@ export type UserThemeInput = {
 };
 
 export class UserThemeManager {
+  /**
+   * Lists every stored theme.
+   *
+   * @returns ok with all theme rows, or err on database failure
+   */
   getAll() {
     const result = attempt(() => db.select().from(user_theme).all());
     if (result.isErr) return dbError(result.error, "getAll() failed");
     return ok(result.data);
   }
 
+  /**
+   * Fetches a single theme by id.
+   *
+   * @param id - the theme id to fetch
+   * @returns ok with the theme row, or err when missing or on database failure
+   */
   get(id: string) {
     const result = attempt(() =>
       db.select().from(user_theme).where(eq(user_theme.id, id)).get(),
@@ -52,12 +76,22 @@ export class UserThemeManager {
     return ok(result.data);
   }
 
+  /**
+   * Returns the named default theme, else the first stored theme, else null.
+   *
+   * @returns ok with the default theme or null, or err on database failure
+   */
   getDefault() {
     const all = this.getAll();
     if (all.isErr()) return err(all.error);
     return ok(all.value.find((theme) => theme.name === DEFAULT_THEME_NAME) ?? all.value[0] ?? null);
   }
 
+  /**
+   * Ensures a default theme exists and assigns it to projects lacking a theme.
+   *
+   * @returns ok with the default theme, or err on database failure
+   */
   ensureDefault() {
     const all = this.getAll();
     if (all.isErr()) return err(all.error);
@@ -85,6 +119,12 @@ export class UserThemeManager {
     return ok(defaultTheme);
   }
 
+  /**
+   * Validates and inserts a new theme with normalized CSS.
+   *
+   * @param input - the optional id, name, and project CSS for the theme
+   * @returns ok with the created theme, or err on validation or database failure
+   */
   create(input: UserThemeInput) {
     const name = input.name.trim();
     if (!themeNamePattern.test(name)) return invalidName(name);
@@ -121,6 +161,13 @@ export class UserThemeManager {
     return this.get(id);
   }
 
+  /**
+   * Replaces a theme's name and CSS after validating uniqueness.
+   *
+   * @param id - the id of the theme to replace
+   * @param input - the new name and project CSS
+   * @returns ok with the updated theme, or err on validation or database failure
+   */
   replace(id: string, input: Omit<UserThemeInput, "id">) {
     const name = input.name.trim();
     if (!themeNamePattern.test(name)) return invalidName(name);
@@ -160,6 +207,12 @@ export class UserThemeManager {
     return this.get(id);
   }
 
+  /**
+   * Deletes a theme by id.
+   *
+   * @param id - the id of the theme to delete
+   * @returns ok with the deleted theme id, or err when missing or on database failure
+   */
   delete(id: string) {
     const theme = this.get(id);
     if (theme.isErr()) return err(theme.error);

@@ -20,6 +20,11 @@ import { logger } from "../pino/logger";
  * TREND_MAX_POINTS samples they are averaged down to that many points so the
  * response stays small enough for a single wire frame. A tag with no samples
  * in the range comes back with an empty points array.
+ *
+ * @param tagId - the tag whose samples to read
+ * @param from - inclusive start of the range in epoch milliseconds
+ * @param to - inclusive end of the range in epoch milliseconds
+ * @returns ok with the trend series and downsample factor, or err on query failure
  */
 export function getTrendSeries(tagId: string, from: number, to: number) {
   const rows = attempt(() =>
@@ -57,6 +62,9 @@ export function getTrendSeries(tagId: string, from: number, to: number) {
  * in the group is not Good the averaged point carries that bad status code,
  * so outage dimming still shows on downsampled ranges. The returned `factor`
  * is 1 when the samples are untouched.
+ *
+ * @param points - the ascending trend points to reduce
+ * @returns the reduced or unchanged points plus the applied downsample factor
  */
 function reduceTrendPoints(points: TrendPoint[]): { points: TrendPoint[]; factor: number } {
   if (points.length <= TREND_MAX_POINTS) return { points, factor: 1 };
@@ -90,6 +98,10 @@ function reduceTrendPoints(points: TrendPoint[]): { points: TrendPoint[]; factor
 /**
  * The most recent `limit` samples for one tag, oldest first - the initial
  * buffer for the live `getTagTrend` stream.
+ *
+ * @param tagId - the tag whose recent samples to read
+ * @param limit - the maximum number of samples to return
+ * @returns ok with the points oldest first, or err on query failure
  */
 export function getRecentTrendPoints(tagId: string, limit: number) {
   const rows = attempt(() =>
@@ -120,6 +132,12 @@ export function getRecentTrendPoints(tagId: string, limit: number) {
   return ok(points);
 }
 
+/**
+ * Publishes one trend sample to live subscribers, if the realtime platform is ready.
+ *
+ * @param id - the tag id whose stream channel receives the point
+ * @param point - the trend sample to publish
+ */
 export function publishTrend(id: string, point: TrendPoint) {
   // stream the sample to any live getTagTrend(${this.id}) subscribers
 

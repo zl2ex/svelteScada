@@ -73,24 +73,31 @@ export type ModbusSubscriptionInfo = {
  * a transport only has to supply a client plus its own open/close.
  */
 export interface ModbusClientLike {
+  /** Reads `count` holding registers starting at `start`. */
   readHoldingRegisters(
     start: number,
     count: number,
   ): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
+  /** Reads `count` input registers starting at `start`. */
   readInputRegisters(
     start: number,
     count: number,
   ): Promise<{ response: { body: { valuesAsBuffer: Buffer } } }>;
+  /** Reads `count` coils starting at `start`. */
   readCoils(
     start: number,
     count: number,
   ): Promise<{ response: { body: { valuesAsArray: Array<number | boolean> } } }>;
+  /** Reads `count` discrete inputs starting at `start`. */
   readDiscreteInputs(
     start: number,
     count: number,
   ): Promise<{ response: { body: { valuesAsArray: Array<number | boolean> } } }>;
+  /** Writes a single coil. */
   writeSingleCoil(address: number, value: boolean): Promise<unknown>;
+  /** Writes a single holding register. */
   writeSingleRegister(address: number, value: number): Promise<unknown>;
+  /** Writes a contiguous run of holding registers. */
   writeMultipleRegisters(start: number, values: number[] | Buffer): Promise<unknown>;
 }
 
@@ -110,7 +117,9 @@ interface TypeHandler<T> {
   /** size in bytes, undefined when variable length */
   size: number | undefined;
   default: T;
+  /** Decodes the register view into a value. */
   decode(ctx: CodecContext): T;
+  /** Encodes a value into the register view. */
   encode(ctx: CodecContext, value: T): void;
 }
 
@@ -224,6 +233,12 @@ export const typeHandlers: {
   },
 };
 
+/**
+ * Returns the type handler for a Modbus data type.
+ *
+ * @param dataType - Modbus data type name.
+ * @returns The matching type handler widened to the union value type.
+ */
 export const codecFor = (dataType: ModbusDataType) =>
   typeHandlers[dataType] as TypeHandler<ModbusValue>;
 
@@ -326,6 +341,11 @@ export abstract class BaseModbusDriver<
 
   /* ------------------------------ connection ------------------------------ */
 
+  /**
+   * Opens the transport unless the driver has been disposed.
+   *
+   * @returns Ok when the open started, or Err when disposed or the open failed.
+   */
   async connect() {
     if (this.disposed) {
       return err({
@@ -338,6 +358,12 @@ export abstract class BaseModbusDriver<
     return this.openTransport();
   }
 
+  /**
+   * Stops reconnecting and polling, marks the driver disconnected and closes
+   * the transport.
+   *
+   * @returns Ok when closed, or Err from the transport close.
+   */
   async disconnect() {
     this.#shouldReconnect = false;
     clearTimeout(this.#reconnectTimer);
@@ -351,6 +377,7 @@ export abstract class BaseModbusDriver<
     return ok(undefined);
   }
 
+  /** Disposes the base state, stops polling and clears every subscription. */
   dispose() {
     super.dispose();
     this.#shouldReconnect = false;
@@ -385,6 +412,11 @@ export abstract class BaseModbusDriver<
     this.#scheduleReconnect(cause);
   }
 
+  /**
+   * Schedules a single reconnect attempt after the transport backoff.
+   *
+   * @param cause - Optional transport error to log.
+   */
   #scheduleReconnect(cause?: string) {
     if (this.#reconnectTimer) return; // already waiting to retry
     if (cause) logger.warn(`[${this.driverName}] transport error: ${cause}`);
@@ -403,6 +435,11 @@ export abstract class BaseModbusDriver<
 
   /* ------------------------------ subscribing ----------------------------- */
 
+  /**
+   * Returns a snapshot of the active subscriptions.
+   *
+   * @returns One info object per cached subscription.
+   */
   getSubscriptions(): ModbusSubscriptionInfo[] {
     return [...this.#subs.values()].map((s) => ({
       key: s.key,
@@ -504,17 +541,25 @@ export abstract class BaseModbusDriver<
     return ok(this.#createHandle(sub) as DriverVariable<BaseTypeMap[D]>);
   }
 
+  /**
+   * Builds the per-handle view over a shared subscription.
+   *
+   * @param sub - Cached subscription backing the handle.
+   * @returns A variable handle scoped to the caller's listeners.
+   */
   #createHandle(sub: Sub): DriverVariable<ModbusValue> {
     const mine = new Set<Listener>();
     let released = false;
 
     return {
+      /** Latest cached reading for this subscription. */
       get reading() {
         return sub.last;
       },
       onChange: (cb) => {
         if (released) return () => {};
         // unique per call so the same cb can be added twice
+        /** Wraps the callback so it can be removed from both sets. */
         const entry: Listener = (r) => cb(r);
         mine.add(entry);
         sub.listeners.add(entry);
@@ -548,6 +593,12 @@ export abstract class BaseModbusDriver<
     };
   }
 
+  /**
+   * Stores a new reading and notifies listeners, skipping no-op updates.
+   *
+   * @param sub - Subscription to update.
+   * @param next - New reading to publish.
+   */
   #publish(sub: Sub, next: Reading<ModbusValue>) {
     if (Object.is(sub.last.value, next.value) && sub.last.status.value === next.status.value) {
       return;
@@ -567,12 +618,23 @@ export abstract class BaseModbusDriver<
     this.#publish(sub, { value: sub.last.value, status });
   }
 
+  /**
+   * Publishes a status to every subscription while keeping their last values.
+   *
+   * @param status - Status to apply to all subscriptions.
+   */
   #publishAll(status: StatusCode) {
     for (const sub of this.#subs.values()) this.#publishStatus(sub, status);
   }
 
   /* -------------------------------- queueing ------------------------------- */
 
+  /**
+   * Serialises a request behind all previously queued work.
+   *
+   * @param fn - Work to run once the queue is free.
+   * @returns The promise returned by `fn`.
+   */
   #enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const p = this.#queue.then(fn);
     this.#queue = p.then(
@@ -584,6 +646,7 @@ export abstract class BaseModbusDriver<
 
   /* --------------------------------- polling ------------------------------- */
 
+  /** Starts the polling loop if it is not already running. */
   #startPolling() {
     if (this.#polling) return;
     this.#polling = true;
@@ -593,6 +656,7 @@ export abstract class BaseModbusDriver<
     );
   }
 
+  /** Stops the polling loop and clears the pending poll timer. */
   #stopPolling() {
     if (!this.#polling) return;
     this.#polling = false;
@@ -614,6 +678,7 @@ export abstract class BaseModbusDriver<
     }, delay);
   }
 
+  /** Reads every batch once while the driver remains connected. */
   async #poll() {
     for (const batch of this.#buildBatches()) {
       if (!this.connected) return;
@@ -621,6 +686,11 @@ export abstract class BaseModbusDriver<
     }
   }
 
+  /**
+   * Groups subscriptions by register type into contiguous read batches.
+   *
+   * @returns Batches respecting the per-read register/bit limits.
+   */
   #buildBatches(): Batch[] {
     const byType = new Map<ModbusRegisterType, Sub[]>();
     for (const sub of this.#subs.values()) {
@@ -651,6 +721,12 @@ export abstract class BaseModbusDriver<
     return batches;
   }
 
+  /**
+   * Reads a batch and applies the values, retrying each variable alone when the
+   * device rejects the merged block.
+   *
+   * @param batch - Batch of subscriptions to read.
+   */
   async #readBatch(batch: Batch) {
     const result = await this.#readRaw(batch.type, batch.start, batch.end - batch.start);
 
@@ -682,6 +758,14 @@ export abstract class BaseModbusDriver<
     for (const sub of batch.subs) this.#publishStatus(sub, failure.opcuaStatus);
   }
 
+  /**
+   * Issues one queued raw read for a register type.
+   *
+   * @param type - Register type to read.
+   * @param start - First register or coil address.
+   * @param length - Number of registers or coils to read.
+   * @returns Ok with the raw words or bits, or Err when the read failed.
+   */
   async #readRaw(type: ModbusRegisterType, start: number, length: number) {
     const read = await attempt(() =>
       this.#enqueue(async (): Promise<RawRead> => {
@@ -723,6 +807,13 @@ export abstract class BaseModbusDriver<
     return ok(read.data);
   }
 
+  /**
+   * Decodes one subscription's slice of a batch response and publishes it.
+   *
+   * @param batch - Batch the read belongs to.
+   * @param sub - Subscription to decode.
+   * @param raw - Raw words or bits returned for the batch.
+   */
   #applyRead(batch: Batch, sub: Sub, raw: RawRead) {
     const offset = sub.address - batch.start;
     const from = offset * 2;
@@ -751,6 +842,13 @@ export abstract class BaseModbusDriver<
 
   /* --------------------------------- writing ------------------------------- */
 
+  /**
+   * Encodes and writes a value, rejecting read-only registers.
+   *
+   * @param sub - Subscription to write.
+   * @param value - Value to encode and write.
+   * @returns Ok when written, or Err describing why it could not be.
+   */
   async #write(sub: Sub, value: ModbusValue) {
     if (sub.registerType === "ir" || sub.registerType === "di") {
       return err({
@@ -825,6 +923,12 @@ export abstract class BaseModbusDriver<
 
   /* --------------------------------- helpers ------------------------------- */
 
+  /**
+   * Parses an address string into a register type, address, bit and byte order.
+   *
+   * @param path - Address such as `hr100` or `(le|sw)hr100.3`.
+   * @returns Ok with the parsed path, or Err when the syntax is invalid.
+   */
   #parsePath(path: string) {
     const m = path.match(PATH_REGEX);
     if (!m?.groups) {
@@ -898,6 +1002,12 @@ function toBytes(buffer: Buffer): Uint8Array {
   );
 }
 
+/**
+ * Maps a thrown jsmodbus error onto a Modbus read failure and OPC UA status.
+ *
+ * @param e - Error thrown by the transport or client.
+ * @returns A classified read failure.
+ */
 function classifyModbusError(e: unknown): ReadFailure {
   const x = e as
     | {
@@ -926,6 +1036,14 @@ function classifyModbusError(e: unknown): ReadFailure {
   }
 }
 
+/**
+ * Builds a Modbus read failure.
+ *
+ * @param cause - Human readable failure cause.
+ * @param status - OPC UA status to publish.
+ * @param deviceException - Whether the device rejected the request itself.
+ * @returns The read failure value.
+ */
 function readFailure(cause: string, status: StatusCode, deviceException: boolean) {
   return {
     reason: "MODBUS_REQUEST_FAILED",

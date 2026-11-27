@@ -8,6 +8,12 @@ import { err, ok } from "neverthrow";
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
+/**
+ * Verifies a JWT and loads the matching user with permissions.
+ *
+ * @param token - the signed JWT presented by the client
+ * @returns ok with the session user, or err when verification or lookup fails
+ */
 export async function authenticateUser(token: string) {
   const verified = attempt(() => jwt.verify(token, PRIVATE_KEY));
   if (verified.isErr) {

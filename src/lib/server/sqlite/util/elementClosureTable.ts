@@ -7,6 +7,12 @@ export type ElementClosureNode = ElementSelect & {
   path: string;
 };
 
+/**
+ * Builds the closure-table scope key for an element owner.
+ *
+ * @param owner - the page or user component that owns elements
+ * @returns the scope key, for example `page:<id>` or `component:<id>`
+ */
 export function elementOwnerScope(owner: ElementOwner) {
   return owner.type === "page" ? `page:${owner.pageId}` : `component:${owner.userComponentId}`;
 }

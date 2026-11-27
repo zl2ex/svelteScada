@@ -19,6 +19,12 @@ import {
 import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
+/**
+ * Strips owner and path metadata from a raw element row.
+ *
+ * @param row - element row that may include pageId, userComponentId or path
+ * @returns the element fields only, without ownership or path metadata
+ */
 function toElementRecord(
   row: ElementSelect & { parentId: string | null; path?: string },
 ): ElementRecord {
@@ -26,12 +32,25 @@ function toElementRecord(
   return record;
 }
 
+/**
+ * Builds the Drizzle condition matching an element's owning page or component.
+ *
+ * @param owner - the page or user component that owns the elements
+ * @returns the equality condition for the owner's foreign-key column
+ */
 function ownerWhere(owner: ElementOwner) {
   return owner.type === "page"
     ? eq(elements.pageId, owner.pageId)
     : eq(elements.userComponentId, owner.userComponentId);
 }
 
+/**
+ * Wraps a database failure in the standard DB_ERROR result.
+ *
+ * @param error - the thrown database error to stringify
+ * @param cause - context describing which operation failed
+ * @returns an err Result carrying the DB_ERROR reason
+ */
 function dbError(error: unknown, cause: string) {
   return err({
     reason: "DB_ERROR",
@@ -40,6 +59,12 @@ function dbError(error: unknown, cause: string) {
 }
 
 export class ElementManager {
+  /**
+   * Resolves the project that owns a page or user component.
+   *
+   * @param owner - the page or user component to look up
+   * @returns ok with the project id, or err when the owner or database fails
+   */
   getProjectId(owner: ElementOwner) {
     const result = attempt(() =>
       owner.type === "page"
@@ -67,6 +92,12 @@ export class ElementManager {
     return ok(result.data.projectId);
   }
 
+  /**
+   * Lists every element owned by a page or user component.
+   *
+   * @param owner - the page or user component whose elements to list
+   * @returns ok with a map of element id to record, or err on database failure
+   */
   list(owner: ElementOwner) {
     const result = elementClosureTable.getAll(elementOwnerScope(owner));
     if (result.isErr()) return err(result.error);
@@ -76,6 +107,12 @@ export class ElementManager {
     return ok(map);
   }
 
+  /**
+   * Lists all page elements for a project, grouped by page id.
+   *
+   * @param projectId - the project whose pages' elements to collect
+   * @returns ok with a per-page map of element records, or err on database failure
+   */
   listForProject(projectId: string) {
     const pageRows = attempt(() =>
       db.select({ id: pages.id }).from(pages).where(eq(pages.projectId, projectId)).all(),
@@ -98,6 +135,13 @@ export class ElementManager {
     return ok(elementsByPage);
   }
 
+  /**
+   * Fetches one element, ensuring it belongs to the given owner.
+   *
+   * @param owner - the page or user component expected to own the element
+   * @param id - the element id to fetch
+   * @returns ok with the element record, or err when missing or not owned
+   */
   get(owner: ElementOwner, id: string) {
     const result = elementClosureTable.get(id, elementOwnerScope(owner));
     if (result.isErr()) {
@@ -110,6 +154,13 @@ export class ElementManager {
     return ok(toElementRecord(result.value));
   }
 
+  /**
+   * Validates and inserts a new element for an owner.
+   *
+   * @param owner - the page or user component that will own the element
+   * @param input - the element record to create
+   * @returns ok with the inserted record, or err on validation or database failure
+   */
   create(owner: ElementOwner, input: ElementRecord) {
     const ownerProject = this.getProjectId(owner);
     if (ownerProject.isErr()) return err(ownerProject.error);
@@ -186,6 +237,14 @@ export class ElementManager {
     return ok(toElementRecord(inserted.value));
   }
 
+  /**
+   * Validates and updates an existing element, including reparenting.
+   *
+   * @param owner - the page or user component that owns the element
+   * @param id - the id of the element to replace
+   * @param input - the new element values
+   * @returns ok with the updated record, or err on validation or database failure
+   */
   replace(owner: ElementOwner, id: string, input: ElementRecord) {
     const existing = this.get(owner, id);
     if (existing.isErr()) return err(existing.error);
@@ -295,6 +354,13 @@ export class ElementManager {
     return ok(toElementRecord({ ...updated.data, parentId: parsed.data.parentId }));
   }
 
+  /**
+   * Removes an element and all of its descendants.
+   *
+   * @param owner - the page or user component that owns the element
+   * @param id - the id of the element to remove
+   * @returns ok with the removed id and descendant ids, or err on failure
+   */
   remove(owner: ElementOwner, id: string) {
     const existing = this.get(owner, id);
     if (existing.isErr()) return err(existing.error);
@@ -308,6 +374,14 @@ export class ElementManager {
     return ok({ id, ids: removed.value });
   }
 
+  /**
+   * Checks that the element's parent exists, shares the owner, is kind-compatible,
+   * and does not create a parent/child cycle.
+   *
+   * @param owner - the page or user component that owns the element
+   * @param element - the element fields needed for hierarchy validation
+   * @returns ok with the parent id (or null), or err describing the hierarchy issue
+   */
   #validateParent(
     owner: ElementOwner,
     element: Pick<ElementRecord, "id" | "parentId" | "kind" | "tag">,
@@ -368,6 +442,14 @@ export class ElementManager {
     return ok(parentId);
   }
 
+  /**
+   * Re-checks every direct child against the updated element, catching children
+   * that the new kind or tag would no longer allow.
+   *
+   * @param owner - the page or user component that owns the element
+   * @param element - the updated element fields used to validate its children
+   * @returns ok with null, or err when a child hierarchy is invalid
+   */
   #validateChildren(
     owner: ElementOwner,
     element: Pick<ElementRecord, "id" | "kind" | "tag">,
@@ -389,6 +471,16 @@ export class ElementManager {
     return ok(null);
   }
 
+  /**
+   * Validates a user-component reference: the component must exist, live in the
+   * same project, and not create a reference cycle.
+   *
+   * @param owner - the page or user component that owns the element
+   * @param projectId - the project that must contain the referenced component
+   * @param elementId - the current element id, excluded from the cycle graph
+   * @param referencedComponentId - the referenced component id, or null for none
+   * @returns ok with null when valid, or err describing the reference problem
+   */
   #validateReference(
     owner: ElementOwner,
     projectId: string,

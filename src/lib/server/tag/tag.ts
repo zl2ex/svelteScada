@@ -29,6 +29,11 @@ import { eq } from "drizzle-orm";
 
 export type { TagOptionsInput, UdtTagOverrides } from "$lib/sqlite/tagOptions";
 
+/**
+ * Returns all known data type names: base types followed by loaded UDT names.
+ *
+ * @returns Array of data type strings.
+ */
 export async function getAllDataTypeStrings() {
   const udtNames = udtManager.getAllUdts().map((udt) => {
     return udt.name;
@@ -60,6 +65,13 @@ type PrimitiveKind<S> =
           ? "boolean"
           : never;
 
+/**
+ * Determines the primitive JavaScript kind produced by a base-type zod schema.
+ *
+ * @param schema - Zod schema for a base type, possibly wrapped in defaults.
+ * @returns The primitive kind: `"number"`, `"string"` or `"boolean"`.
+ * @throws {TypeError} when the schema kind is not a supported primitive.
+ */
 const primitiveKind = (schema: z.ZodType): "number" | "string" | "boolean" => {
   let def = schema.def;
   while (def.type === "default" || def.type === "prefault") {
@@ -95,6 +107,12 @@ export type TagCreateContext = {
 
 export type UpdateSource = "WebClient" | "GatewayOpcua" | "TagInternal" | "TagDriver";
 
+/**
+ * Parses a data type string into its zod schema, supporting scalar and array forms.
+ *
+ * @param dataType - Data type string such as `Double`, `Int[]` or `Int[4]`.
+ * @returns Ok with the zod schema, or Err when the string or base type is invalid.
+ */
 export function getSchema<DataType extends string>(dataType: DataType) {
   const parsed = dataType.match(/^(?<base>[A-Za-z0-9]+)(?:\[(?<len>\d*?)\])?$/);
   if (!parsed?.groups) {
@@ -124,6 +142,12 @@ export type ResolvedDevicePath = {
   driverPath: string | undefined;
 };
 
+/**
+ * Splits a `[device]/driverPath` reference into its device and driver path parts.
+ *
+ * @param path - Packed tag path to resolve.
+ * @returns Object with the device name and driver path, each possibly undefined.
+ */
 export function resolveDevicePath(path: string): ResolvedDevicePath {
   // If identifier is a string path, split into parts
   let deviceName: string | undefined;
@@ -202,6 +226,9 @@ export class Tag {
   #lastTrendWriteMs = 0;
   #disposed = false; // disposed flag
 
+  /**
+   * Creates a tag instance; use `Tag.create` for validated construction.
+   */
   private constructor(
     opcuaServer: OPCUAServer,
     opcuaFolder: OpcuaFolder,
@@ -225,6 +252,13 @@ export class Tag {
    * A `Tag` may only exist when its configuration is correct. Any validation
    * failure returns a reason-tagged error rather than producing a
    * partially-built tag.
+   *
+   * @param opcuaServer - Running OPC UA server for exposed tag variables.
+   * @param opcuaFolder - OPC UA folder the tag is organised under.
+   * @param opts - Tag options to validate and build from.
+   * @param [onChange] - Optional listener notified on value changes.
+   * @param [context] - Optional creation context, such as an existing parent tag.
+   * @returns Ok with the new tag, or Err with the failed options and reason.
    */
   static create(
     opcuaServer: OPCUAServer,
@@ -423,6 +457,11 @@ export class Tag {
     return ok(tag);
   }
 
+  /**
+   * Attaches a child tag and extends this tag's schema with the child schema.
+   *
+   * @param child - Child tag to attach.
+   */
   attachRuntimeChild(child: Tag) {
     child.#parent = this;
     this.children[child.name] = child;
@@ -431,6 +470,11 @@ export class Tag {
     }
   }
 
+  /**
+   * Detaches a named child tag and rebuilds this tag's schema.
+   *
+   * @param name - Name of the child tag to detach.
+   */
   detachRuntimeChild(name: string) {
     const child = this.children[name];
     if (child) child.#parent = undefined;
@@ -438,6 +482,9 @@ export class Tag {
     this.rebuildSchemaFromChildren();
   }
 
+  /**
+   * Detaches all child tags and resets this tag's schema to an empty object.
+   */
   detachRuntimeChildren() {
     for (const child of Object.values(this.children)) {
       child.#parent = undefined;
@@ -446,6 +493,9 @@ export class Tag {
     this.rebuildSchemaFromChildren();
   }
 
+  /**
+   * Rebuilds this tag's schema from the schemas of its current children.
+   */
   rebuildSchemaFromChildren() {
     let schema = z.object({});
     for (const child of Object.values(this.children)) {
@@ -454,10 +504,23 @@ export class Tag {
     this.schema = schema;
   }
 
+  /**
+   * Recomputes this tag's value from its children and notifies listeners.
+   *
+   * @param [source] - Source attributed to the update, defaults to `"TagInternal"`.
+   */
   recomputeFromChildren(source: UpdateSource = "TagInternal") {
     this.#onChildChange(source, StatusCodes.Good);
   }
 
+  /**
+   * Parses an initial-value string from the database into a tag value.
+   *
+   * Supports JSON arrays/objects, booleans, numbers and plain strings.
+   *
+   * @param value - Raw initial value string.
+   * @returns Parsed tag value.
+   */
   // parse intialValue string stored in database into one of the required datatypes
   #stringToTagValue(value: string): TagValue {
     // Handle arrays stored in json format
@@ -478,6 +541,12 @@ export class Tag {
     return value;
   }
 
+  /**
+   * Validates a value against this tag's schema.
+   *
+   * @param value - Value to validate.
+   * @returns Ok with the parsed value, or Err when the schema is missing or parsing fails.
+   */
   #validate(value: unknown) {
     if (!this.schema)
       return err({
@@ -496,6 +565,11 @@ export class Tag {
     return ok(parsed.data);
   }
 
+  /**
+   * Builds the client-facing representation of this tag, including children.
+   *
+   * @returns `ClientTagValue` with status string and nested children.
+   */
   getClientValueTag(): ClientTagValue {
     const children = Object.values(this.children).map((child) => child.getClientValueTag());
     return {
@@ -509,6 +583,11 @@ export class Tag {
     };
   }
 
+  /**
+   * Subscribes to the tag's driver variable and wires updates back into the tag.
+   *
+   * @returns Ok with the driver variable, or Err when the path is invalid or subscription fails.
+   */
   subscribeToDriver() {
     if (!this.options.driverPath)
       return err({
@@ -551,6 +630,12 @@ export class Tag {
     return ok(driverVariable);
   }
 
+  /**
+   * Writes a new value from the web client, rejecting readonly tags.
+   *
+   * @param value - Value to write.
+   * @returns Ok with the resulting status code, or Err when readonly or the update fails.
+   */
   // external write api from web client
   async write(value: TagValue) {
     if (this.options.readonly) {
@@ -570,7 +655,7 @@ export class Tag {
    *
    * @param value - The new value to be written
    * @param source - The source of the update so the value is not written back to the caller
-   * @param statusCode - The OPCUA status code, defaults to Good
+   * @param [statusCode] - The OPCUA status code, defaults to Good
    * @returns statusCode, either the one passed or if something went wrong with the write
    *
    * @example
@@ -708,6 +793,12 @@ export class Tag {
     return ok(this.statusCode);
   }
 
+  /**
+   * Rebuilds this tag's value from its children and propagates the change to its parent.
+   *
+   * @param source - Source attributed to the update.
+   * @param statusCode - Status code to apply to this tag.
+   */
   #onChildChange(source: UpdateSource, statusCode: StatusCode) {
     const value: Record<string, TagValue> = {};
     for (const [name, child] of Object.entries(this.children)) {
@@ -726,6 +817,9 @@ export class Tag {
     }
   }
 
+  /**
+   * Disposes the tag when used with `using`, logging any error.
+   */
   [Symbol.dispose]() {
     const disposed = this.dispose();
     if (disposed.isErr()) {
@@ -737,6 +831,9 @@ export class Tag {
    * Writes a trend sample when this tag has trending on and the configured
    * interval has elapsed. Writes are rate limited by `#lastTrendWrite` so a
    * fast changing tag cannot flood the trends table.
+   *
+   * @param value - Sample value to persist.
+   * @param statusCode - Status code stored with the sample.
    */
   #trend(value: TagValue, statusCode: StatusCode) {
     if (!this.options.trendEnabled) return;
@@ -772,6 +869,11 @@ export class Tag {
     publishTrend(this.id, { timestamp: now, value: trendValue, statusCode: statusCode.value });
   }
 
+  /**
+   * Releases driver resources, removes the exposed OPC UA variable and disposes children.
+   *
+   * @returns Ok(true) on success, or Err when a driver release or OPC UA delete fails.
+   */
   dispose() {
     logger.trace(`[Tag] dispose() ${this.id}`);
     if (this.#disposed) return ok(true);

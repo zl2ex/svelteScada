@@ -20,17 +20,38 @@ export class TagManager {
   #tags: Map<string, Result<Tag, FailedTag>> = new Map();
   #folderManager: FolderManager | undefined;
 
+  /**
+   * Creates an empty tag manager.
+   */
   constructor() {}
 
+  /**
+   * Stores the OPC UA server and folder manager used to build tags.
+   *
+   * @param opcuaServer - Running OPC UA server for exposed tag variables.
+   * @param folderManager - Folder manager providing OPC UA folders for tags.
+   */
   initOpcuaServer(opcuaServer: OPCUAServer, folderManager: FolderManager) {
     this.opcuaServer = opcuaServer;
     this.#folderManager = folderManager;
   }
 
+  /**
+   * Returns the options of a loaded tag, whether it was created successfully or failed.
+   *
+   * @param tag - Tag result to read options from.
+   * @returns The tag options.
+   */
   #optionsOf(tag: Result<Tag, FailedTag>): TagOptionsInput {
     return tag.isOk() ? tag.value.options : tag.error.options;
   }
 
+  /**
+   * Computes a tag's runtime path from its folder or parent tag.
+   *
+   * @param tagOptions - Options of the tag to path.
+   * @returns The computed path string.
+   */
   #buildPath(tagOptions: TagOptionsInput) {
     if (tagOptions.parentTagId) {
       const parent = this.#tags.get(tagOptions.parentTagId);
@@ -47,11 +68,22 @@ export class TagManager {
     return folder.value.path + "/" + tagOptions.name;
   }
 
+  /**
+   * Returns a tag's current path, falling back to computing it from its options.
+   *
+   * @param tag - Tag result to read a path from.
+   * @returns The path, or undefined when it cannot be determined.
+   */
   #pathOf(tag: Result<Tag, FailedTag>): string | undefined {
     if (tag.isOk()) return tag.value.path;
     return tag.error.options ? this.#buildPath(tag.error.options) : undefined;
   }
 
+  /**
+   * Publishes the tag's value to live clients on change, or publishes its error.
+   *
+   * @param tag - Tag result to track.
+   */
   #trackValue(tag: Result<Tag, FailedTag>) {
     if (tag.isErr()) {
       publishTagValue(err(tag.error));
@@ -63,6 +95,12 @@ export class TagManager {
     };
   }
 
+  /**
+   * Returns direct child tag entries for a parent tag id.
+   *
+   * @param parentId - Parent tag id to find children of.
+   * @returns Array of id/tag pairs.
+   */
   #childrenOf(parentId: string) {
     return [...this.#tags.entries()].flatMap(([id, tag]) => {
       if (this.#optionsOf(tag).parentTagId !== parentId) return [];
@@ -70,6 +108,13 @@ export class TagManager {
     });
   }
 
+  /**
+   * Collects the options of every descendant tag keyed by id.
+   *
+   * @param parentId - Parent tag id to start from.
+   * @param [out] - Accumulator map, defaults to a new map.
+   * @returns Map of tag id to a copy of its options.
+   */
   #collectSubtreeOptions(parentId: string, out = new Map<string, TagOptionsInput>()) {
     for (const { id, tag } of this.#childrenOf(parentId)) {
       out.set(id, { ...this.#optionsOf(tag) });
@@ -78,6 +123,12 @@ export class TagManager {
     return out;
   }
 
+  /**
+   * Finds a loaded tag by its runtime path.
+   *
+   * @param path - Runtime path to look up.
+   * @returns Ok with the tag result, or Err when no tag has that path.
+   */
   getTagByPath(path: string) {
     const tag = this.#tags.values().find((item) => this.#pathOf(item) === path);
     if (!tag) {
@@ -89,6 +140,12 @@ export class TagManager {
     return ok(tag);
   }
 
+  /**
+   * Finds a loaded tag result by id.
+   *
+   * @param id - Tag id to look up.
+   * @returns Ok with the tag result, or Err when no tag has that id.
+   */
   getTagById(id: string) {
     const tag = this.#tags.get(id);
     if (!tag) {
@@ -100,6 +157,12 @@ export class TagManager {
     return ok(tag);
   }
 
+  /**
+   * Finds a loaded tag result by id first, then by runtime path.
+   *
+   * @param lookup - Id or runtime path to look up.
+   * @returns Ok with the tag result, or Err when neither matches.
+   */
   getTagByIdOrPath(lookup: string) {
     const tag =
       this.#tags.get(lookup) ?? this.#tags.values().find((item) => this.#pathOf(item) === lookup);
@@ -112,16 +175,28 @@ export class TagManager {
     return ok(tag);
   }
 
+  /**
+   * Returns every loaded tag result.
+   *
+   * @returns Array of tag results.
+   */
   getAllTags() {
     return Array.from(this.#tags.values());
   }
 
+  /**
+   * Returns only the successfully created tag instances.
+   *
+   * @returns Array of `Tag` instances.
+   */
   getAllTagInstances() {
     return this.getAllTags().flatMap((tag) => (tag.isOk() ? [tag.value] : []));
   }
 
   /**
    * Returns the current runtime path of every loaded tag keyed by tag id.
+   *
+   * @returns Map of tag id to runtime path.
    */
   getAllTagPaths() {
     const paths = new Map<string, string>();
@@ -134,6 +209,9 @@ export class TagManager {
 
   /**
    * Applies rewritten binding data to loaded tag options and returns the updated options.
+   *
+   * @param updates - Map of tag id to rewritten bindings and UDT overrides.
+   * @returns Array of updated tag option copies.
    */
   applyBindingUpdates(
     updates: Map<
@@ -156,16 +234,36 @@ export class TagManager {
     return updated;
   }
 
+  /**
+   * Returns the options of a tag's entire subtree, excluding the tag itself.
+   *
+   * @param id - Parent tag id to collect from.
+   * @returns Array of descendant tag options.
+   */
   getSubtreeOptions(id: string) {
     return [...this.#collectSubtreeOptions(id).values()];
   }
 
+  /**
+   * Resolves a tag id to its current runtime path.
+   *
+   * @param findId - Tag id to resolve.
+   * @returns The path, or undefined when the tag is not loaded.
+   */
   idToPath(findId: string) {
     const tag = this.#tags.get(findId);
     return tag ? this.#pathOf(tag) : undefined;
   }
 
+  /**
+   * Recomputes runtime paths for all root tags and their descendants.
+   */
   rebuildPaths() {
+    /**
+     * Recomputes paths recursively for a tag and its children.
+     *
+     * @param tag - Tag result to visit.
+     */
     const visit = (tag: Result<Tag, FailedTag>) => {
       if (tag.isErr()) return;
       tag.value.path = this.#buildPath(tag.value.options);
@@ -177,10 +275,22 @@ export class TagManager {
     }
   }
 
+  /**
+   * Counts loaded tags whose data type matches the given name.
+   *
+   * @param name - Data type/UDT name to count.
+   * @returns Number of matching tags.
+   */
   countUdtInstances(name: string) {
     return this.getAllTags().filter((tag) => this.#optionsOf(tag).dataType === name).length;
   }
 
+  /**
+   * Disposes and removes tags whose folder is in the given set, including their children.
+   *
+   * @param folderIds - Folder ids whose tags should be removed.
+   * @returns Unique ids of the removed tags.
+   */
   removeTagsInFolders(folderIds: string[]) {
     const folders = new Set(folderIds);
     const removed: string[] = [];
@@ -209,6 +319,12 @@ export class TagManager {
     return [...new Set(removed)];
   }
 
+  /**
+   * Renames the data type on loaded tags that reference the old UDT name.
+   *
+   * @param oldName - Previous UDT name.
+   * @param newName - New UDT name.
+   */
   renameUdtDataType(oldName: string, newName: string) {
     for (const tag of this.#tags.values()) {
       const options = this.#optionsOf(tag);
@@ -216,6 +332,13 @@ export class TagManager {
     }
   }
 
+  /**
+   * Resolves the OPC UA folder for a row by walking up its parent tag chain.
+   *
+   * @param row - Tag options row to resolve.
+   * @param rowMap - Map of all rows by id, used to find parents.
+   * @returns The folder for the row's root ancestor, or undefined when not found.
+   */
   #folderForRow(row: TagOptionsInput, rowMap: Map<string, TagOptionsInput>) {
     let current = row;
     while (current.parentTagId) {
@@ -226,6 +349,13 @@ export class TagManager {
     return this.#folderManager?.get(current.folderId);
   }
 
+  /**
+   * Builds tag instances for rows, links parent/child relationships and publishes values.
+   *
+   * @param rows - Tag option rows to build.
+   * @returns Map of tag id to the resulting tag result.
+   * @throws {Error} when the OPC UA server or folder manager is not initialised.
+   */
   #buildRuntime(rows: TagOptionsInput[]) {
     if (!this.opcuaServer) throw Error("[TagManager] opcuaServer not initialised");
     if (!this.#folderManager) throw Error("[TagManager] folderManager not initialised");
@@ -272,6 +402,14 @@ export class TagManager {
     return created;
   }
 
+  /**
+   * Validates options, optionally persists them and creates a runtime tag.
+   *
+   * @param opts - Options for the new tag.
+   * @param [writeToDb] - Whether to insert the tag row, defaults to true.
+   * @returns Ok with the created tag result, or Err when it already exists, the folder or a
+   * duplicate is missing, or persistence fails.
+   */
   createTag(opts: TagOptionsInput, writeToDb: boolean = true) {
     if (!this.opcuaServer) {
       throw Error(`[TagManager] createTag() opcuaServer not initalised`);
@@ -323,6 +461,15 @@ export class TagManager {
     return ok(root);
   }
 
+  /**
+   * Replaces an existing tag definition, persists it and rebuilds its runtime instance.
+   *
+   * Preserved UDT children are re-attached to the rebuilt tag.
+   *
+   * @param id - Id of the tag to update.
+   * @param tagUpdates - New tag options.
+   * @returns Ok with the rebuilt tag result, or Err when the tag/folder is missing or writes fail.
+   */
   updateTag(id: string, tagUpdates: TagOptionsInput) {
     const existing = this.#tags.get(id);
     if (!existing) {
@@ -411,6 +558,12 @@ export class TagManager {
     return ok(rebuilt);
   }
 
+  /**
+   * Deletes a tag and its subtree from the database and disposes their runtime instances.
+   *
+   * @param id - Id of the tag to delete.
+   * @returns Ok(true) on success, or Err when the tag is missing or the DB delete fails.
+   */
   deleteTag(id: string) {
     const tag = this.#tags.get(id);
     if (!tag) {
@@ -448,6 +601,13 @@ export class TagManager {
     return ok(true);
   }
 
+  /**
+   * Checks whether another loaded tag with the same name exists in the same parent or folder.
+   *
+   * @param tag - Options of the tag being created or updated.
+   * @param folder - Folder the tag will live in.
+   * @returns Ok(true) when no duplicate exists, or Err when a duplicate is found.
+   */
   checkDuplicate(tag: TagOptionsInput, folder: OpcuaFolder) {
     for (const item of this.#tags.values()) {
       const options = this.#optionsOf(item);
@@ -471,6 +631,12 @@ export class TagManager {
     return ok(true);
   }
 
+  /**
+   * Wraps a failed tag creation result with the `TAG_CONFIG_ERROR` reason.
+   *
+   * @param newTag - Tag result to inspect.
+   * @returns Ok with the tag instance, or Err with a config error preserving its options.
+   */
   tagConfigError(newTag: Result<Tag, FailedTag>) {
     if (newTag.isErr()) {
       return err({
@@ -482,6 +648,12 @@ export class TagManager {
     return ok(newTag.value);
   }
 
+  /**
+   * Rebuilds all tags whose driver path points at the given device.
+   *
+   * @param deviceName - Device name whose tags should be rebuilt.
+   * @returns Ids of the tags that were reloaded successfully.
+   */
   reloadTagsForDevice(deviceName: string) {
     const reloaded: string[] = [];
     for (const tag of this.getAllTags()) {
@@ -498,6 +670,11 @@ export class TagManager {
     return reloaded;
   }
 
+  /**
+   * Loads all tag rows from the database, normalizes legacy keys and builds runtime tags.
+   *
+   * @returns Ok(true) on success, or Err when reading tags from the database fails.
+   */
   async loadAllFromDb() {
     if (!this.opcuaServer) throw Error(`[TagManager] loadAllFromDb() opcuaServer not initalised`);
     if (!this.#folderManager)

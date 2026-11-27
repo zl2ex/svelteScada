@@ -9,6 +9,11 @@ import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
 export class UserComponentManager {
+  /**
+   * Lists every user component in the database.
+   *
+   * @returns ok with all user component rows, or err on database failure
+   */
   getAll() {
     const result = attempt(() => db.select().from(user_components).all());
     if (result.isErr) {
@@ -20,6 +25,12 @@ export class UserComponentManager {
     return ok(result.data);
   }
 
+  /**
+   * Lists all user components belonging to a project.
+   *
+   * @param projectId - the project whose components to list
+   * @returns ok with the project's component rows, or err on database failure
+   */
   getAllForProject(projectId: string) {
     const result = attempt(() =>
       db.select().from(user_components).where(eq(user_components.projectId, projectId)).all(),
@@ -33,6 +44,12 @@ export class UserComponentManager {
     return ok(result.data);
   }
 
+  /**
+   * Fetches a single user component by id.
+   *
+   * @param id - the user component id to fetch
+   * @returns ok with the component row, or err when missing or on database failure
+   */
   get(id: string) {
     const result = attempt(() =>
       db.select().from(user_components).where(eq(user_components.id, id)).get(),
@@ -52,12 +69,23 @@ export class UserComponentManager {
     return ok(result.data);
   }
 
+  /**
+   * Lists the elements owned by a user component.
+   *
+   * @param id - the user component whose elements to list
+   * @returns ok with a map of element id to record, or err when missing or failing
+   */
   getElements(id: string) {
     const component = this.get(id);
     if (component.isErr()) return err(component.error);
     return pageElementManager.list({ type: "userComponent", userComponentId: id });
   }
 
+  /**
+   * Builds every component definition paired with its elements.
+   *
+   * @returns ok with component/element pairs, or err on database failure
+   */
   getDefinitions() {
     const components = this.getAll();
     if (components.isErr()) return err(components.error);
@@ -82,6 +110,11 @@ export class UserComponentManager {
     );
   }
 
+  /**
+   * Detects whether user-component references form a cycle.
+   *
+   * @returns ok with true when a cycle exists, false otherwise, or err on failure
+   */
   hasCycle() {
     const rows = attempt(() =>
       db
@@ -116,6 +149,12 @@ export class UserComponentManager {
 
     const visiting = new Set<string>();
     const visited = new Set<string>();
+    /**
+     * Depth-first search for a back edge from a component.
+     *
+     * @param id - the component id being visited
+     * @returns true when a cycle is reachable from this component
+     */
     const visit = (id: string): boolean => {
       if (visiting.has(id)) return true;
       if (visited.has(id)) return false;

@@ -33,6 +33,11 @@ export class ModbusRTUDriver extends BaseModbusDriver<
   #port: SerialPort;
   #client: ModbusClientLike;
 
+  /**
+   * Creates the serial port and binds a jsmodbus RTU client to it.
+   *
+   * @param config - Resolved Modbus RTU options.
+   */
   private constructor(config: DeviceModbusRtuOptionsConfig) {
     super("ModbusRTUDriver", config);
 
@@ -61,6 +66,12 @@ export class ModbusRTUDriver extends BaseModbusDriver<
     this.#port.on("error", (e) => this.onTransportDown(e.message));
   }
 
+  /**
+   * Validates options and constructs an RTU driver.
+   *
+   * @param opts - Unparsed Modbus RTU options.
+   * @returns Ok with the driver, or Err when options are invalid or construction fails.
+   */
   static create(opts: DeviceModbusRtuOptionsInsert) {
     const parsed = z_DeviceModbusRtuOptionsInsert.safeParse(opts);
     if (!parsed.success) {
@@ -90,10 +101,12 @@ export class ModbusRTUDriver extends BaseModbusDriver<
 
   /* ---------------------------- transport seam ---------------------------- */
 
+  /** The jsmodbus RTU client bound to the serial port. */
   protected get client(): ModbusClientLike {
     return this.#client;
   }
 
+  /** Human readable serial endpoint for log lines. */
   protected targetLabel() {
     const { serialPort, baudRate, parity } = this.options;
     return `${serialPort} @ ${baudRate} 8${parity[0].toUpperCase()}`;
@@ -108,6 +121,11 @@ export class ModbusRTUDriver extends BaseModbusDriver<
     return 5000;
   }
 
+  /**
+   * Opens the serial port unless it is already open or opening.
+   *
+   * @returns Ok when open was started, or Err when the port could not open.
+   */
   protected openTransport() {
     // opening a port that is already open or opening emits 'error', which would
     // escape as an unhandled event, so bail out before that can happen
@@ -134,6 +152,11 @@ export class ModbusRTUDriver extends BaseModbusDriver<
     return ok(undefined);
   }
 
+  /**
+   * Closes the serial port if it is open.
+   *
+   * @returns Always Ok; close errors are swallowed so teardown cannot fail.
+   */
   protected closeTransport() {
     // must not be gated on `disposed`: dispose() sets that flag before it calls
     // this, and the open port is exactly what dispose() exists to release

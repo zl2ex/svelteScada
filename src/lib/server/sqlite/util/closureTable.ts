@@ -37,6 +37,11 @@ export class ClosureTable<
   #scopeKey?: (item: TItem) => string | null;
   #onCascadeDelete?: (tx: any, ids: string[]) => void;
 
+  /**
+   * Stores the item/path tables and optional scope and cascade hooks.
+   *
+   * @param options - the item table, path table, path field, scope key, and cascade hook
+   */
   constructor(options: ClosureTableOptions<TItem>) {
     this.#items = options.items;
     this.#paths = options.paths;
@@ -45,6 +50,12 @@ export class ClosureTable<
     this.#onCascadeDelete = options.onCascadeDelete;
   }
 
+  /**
+   * Inserts an item and its closure paths in one transaction.
+   *
+   * @param node - the item to insert with its parent id
+   * @returns ok with the inserted node including its parent id, or err on database failure
+   */
   add(node: ClosureTableNode<TItem>) {
     const result = attempt(() =>
       db.transaction((tx: any): any => {
@@ -96,6 +107,12 @@ export class ClosureTable<
     return ok(result.data);
   }
 
+  /**
+   * Returns the ancestors of an item, ordered from root to immediate parent.
+   *
+   * @param id - the item whose ancestors to collect
+   * @returns ok with ancestor id/name/depth entries, or err on database failure
+   */
   getBreadcrumbs(id: string) {
     const result = attempt(() => {
       const rows = db.select().from(this.#paths).where(eq(this.#paths.child, id)).all() as TPath[];
@@ -130,6 +147,12 @@ export class ClosureTable<
     return ok(result.data);
   }
 
+  /**
+   * Returns the descendants of an item, ordered by depth.
+   *
+   * @param id - the item whose descendants to collect
+   * @returns ok with descendant id/name/depth entries, or err on database failure
+   */
   getSubtree(id: string) {
     const result = attempt(() => {
       const rows = db.select().from(this.#paths).where(eq(this.#paths.parent, id)).all() as TPath[];
@@ -164,6 +187,14 @@ export class ClosureTable<
     return ok(result.data);
   }
 
+  /**
+   * Reparents an item and its subtree, rewriting the affected closure paths.
+   *
+   * @param id - the item to move
+   * @param newParentId - the new parent id, or undefined to move to the root
+   * @returns ok with whether the move happened, or err on database failure; refuses
+   * moving below the item's own subtree or across scopes
+   */
   move(id: string, newParentId: string | undefined) {
     const result = attempt(() =>
       db.transaction((tx: any): any => {
@@ -236,6 +267,13 @@ export class ClosureTable<
     return ok(result.data);
   }
 
+  /**
+   * Updates the configured path field (usually name) for an item.
+   *
+   * @param id - the item to rename
+   * @param newName - the new path field value
+   * @returns ok when the update completes, or err on database failure
+   */
   rename(id: string, newName: string) {
     const result = attempt(() =>
       db.transaction((tx: any): any => {
@@ -256,6 +294,12 @@ export class ClosureTable<
     return ok(result.data);
   }
 
+  /**
+   * Lists items with their derived parent id and path.
+   *
+   * @param scopeValue - optional scope key used to filter the items
+   * @returns ok with nodes carrying parentId and path, or err on database failure
+   */
   getAll(scopeValue?: string) {
     const result = attempt(() => {
       const allItems = db.select().from(this.#items).all() as TItem[];
@@ -277,6 +321,12 @@ export class ClosureTable<
       const parentByChild = new Map(depthOne.map((row) => [row.child, row.parent]));
 
       const pathById = new Map<string, string>();
+      /**
+       * Computes and memoizes the slash-separated path for an item.
+       *
+       * @param id - the item whose path to build
+       * @returns the path from the root, for example `/root/child`
+       */
       const pathOf = (id: string): string => {
         const cached = pathById.get(id);
         if (cached !== undefined) return cached;
@@ -304,6 +354,13 @@ export class ClosureTable<
     return ok(result.data);
   }
 
+  /**
+   * Fetches one item with its derived parent id and path.
+   *
+   * @param id - the item id to fetch
+   * @param scopeValue - optional scope key that the item must match
+   * @returns ok with the node, or err with NODE_NOT_FOUND or on database failure
+   */
   get(id: string, scopeValue?: string) {
     const all = this.getAll(scopeValue);
     if (all.isErr()) return err(all.error);
@@ -319,6 +376,12 @@ export class ClosureTable<
     return ok(node);
   }
 
+  /**
+   * Deletes an item and its whole subtree, running the optional cascade hook.
+   *
+   * @param id - the root item id whose subtree to delete
+   * @returns ok with the deleted item ids, or err on database failure
+   */
   deleteRecursive(id: string) {
     const result = attempt(() =>
       db.transaction((tx: any): any => {

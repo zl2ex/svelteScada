@@ -13,6 +13,12 @@ import { logger } from "../pino/logger";
 import { UdtDefinition, compareTagNames, sortUdtChildren } from "./udt";
 import { normalizeUdtChild } from "./legacyNormalization";
 
+/**
+ * Converts a persisted UDT row into an `UdtDefinition`, sorting its children.
+ *
+ * @param row - Database row to convert.
+ * @returns The constructed UDT definition.
+ */
 function toDefinition(row: typeof tables.udt_definitions.$inferSelect): UdtDefinition {
   return new UdtDefinition({
     id: row.id,
@@ -25,22 +31,45 @@ function toDefinition(row: typeof tables.udt_definitions.$inferSelect): UdtDefin
 export class UdtManager {
   udts = new Map<string, UdtDefinition>();
 
+  /**
+   * Creates an empty UDT manager.
+   */
   constructor() {}
 
+  /**
+   * Returns all UDT definitions sorted by name.
+   *
+   * @returns Sorted array of UDT definitions.
+   */
   getAllUdts() {
     return [...this.udts.values()].sort((a, b) => compareTagNames(a.name, b.name));
   }
 
+  /**
+   * Looks up a UDT definition by name.
+   *
+   * @param name - UDT name to look up.
+   * @returns The matching definition, or undefined when not loaded.
+   */
   getUdt(name: string) {
     return this.udts.get(name);
   }
 
+  /**
+   * Looks up a UDT definition by id.
+   *
+   * @param id - UDT id to look up.
+   * @returns The matching definition, or undefined when not loaded.
+   */
   getUdtById(id: string) {
     return [...this.udts.values()].find((udt) => udt.id === id);
   }
 
   /**
    * Applies rewritten child bindings to loaded UDT definitions.
+   *
+   * @param updates - Map of UDT id to rewritten child definitions.
+   * @returns Array of updated UDT definition inputs.
    */
   applyBindingUpdates(updates: Map<string, UdtDefinitionTagInput[]>) {
     const updated: UdtDefinitionInput[] = [];
@@ -53,6 +82,14 @@ export class UdtManager {
     return updated;
   }
 
+  /**
+   * Validates and stores a new UDT definition, optionally persisting it.
+   *
+   * @param input - UDT definition input to create.
+   * @param [writeToDb] - Whether to insert the definition row, defaults to true.
+   * @returns Ok with the created definition, or Err when parsing, duplicate check or DB insert
+   * fails.
+   */
   async createUdt(input: UdtDefinitionInput, writeToDb = true) {
     const parsed = z_UdtDefinitionInput.safeParse(input);
     if (!parsed.success) {
@@ -96,6 +133,14 @@ export class UdtManager {
     return ok(udt);
   }
 
+  /**
+   * Updates a UDT definition and rewrites references to its old name across tags and definitions.
+   *
+   * @param id - Id of the UDT to update.
+   * @param input - New UDT definition input.
+   * @returns Ok with the updated definition and previous name, or Err when lookup, parsing,
+   * id/duplicate validation or the DB transaction fails.
+   */
   async updateUdt(id: string, input: UdtDefinitionInput) {
     const existing = this.getUdtById(id);
     if (!existing) {
@@ -187,6 +232,12 @@ export class UdtManager {
     return ok({ definition: udt, previousName: existing.name });
   }
 
+  /**
+   * Deletes a UDT definition from memory and the database.
+   *
+   * @param id - Id of the UDT to delete.
+   * @returns Ok with the deleted definition, or Err when it is missing or the DB delete fails.
+   */
   async deleteUdt(id: string) {
     const existing = this.getUdtById(id);
     if (!existing) {
@@ -211,6 +262,11 @@ export class UdtManager {
     return ok(existing);
   }
 
+  /**
+   * Loads all UDT definitions from the database, normalizing legacy child keys.
+   *
+   * @returns Ok(undefined) when loading completes, or Err when the DB read fails.
+   */
   async loadAllFromDb() {
     const definitions = await attempt(() =>
       db.select().from(tables.udt_definitions).orderBy(asc(tables.udt_definitions.name)).all(),

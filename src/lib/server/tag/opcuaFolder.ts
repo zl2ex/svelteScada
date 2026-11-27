@@ -11,6 +11,9 @@ export class OpcuaFolder {
 
   #addressSpace: AddressSpace;
 
+  /**
+   * Creates a folder wrapper around an existing OPC UA object.
+   */
   private constructor(
     addressSpace: AddressSpace,
     node: ClosureTableNode,
@@ -21,6 +24,14 @@ export class OpcuaFolder {
     this.uaObject = uaObject;
   }
 
+  /**
+   * Creates the OPC UA object for a folder, replacing any node with the same id.
+   *
+   * @param addressSpace - Address space that owns the new node.
+   * @param parent - Parent object the folder is organised under.
+   * @param node - Closure-table node describing the folder.
+   * @returns Ok with the new `OpcuaFolder`, or Err when OPC UA node creation fails.
+   */
   static create(
     addressSpace: AddressSpace,
     parent: UAObject,
@@ -54,6 +65,12 @@ export class OpcuaFolder {
     return ok(result.data);
   }
 
+  /**
+   * Updates the folder's in-memory and OPC UA display name.
+   *
+   * @param newName - New display name for the folder.
+   * @returns Ok(true) on success, or Err when the OPC UA update fails.
+   */
   rename(newName: string) {
     const result = attempt(() => {
       this.node.name = newName;
@@ -71,6 +88,13 @@ export class OpcuaFolder {
     return ok(true);
   }
 
+  /**
+   * Removes the folder's listeners, parent references and OPC UA node.
+   *
+   * Individual cleanup failures are logged and do not abort disposal.
+   *
+   * @returns Ok(true) after cleanup completes.
+   */
   dispose() {
     logger.trace(
       `[OpcuaFolder] dispose() ${this.uaObject.browseName.toString()}`,

@@ -10,6 +10,13 @@ export class OpcuaServerDriver {
   server: OPCUAServer | null = null;
   started = false;
 
+  /**
+   * Creates, initialises and starts the OPC UA server, then builds its address
+   * space and installs signal handlers.
+   *
+   * @returns Ok true when running (or already started), or Err describing the
+   * failing step.
+   */
   async start() {
     if (this.started) return ok(true);
 
@@ -80,6 +87,12 @@ export class OpcuaServerDriver {
     return ok(true);
   }
 
+  /**
+   * Loads tags from the database to populate the server address space.
+   *
+   * @param addressSpace - Address space to populate.
+   * @returns Ok true when tags were read, or Err when the query failed.
+   */
   #buildAddressSpace(addressSpace: AddressSpace) {
     const allTags = attempt(() => db.select().from(tables.tags).all());
     if (allTags.isErr) {
@@ -92,6 +105,11 @@ export class OpcuaServerDriver {
     return ok(true);
   }
 
+  /**
+   * Shuts the server down if it was started.
+   *
+   * @returns Ok true when stopped, or Err when shutdown failed.
+   */
   async stop() {
     const shutdown = await attempt(() => this.server?.shutdown(1000));
     if (shutdown.isErr) {
@@ -105,6 +123,13 @@ export class OpcuaServerDriver {
     return ok(true);
   }
 
+  /**
+   * Removes one variable from the address space and from its parents.
+   *
+   * @param addressSpace - Address space that owns the variable.
+   * @param varible - Variable to delete; a falsy value is treated as already gone.
+   * @returns Ok true when deleted or already absent, or Err describing the failure.
+   */
   deleteOpcuaVariable(addressSpace: AddressSpace, varible: UAVariable) {
     if (!varible) return ok(true);
 

@@ -9,6 +9,13 @@ import { attempt } from "$lib/util/attempt";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 import { newId } from "$lib/util/newId";
 
+/**
+ * Wraps a database failure in the standard DB_ERROR result.
+ *
+ * @param error - the thrown database error to stringify
+ * @param cause - context describing which operation failed
+ * @returns an err Result carrying the DB_ERROR reason
+ */
 function dbError(error: unknown, cause: string) {
   return err({
     reason: "DB_ERROR",
@@ -24,12 +31,23 @@ export type CreatePageInput = {
 };
 
 export class PageManager {
+  /**
+   * Lists every page in the database.
+   *
+   * @returns ok with all page rows, or err on database failure
+   */
   getAll() {
     const result = attempt(() => db.select().from(pages).all());
     if (result.isErr) return dbError(result.error, "getAll() failed");
     return ok(result.data);
   }
 
+  /**
+   * Lists all pages belonging to a project.
+   *
+   * @param projectId - the project whose pages to list
+   * @returns ok with the project's page rows, or err on database failure
+   */
   getAllForProject(projectId: string) {
     const result = attempt(() =>
       db.select().from(pages).where(eq(pages.projectId, projectId)).all(),
@@ -38,6 +56,12 @@ export class PageManager {
     return ok(result.data);
   }
 
+  /**
+   * Fetches a single page by id.
+   *
+   * @param id - the page id to fetch
+   * @returns ok with the page row, or err when it is missing or the query fails
+   */
   get(id: string) {
     const result = attempt(() => db.select().from(pages).where(eq(pages.id, id)).get());
     if (result.isErr) return dbError(result.error, "get() failed");
@@ -50,6 +74,12 @@ export class PageManager {
     return ok(result.data);
   }
 
+  /**
+   * Creates a page after validating its project, route-safe name, and sort index.
+   *
+   * @param input - the page id, project id, name, and optional sort index
+   * @returns ok with the created page, or err on validation or database failure
+   */
   create(input: CreatePageInput) {
     if (!isValidRouteSegment(input.name)) {
       return err({
@@ -104,6 +134,13 @@ export class PageManager {
     return this.get(id);
   }
 
+  /**
+   * Replaces a page's name and sort index after validation.
+   *
+   * @param id - the id of the page to replace
+   * @param input - the new name and sort index
+   * @returns ok with the updated page, or err on validation or database failure
+   */
   replace(
     id: string,
     input: {
@@ -146,6 +183,13 @@ export class PageManager {
     return this.get(id);
   }
 
+  /**
+   * Renames a page after validating the new route-safe name is unique.
+   *
+   * @param id - the id of the page to rename
+   * @param name - the new page name
+   * @returns ok with the updated page, or err on validation or database failure
+   */
   rename(id: string, name: string) {
     if (!isValidRouteSegment(name)) {
       return err({
@@ -169,6 +213,13 @@ export class PageManager {
     return this.get(id);
   }
 
+  /**
+   * Updates a page's sort index.
+   *
+   * @param id - the id of the page to reorder
+   * @param sortIndex - the new non-negative integer position
+   * @returns ok with the updated page, or err on validation or database failure
+   */
   reorder(id: string, sortIndex: number) {
     const page = this.get(id);
     if (page.isErr()) return err(page.error);
@@ -187,6 +238,12 @@ export class PageManager {
     return this.get(id);
   }
 
+  /**
+   * Deletes a page by id.
+   *
+   * @param id - the id of the page to delete
+   * @returns ok with the deleted page id, or err when missing or on database failure
+   */
   delete(id: string) {
     const page = this.get(id);
     if (page.isErr()) return err(page.error);
@@ -198,10 +255,25 @@ export class PageManager {
     return ok({ id });
   }
 
+  /**
+   * Builds the URL path for a page within a project.
+   *
+   * @param projectName - the project's route name
+   * @param page - the page whose name supplies the last segment
+   * @returns the route path, for example `/project/page-name`
+   */
   getRoute(projectName: string, page: PageRecord) {
     return `/${projectName}/${page.name}`;
   }
 
+  /**
+   * Checks that a page name is not already used within a project.
+   *
+   * @param projectId - the project scope for the name check
+   * @param name - the candidate page name
+   * @param excludeId - optional page id to ignore, for renames
+   * @returns ok with null when unique, or err when duplicated or the query fails
+   */
   #checkName(projectId: string, name: string, excludeId?: string) {
     const result = attempt(() =>
       db

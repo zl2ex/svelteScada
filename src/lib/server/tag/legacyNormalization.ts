@@ -3,6 +3,12 @@ import type { UdtDefinitionTagInput } from "$lib/sqlite/tables/udt_definitions";
 
 type UnknownRecord = Record<string, unknown>;
 
+/**
+ * Migrates legacy binding keys (`nodeId`, `writeable`, `parameters`) to their current names.
+ *
+ * @param map - Raw bindings map to normalize.
+ * @returns Object containing the normalized value and whether any key changed.
+ */
 function normalizeBindingMap(map: unknown) {
   if (!map || typeof map !== "object" || Array.isArray(map)) {
     return { value: map, changed: false };
@@ -26,6 +32,12 @@ function normalizeBindingMap(map: unknown) {
   return { value: next, changed };
 }
 
+/**
+ * Migrates legacy UDT override keys to their current names, inverting `writeable` to `readonly`.
+ *
+ * @param map - Raw UDT overrides map to normalize.
+ * @returns Object containing the normalized value and whether any key changed.
+ */
 function normalizeOverrides(map: unknown) {
   if (!map || typeof map !== "object" || Array.isArray(map)) {
     return { value: map, changed: false };
@@ -54,6 +66,12 @@ function normalizeOverrides(map: unknown) {
   return { value: next, changed };
 }
 
+/**
+ * Normalizes legacy keys in a tag options row's bindings and UDT overrides.
+ *
+ * @param row - Tag options row to normalize.
+ * @returns Object containing the normalized options and whether any key changed.
+ */
 export function normalizeTagOptions(row: TagOptionsInput) {
   const next = { ...row } as TagOptionsInput & UnknownRecord;
   let changed = false;
@@ -73,6 +91,12 @@ export function normalizeTagOptions(row: TagOptionsInput) {
   return { value: next as TagOptionsInput, changed };
 }
 
+/**
+ * Normalizes legacy keys in a UDT definition child tag.
+ *
+ * @param child - UDT child definition to normalize.
+ * @returns Object containing the normalized child and whether any key changed.
+ */
 export function normalizeUdtChild(child: UdtDefinitionTagInput) {
   const next = { ...child } as UdtDefinitionTagInput & UnknownRecord;
   let changed = false;

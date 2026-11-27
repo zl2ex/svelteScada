@@ -70,8 +70,11 @@ export interface DriverRegistration<N extends DriverName, O> {
   readonly optionFields: OptionFieldsOf<O>;
   /** What a brand new device of this driver starts with. */
   readonly defaultOptions: O;
+  /** Builds a driver instance from resolved options. */
   create(options: O): Result<Driver, DriverCreateError>;
+  /** Inserts or upserts this driver's options row for a device. */
   writeOptions(tx: Db, deviceId: string, options: O): void;
+  /** Deletes this driver's options row for a device. */
   deleteOptions(tx: Db, deviceId: string): void;
 }
 
@@ -134,6 +137,13 @@ export const driverRegistry = {
     },
     defaultOptions: z_DeviceModbusTcpOptionsInsert.parse({}),
     create: (options: DeviceModbusTcpOptionsConfig) => ModbusTCPDriver.create(options),
+    /**
+     * Upserts the Modbus TCP options row for a device.
+     *
+     * @param tx - Database or transaction handle.
+     * @param deviceId - Device that owns the row.
+     * @param options - Resolved driver options.
+     */
     writeOptions(tx: Db, deviceId: string, options: DeviceModbusTcpOptionsConfig) {
       const row = { ...options, deviceId };
       tx.insert(device_modbus_tcp_options)
@@ -144,6 +154,12 @@ export const driverRegistry = {
         })
         .run();
     },
+    /**
+     * Deletes the Modbus TCP options row for a device.
+     *
+     * @param tx - Database or transaction handle.
+     * @param deviceId - Device whose row should be removed.
+     */
     deleteOptions(tx: Db, deviceId: string) {
       tx.delete(device_modbus_tcp_options)
         .where(eq(device_modbus_tcp_options.deviceId, deviceId))
@@ -168,6 +184,13 @@ export const driverRegistry = {
     },
     defaultOptions: z_DeviceModbusRtuOptionsInsert.parse({}),
     create: (options: DeviceModbusRtuOptionsConfig) => ModbusRTUDriver.create(options),
+    /**
+     * Upserts the Modbus RTU options row for a device.
+     *
+     * @param tx - Database or transaction handle.
+     * @param deviceId - Device that owns the row.
+     * @param options - Resolved driver options.
+     */
     writeOptions(tx: Db, deviceId: string, options: DeviceModbusRtuOptionsConfig) {
       const row = { ...options, deviceId };
       tx.insert(device_modbus_rtu_options)
@@ -178,6 +201,12 @@ export const driverRegistry = {
         })
         .run();
     },
+    /**
+     * Deletes the Modbus RTU options row for a device.
+     *
+     * @param tx - Database or transaction handle.
+     * @param deviceId - Device whose row should be removed.
+     */
     deleteOptions(tx: Db, deviceId: string) {
       tx.delete(device_modbus_rtu_options)
         .where(eq(device_modbus_rtu_options.deviceId, deviceId))
@@ -198,6 +227,13 @@ export const driverRegistry = {
     },
     defaultOptions: z_DeviceOpcuaClientOptionsInsert.parse({}),
     create: (options: DeviceOpcuaClientOptionsConfig) => OpcuaClientDriver.create(options),
+    /**
+     * Upserts the OPC UA client options row for a device.
+     *
+     * @param tx - Database or transaction handle.
+     * @param deviceId - Device that owns the row.
+     * @param options - Resolved driver options.
+     */
     writeOptions(tx: Db, deviceId: string, options: DeviceOpcuaClientOptionsConfig) {
       const row = { ...options, deviceId };
       tx.insert(device_opcua_client_options)
@@ -208,6 +244,12 @@ export const driverRegistry = {
         })
         .run();
     },
+    /**
+     * Deletes the OPC UA client options row for a device.
+     *
+     * @param tx - Database or transaction handle.
+     * @param deviceId - Device whose row should be removed.
+     */
     deleteOptions(tx: Db, deviceId: string) {
       tx.delete(device_opcua_client_options)
         .where(eq(device_opcua_client_options.deviceId, deviceId))
@@ -276,6 +318,9 @@ export type DeviceConfig = z.output<typeof z_DeviceConfig>;
  * Narrowing on `driverName` is what proves `config.options` belongs to the
  * factory being handed it, which is why this is a switch rather than an
  * indexed lookup.
+ *
+ * @param config - Fully resolved device configuration.
+ * @returns Ok with the driver, or Err from the driver factory.
  */
 export function createDriver(config: DeviceConfig): Result<Driver, DriverCreateError> {
   switch (config.driverName) {
@@ -288,6 +333,12 @@ export function createDriver(config: DeviceConfig): Result<Driver, DriverCreateE
   }
 }
 
+/**
+ * Writes the options row through the registry entry matching the config.
+ *
+ * @param tx - Database or transaction handle.
+ * @param config - Fully resolved device configuration.
+ */
 function writeOptionsFor(tx: Db, config: DeviceConfig) {
   switch (config.driverName) {
     case "ModbusTCPDriver":
@@ -303,6 +354,9 @@ function writeOptionsFor(tx: Db, config: DeviceConfig) {
  * A device only ever owns one options row, in the table of its current driver.
  * Callers keep the two in step by writing the devices row and the options row
  * in the same transaction.
+ *
+ * @param tx - Database or transaction handle.
+ * @param config - Fully resolved device configuration.
  */
 export function writeDeviceConfig(tx: Db, config: DeviceConfig) {
   const { options: _options, ...deviceRow } = config;
@@ -313,7 +367,13 @@ export function writeDeviceConfig(tx: Db, config: DeviceConfig) {
   writeOptionsFor(tx, config);
 }
 
-/** Drops the options rows left behind by whichever driver this one replaced. */
+/**
+ * Drops the options rows left behind by whichever driver this one replaced.
+ *
+ * @param tx - Database or transaction handle.
+ * @param deviceId - Device whose stale option rows should be removed.
+ * @param keep - Driver name whose options row must be preserved.
+ */
 export function deleteStaleOptions(tx: Db, deviceId: string, keep: DriverName) {
   for (const name of Object.keys(driverRegistry) as DriverName[]) {
     if (name === keep) continue;
