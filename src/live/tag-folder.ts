@@ -13,11 +13,24 @@ import {
 } from "$lib/server/tag/tagReferenceManager";
 import { diffTagPathMappings } from "$lib/tagReferenceRewrite";
 
+/**
+ * Guard that requires an authenticated user who can read tag folders.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
   assertLiveCan(ctx.user, "read", "TagFolder");
 });
 
+/**
+ * Live stream of tag folder patch batches.
+ *
+ * Replays prior patches on subscribe so late clients converge.
+ *
+ * @returns an empty initial patch payload.
+ */
 // TD WIP TYPE return
 // TravelPatches["patches"][number]
 export const tagFolderPatches = live.stream(
@@ -29,6 +42,17 @@ export const tagFolderPatches = live.stream(
   },
 );
 
+/**
+ * Applies a single tag folder patch (add, replace, or remove).
+ *
+ * Moving or renaming a folder rebuilds tag paths and rewrites persisted tag
+ * references.
+ *
+ * @param ctx - The live request context.
+ * @param patch - The patch operation to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err from the folder manager.
+ * @throws {LiveError} when the patch does not target a whole folder object.
+ */
 // One op per call: the client batches ops by calling this once per op, so a
 // failed op is rolled back individually instead of leaving the server
 // mid-way through an array.

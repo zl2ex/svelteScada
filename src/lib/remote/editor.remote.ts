@@ -6,6 +6,12 @@ import { assertCan } from "$lib/server/auth/authorize";
 
 const z_projectId = z.string().min(1);
 
+/**
+ * Queries the elements belonging to a project.
+ *
+ * @param projectId - The project whose elements are listed.
+ * @returns Ok with the project elements, or Err from the element manager.
+ */
 export const getProjectElements = query(z_projectId, async (projectId) => {
   assertCan(getRequestEvent().locals.ability, "read", "Project");
   const result = pageElementManager.listForProject(projectId);

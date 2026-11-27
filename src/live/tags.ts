@@ -21,10 +21,23 @@ import {
 } from "$lib/server/tag/tagReferenceManager";
 import { diffTagPathMappings } from "$lib/tagReferenceRewrite";
 
+/**
+ * Guard that requires an authenticated user for tag streams.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
 });
 
+/**
+ * Live stream of tag patch batches.
+ *
+ * Replays prior patches on subscribe so late clients converge.
+ *
+ * @returns an empty initial patch payload.
+ */
 export const tagPatches = live.stream(
   "tag-patches",
   async (): Promise<PatchPayload> => ({ patches: [] }),
@@ -38,6 +51,17 @@ export const tagPatches = live.stream(
 // failed op is rolled back individually instead of leaving the server
 // mid-way through an array.
 
+/**
+ * Applies a single tag patch (add, replace, or remove).
+ *
+ * Changing a tag's write level requires manage permission, and replacing a
+ * tag rewrites persisted references when its path changes.
+ *
+ * @param ctx - The live request context.
+ * @param patch - The patch operation to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err when the tag manager rejects it.
+ * @throws {LiveError} when the patch is malformed or an unexpected manager error occurs.
+ */
 export const applyTagPatches = live(
   async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, FailedTag | NeverThrowError>> => {
     logger.trace(patch, "tag-patches");
@@ -186,6 +210,13 @@ export const applyTagPatches = live(
 // NOTE: keep the init callback as the second argument with nothing but
 // whitespace before it - the svelte-realtime codegen parses the stream
 // value type textually from its return annotation.
+/**
+ * Live stream of a single tag's client value, keyed by id or path.
+ *
+ * @param ctx - The live request context.
+ * @param lookup - The tag id or full tag path.
+ * @returns Ok with the client tag value, or Err when the tag is missing or failed.
+ */
 export const getTagValue = live.stream(
   (ctx, lookup: string) => `tag-values:${lookup}`,
   async (
@@ -204,6 +235,12 @@ export const getTagValue = live.stream(
   { merge: "set" },
 );
 
+/**
+ * Publishes a tag value to the tag-value stream under both its id and path.
+ *
+ * @param tag - The client tag value or failure wrapped in a neverthrow Result.
+ * @param [ctx] - Publish context; when omitted the global platform is used.
+ */
 export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: any) {
   let id: string | undefined = undefined;
   let wireTag: WireResult<ClientTagValue, FailedTag>;
@@ -240,6 +277,14 @@ export function publishTagValue(tag: Result<ClientTagValue, FailedTag>, ctx?: an
   platform.publish(`tag-values:${path}`, "set", wireTag);
 }
 
+/**
+ * Writes a value to a tag after checking the caller's write permission.
+ *
+ * @param ctx - The live request context.
+ * @param lookup - The tag id or path; undefined is rejected.
+ * @param value - The value to write.
+ * @returns Ok with `{ success: true }` on success, or Err on invalid lookup or write failure.
+ */
 export const writeTagValue = live(
   async (
     ctx,

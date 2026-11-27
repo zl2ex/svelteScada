@@ -6,11 +6,24 @@ import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/uti
 import { assertLiveCan } from "$lib/server/auth/authorize";
 import { z_UdtDefinitionInput, type UdtDefinitionInput } from "$lib/sqlite/tables/udt_definitions";
 
+/**
+ * Guard that requires an authenticated user who can read UDT definitions.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
   assertLiveCan(ctx.user, "read", "UdtDefinition");
 });
 
+/**
+ * Live stream of UDT definition patch batches.
+ *
+ * Replays prior patches on subscribe so late clients converge.
+ *
+ * @returns an empty initial patch payload.
+ */
 export const udtPatches = live.stream(
   "udt-patches",
   async (): Promise<PatchPayload> => ({ patches: [] }),
@@ -20,6 +33,17 @@ export const udtPatches = live.stream(
   },
 );
 
+/**
+ * Applies a single UDT definition patch (add, replace, or remove).
+ *
+ * Add and replace validate input; remove is blocked while tags still use the
+ * definition.
+ *
+ * @param ctx - The live request context.
+ * @param patch - The patch operation to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err on validation/manager failure.
+ * @throws {LiveError} when the patch does not target a whole UDT definition.
+ */
 export const applyUdtPatches = live(
   async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch, "udt-patches");

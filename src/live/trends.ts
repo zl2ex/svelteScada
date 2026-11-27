@@ -3,6 +3,12 @@ import { getRecentTrendPoints } from "$lib/server/trend/trend";
 import type { TrendPoint } from "$lib/util/trend";
 import { assertLiveCan } from "$lib/server/auth/authorize";
 
+/**
+ * Guard that requires an authenticated user who can read trends.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
   assertLiveCan(ctx.user, "read", "Trend");
@@ -19,6 +25,17 @@ export const TREND_BUFFER_MAX = 10000;
  */
 export const TREND_INIT_LIMIT = 200;
 
+/**
+ * Live stream of recent trend points for a tag.
+ *
+ * The init result seeds the client ring buffer; subsequent samples are merged
+ * with `latest` and trimmed to `TREND_BUFFER_MAX`.
+ *
+ * @param ctx - The live request context.
+ * @param tagId - The tag whose trend is streamed.
+ * @returns the recent trend points for the tag.
+ * @throws {LiveError} when the trend buffer cannot be read.
+ */
 // NOTE: keep the init callback as the second argument with nothing but
 // whitespace before it - the svelte-realtime codegen parses the stream
 // value type textually from its return annotation.

@@ -11,11 +11,24 @@ import {
 } from "$lib/server/drivers/driver";
 import { assertLiveCan } from "$lib/server/auth/authorize";
 
+/**
+ * Guard that requires an authenticated user who can read devices.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
   assertLiveCan(ctx.user, "read", "Device");
 });
 
+/**
+ * Live stream of device patch batches.
+ *
+ * Replays prior patches on subscribe so late clients converge.
+ *
+ * @returns an empty initial patch payload.
+ */
 export const devicePatches = live.stream(
   "device-patches",
   async (): Promise<PatchPayload> => ({ patches: [] }),
@@ -28,6 +41,13 @@ export const devicePatches = live.stream(
 // NOTE: keep the init callback as the second argument with nothing but
 // whitespace before it - the svelte-realtime codegen parses the stream
 // value type textually from its return annotation.
+/**
+ * Live stream of a single device's status, keyed by device id.
+ *
+ * @param ctx - The live request context.
+ * @param id - The device id to watch.
+ * @returns Ok with the device status, or Err when the device is missing or failed.
+ */
 export const deviceStatus = live.stream(
   (ctx, id: string) => `device-status:${id}`,
   async (
@@ -53,6 +73,13 @@ export const deviceStatus = live.stream(
 
 // DeviceManager subscribes to Device.onStatusChange() and calls this whenever the
 // status really changed, so the only work here is fanning the value out.
+/**
+ * Publishes a device status change to the device-status stream.
+ *
+ * @param id - The device id whose status changed.
+ * @param status - The new status wrapped in a neverthrow Result.
+ * @param [ctx] - Publish context; when omitted the global platform is used.
+ */
 export function publishDeviceStatus(
   id: string,
   status: Result<DeviceStatus, NeverThrowError>,
@@ -83,6 +110,14 @@ export function publishDeviceStatus(
 // failed op is rolled back individually instead of leaving the server
 // mid-way through an array.
 
+/**
+ * Applies a single device patch (add, replace, or remove).
+ *
+ * @param ctx - The live request context.
+ * @param patch - The patch operation to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err when the manager rejects it.
+ * @throws {LiveError} when the patch is malformed or an unexpected manager error occurs.
+ */
 export const applyDevicePatches = live(
   async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch);

@@ -6,11 +6,24 @@ import type { UserThemeSelect } from "$lib/sqlite/tables";
 import { assertLiveCan } from "$lib/server/auth/authorize";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 
+/**
+ * Guard that requires an authenticated user who can read projects.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
   assertLiveCan(ctx.user, "read", "Project");
 });
 
+/**
+ * Live stream of user theme patch batches.
+ *
+ * Replays prior patches on subscribe so late clients converge.
+ *
+ * @returns an empty initial patch payload.
+ */
 export const userThemePatches = live.stream(
   "user-theme-patches",
   async (): Promise<PatchPayload> => ({ patches: [] }),
@@ -20,6 +33,14 @@ export const userThemePatches = live.stream(
   },
 );
 
+/**
+ * Applies a single user theme patch (add, replace, or remove).
+ *
+ * @param ctx - The live request context.
+ * @param patch - The patch operation to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err from the theme manager.
+ * @throws {LiveError} when the patch does not target a whole theme object.
+ */
 export const applyUserThemePatches = live(
   async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch, "user-theme-patches");

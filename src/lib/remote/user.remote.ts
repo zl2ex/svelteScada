@@ -47,6 +47,11 @@ const z_SetUserPermissions = z.object({
   rules: z.array(z_PermissionRuleInput),
 });
 
+/**
+ * Counts the users that currently have the admin role.
+ *
+ * @returns the number of admin users.
+ */
 async function adminCount() {
   const admins = await attempt(() =>
     db
@@ -61,6 +66,11 @@ async function adminCount() {
   return admins.data.length;
 }
 
+/**
+ * Queries all users together with their permission rules.
+ *
+ * @returns the user rows including their permissions.
+ */
 export const listUsers = query(async () => {
   const { locals } = getRequestEvent();
   assertCan(locals.ability, "manage", "User");
@@ -85,6 +95,12 @@ export const listUsers = query(async () => {
   return users.data;
 });
 
+/**
+ * Creates a user with a bcrypt-hashed password.
+ *
+ * @param input - The new user's name, email, password, and role.
+ * @returns the inserted user row.
+ */
 export const createUser = command(z_AdminCreateUser, async (input) => {
   const { locals } = getRequestEvent();
   assertCan(locals.ability, "manage", "User");
@@ -139,6 +155,12 @@ export const createUser = command(z_AdminCreateUser, async (input) => {
   return inserted.data[0];
 });
 
+/**
+ * Updates a user's role, guarding the last admin and self-demotion.
+ *
+ * @param input - The target user id and the new role.
+ * @returns the updated user's id and role.
+ */
 export const updateUserRole = command(z_UpdateUserRole, async (input) => {
   const { locals } = getRequestEvent();
   assertCan(locals.ability, "manage", "User");
@@ -183,6 +205,12 @@ export const updateUserRole = command(z_UpdateUserRole, async (input) => {
   return updated.data[0];
 });
 
+/**
+ * Deletes a user, guarding the last admin and self-deletion.
+ *
+ * @param input - The id of the user to delete.
+ * @returns an object with `success: true`.
+ */
 export const deleteUser = command(z_DeleteUser, async (input) => {
   const { locals } = getRequestEvent();
   assertCan(locals.ability, "manage", "User");
@@ -218,6 +246,12 @@ export const deleteUser = command(z_DeleteUser, async (input) => {
   return { success: true as const };
 });
 
+/**
+ * Replaces all permission rules for a user inside a transaction.
+ *
+ * @param input - The target user id and the full list of rules.
+ * @returns an object with `success: true`.
+ */
 export const setUserPermissions = command(z_SetUserPermissions, async (input) => {
   const { locals } = getRequestEvent();
   assertCan(locals.ability, "manage", "User");
@@ -266,6 +300,13 @@ export const setUserPermissions = command(z_SetUserPermissions, async (input) =>
   return { success: true as const };
 });
 
+/**
+ * Authenticates a user, sets the JWT cookie, and redirects.
+ *
+ * @param loginUser - The submitted email and password.
+ * @param issue - Factory for form validation issues.
+ * @returns a redirect to the requested path or the home page.
+ */
 export const login = form(z_UserLogin, async (loginUser, issue) => {
   const { cookies, url } = getRequestEvent();
 
@@ -325,6 +366,9 @@ export const login = form(z_UserLogin, async (loginUser, issue) => {
   return redirect(302, url.searchParams.get("redirect") ?? "/");
 });
 
+/**
+ * Clears the authentication cookie.
+ */
 export const logout = command(() => {
   const { cookies } = getRequestEvent();
 

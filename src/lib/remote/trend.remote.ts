@@ -22,6 +22,15 @@ const z_trendHistoryArgs = z
     message: "range must not exceed 31 days",
   });
 
+/**
+ * Queries a tag's trend series for a time range.
+ *
+ * Input is validated by `z_trendHistoryArgs`; one tag per call keeps each
+ * response within a single wire frame.
+ *
+ * @param args - The tag id and the from/to time range.
+ * @returns Ok with the trend series, or Err from the trend store.
+ */
 // built-in remote function validation rejects bad input via
 // z_trendHistoryArgs before the handler runs. One tag per call so a selection
 // can be fetched concurrently and each response stays inside one wire frame.

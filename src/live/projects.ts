@@ -8,11 +8,24 @@ import type { ProjectSelect } from "$lib/sqlite/tables";
 import { assertLiveCan } from "$lib/server/auth/authorize";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 
+/**
+ * Guard that requires an authenticated user who can read projects.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
   assertLiveCan(ctx.user, "read", "Project");
 });
 
+/**
+ * Live stream of project patch batches.
+ *
+ * Replays prior patches on subscribe so late clients converge.
+ *
+ * @returns an empty initial patch payload.
+ */
 export const projectPatches = live.stream(
   "project-patches",
   async (): Promise<PatchPayload> => ({ patches: [] }),
@@ -22,6 +35,16 @@ export const projectPatches = live.stream(
   },
 );
 
+/**
+ * Applies a single project patch (add, replace, or remove).
+ *
+ * Removing a project also publishes removal patches for its pages and elements.
+ *
+ * @param ctx - The live request context.
+ * @param patch - The patch operation to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err from the project manager.
+ * @throws {LiveError} when the patch does not target a whole project object.
+ */
 export const applyProjectPatches = live(
   async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch, "project-patches");

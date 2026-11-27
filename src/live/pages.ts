@@ -8,11 +8,24 @@ import type { PageRecord } from "$lib/elements/pageTypes";
 import { wireErr, wireOk, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
 import { assertLiveCan } from "$lib/server/auth/authorize";
 
+/**
+ * Guard that requires an authenticated user who can read pages.
+ *
+ * @param ctx - The live request context.
+ * @throws {LiveError} when no user is authenticated.
+ */
 export const _guard = guard((ctx) => {
   if (!ctx.user) throw new LiveError("UNAUTHENTICATED", "Must be logged in");
   assertLiveCan(ctx.user, "read", "Page");
 });
 
+/**
+ * Live stream of page patch batches.
+ *
+ * Replays prior patches on subscribe so late clients converge.
+ *
+ * @returns an empty initial patch payload.
+ */
 export const pagePatches = live.stream(
   "page-patches",
   async (): Promise<PatchPayload> => ({ patches: [] }),
@@ -22,6 +35,16 @@ export const pagePatches = live.stream(
   },
 );
 
+/**
+ * Applies a single page patch (add, replace, or remove).
+ *
+ * Removing a page also publishes removal patches for its elements.
+ *
+ * @param ctx - The live request context.
+ * @param patch - The patch operation to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err from the page manager.
+ * @throws {LiveError} when the patch does not target a whole page object.
+ */
 export const applyPagePatches = live(
   async (ctx, patch: PatchOp): Promise<WireResult<{ ok: true }, NeverThrowError>> => {
     logger.trace(patch, "page-patches");
@@ -82,6 +105,13 @@ export const applyPagePatches = live(
 // NOTE: keep the init callback as the second argument with nothing but
 // whitespace before it - svelte-realtime codegen parses the stream value
 // type textually from its return annotation.
+/**
+ * Live stream of element patch batches for a single page.
+ *
+ * @param ctx - The live request context.
+ * @param pageId - The page whose elements are streamed.
+ * @returns an empty initial patch payload.
+ */
 export const pageElementPatches = live.stream(
   (ctx, pageId: string) => `page-elements:${pageId}`,
   async (ctx, pageId: string): Promise<PatchPayload> => {
@@ -91,6 +121,14 @@ export const pageElementPatches = live.stream(
   { merge: "set", replay: true },
 );
 
+/**
+ * Applies a single page element patch scoped to a page.
+ *
+ * @param ctx - The live request context.
+ * @param input - The owning page id and the patch to apply.
+ * @returns Ok with `{ ok: true }` on success, or Err from the element manager.
+ * @throws {LiveError} when the patch does not target a whole element object.
+ */
 export const applyPageElementPatches = live(
   async (
     ctx,
