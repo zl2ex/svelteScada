@@ -4,6 +4,13 @@ import { assertCan } from "$lib/server/auth/authorize";
 import { projectManager } from "$lib/server/project/projectManager";
 import { neverThrowErrorToString } from "$lib/util/neverThrow";
 
+/**
+ * Load all projects for the home page, sorted by name.
+ *
+ * @param locals - the request locals containing the user's ability
+ * @returns the projects sorted alphabetically by name
+ * @throws {HttpError} when the project list cannot be read (status 500)
+ */
 export const load: PageServerLoad = async ({ locals }) => {
   assertCan(locals.ability, "read", "Project");
 

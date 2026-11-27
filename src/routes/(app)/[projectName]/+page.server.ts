@@ -5,6 +5,14 @@ import { pageManager } from "$lib/server/page/pageManager";
 import { projectManager } from "$lib/server/project/projectManager";
 import { neverThrowErrorToString } from "$lib/util/neverThrow";
 
+/**
+ * Load a project and its pages for the project landing page.
+ *
+ * @param locals - the request locals containing the user's ability
+ * @param params - the route params containing `projectName`
+ * @returns the project and its pages sorted by index then name
+ * @throws {HttpError} when the project is missing (404) or a lookup fails (500)
+ */
 export const load: PageServerLoad = async ({ locals, params }) => {
   assertCan(locals.ability, "read", "Project");
   assertCan(locals.ability, "read", "Page");

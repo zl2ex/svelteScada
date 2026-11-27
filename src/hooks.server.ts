@@ -21,6 +21,14 @@ export const gatewayOpcua: OpcuaServerDriver =
   (globalThis as any).__gatewayOpcua ??
   ((globalThis as any).__gatewayOpcua = new OpcuaServerDriver());
 
+/**
+ * Start shared server singletons and load persisted state on boot.
+ *
+ * Initialises the gateway OPC UA server, device/UDT/folder/tag managers and
+ * the default theme.
+ *
+ * @throws {Error} when the gateway or any persisted state fails to load
+ */
 export const init: ServerInit = async () => {
   logger.debug("[hooks.server.ts] init() hook");
 
@@ -67,6 +75,17 @@ export const init: ServerInit = async () => {
   }
 };
 
+/**
+ * Authenticate each request and gate access to protected routes.
+ *
+ * Remote function requests receive a JSON 401 when unauthenticated; page
+ * requests are redirected to the login page.
+ *
+ * @param event - the SvelteKit request event, including cookies and locals
+ * @param resolve - SvelteKit resolver used to render the response
+ * @returns the resolved response, a JSON 401, or a redirect to login
+ * @throws {Redirect} when an unauthenticated page request is redirected to login
+ */
 export const handle: Handle = async ({ event, resolve }) => {
   logger.trace("[hooks.server.ts] handle hook");
   let token = event.cookies.get("token") ?? "";

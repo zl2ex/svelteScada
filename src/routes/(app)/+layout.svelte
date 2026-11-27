@@ -23,6 +23,9 @@
   let heartbeatWatchdog: ReturnType<typeof setTimeout> | undefined;
   let connectionLost = $state(false);
 
+  /**
+   * Restart the heartbeat watchdog and clear the connection-lost flag.
+   */
   function resetHeartbeatWatchdog() {
     if (heartbeatWatchdog) clearTimeout(heartbeatWatchdog);
     connectionLost = false;
@@ -69,6 +72,9 @@
   onMount(() => {
     resetHeartbeatWatchdog();
 
+    /**
+     * Reset the watchdog while the document is visible, pause it otherwise.
+     */
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         resetHeartbeatWatchdog();

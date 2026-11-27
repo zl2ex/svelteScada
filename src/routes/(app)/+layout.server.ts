@@ -2,6 +2,12 @@ import { tagManager } from "../../hooks.server";
 import type { TagOptionsInput } from "$lib/server/tag/tag";
 import { assertCan } from "$lib/server/auth/authorize";
 
+/**
+ * Load the current user, tag options and tag paths for the app shell.
+ *
+ * @param locals - the request locals containing the user's ability
+ * @returns the user, a tag-options map keyed by tag id, and a tag-path map
+ */
 export async function load({ locals }) {
   assertCan(locals.ability, "read", "Tag");
   const allTags = tagManager.getAllTags();

@@ -33,6 +33,11 @@
     cssDraft = selected?.projectStyle ?? "";
   });
 
+  /**
+   * Generate a theme name that is not already in use.
+   *
+   * @returns a unique `theme-<n>` name
+   */
   function uniqueThemeName() {
     let index = themes.length + 1;
     let name = `theme-${index}`;
@@ -43,6 +48,9 @@
     return name;
   }
 
+  /**
+   * Create a new theme seeded with the default CSS and select it.
+   */
   function createTheme() {
     const name = uniqueThemeName();
     const id = newId();
@@ -58,6 +66,11 @@
     toast({ kind: "success", title: "Theme created", description: name });
   }
 
+  /**
+   * Persist the selected theme's name and CSS from the drafts.
+   *
+   * Does nothing when no theme is selected; rejects an empty name.
+   */
   function saveTheme() {
     if (!selected) return;
     const name = nameDraft.trim();
@@ -74,6 +87,9 @@
     toast({ kind: "success", title: "Theme saved", description: name });
   }
 
+  /**
+   * Remove the selected theme and clear it from projects that reference it.
+   */
   function deleteTheme() {
     if (!selected) return;
     const id = selected.id;
@@ -88,6 +104,9 @@
     toast({ kind: "info", title: "Theme deleted", description: selected.name });
   }
 
+  /**
+   * Reset the name and CSS drafts back to the selected theme's values.
+   */
   function resetDrafts() {
     nameDraft = selected?.name ?? "";
     cssDraft = selected?.projectStyle ?? "";

@@ -80,6 +80,11 @@
 
   const panelLayout = new PanelLayout();
 
+  /**
+   * Log the current user out and navigate to the login page.
+   *
+   * @returns ok(null) on success, or an error describing which step failed
+   */
   async function logoutAndGotoLogin() {
     const loggedOut = await attempt(() => logout());
     if (loggedOut.isErr) {
@@ -116,6 +121,12 @@
 
   const leftPanelTabs: EditorLeftPanelTab[] = ["tags", "udts", "projects"];
 
+  /**
+   * Narrow a tab value to a known left-panel tab.
+   *
+   * @param value - the candidate tab value
+   * @returns true when the value is a valid `EditorLeftPanelTab`
+   */
   function isLeftPanelTab(value: string | null): value is EditorLeftPanelTab {
     return value !== null && leftPanelTabs.includes(value as EditorLeftPanelTab);
   }
@@ -265,10 +276,20 @@
     }
   });
 
+  /**
+   * Build the current editor path from the URL.
+   *
+   * @returns the current pathname plus search string
+   */
   function currentPath() {
     return page.url.pathname + page.url.search;
   }
 
+  /**
+   * Navigate to a focus-history target when it differs from the current path.
+   *
+   * @param targetPath - the destination path, or undefined to do nothing
+   */
   async function navigateFocus(targetPath: string | undefined) {
     if (!targetPath || targetPath === currentPath()) return;
 
@@ -283,6 +304,9 @@
     }
   }
 
+  /**
+   * Move focus history backwards and navigate to that path.
+   */
   async function focusBack() {
     const result = await editor.backFocus(currentPath());
     if (result.isErr()) {
@@ -297,6 +321,9 @@
     await navigateFocus(result.value?.path);
   }
 
+  /**
+   * Move focus history forwards and navigate to that path.
+   */
   async function focusForward() {
     const result = await editor.forwardFocus(currentPath());
     if (result.isErr()) {
@@ -343,6 +370,11 @@
     };
   });
 
+  /**
+   * Handle a selection from the user menu.
+   *
+   * @param details - the menu selection details containing the chosen action
+   */
   async function handleUserMenuSelect(details: SelectionDetails) {
     const action = details.value;
 
@@ -357,6 +389,11 @@
     }
   }
 
+  /**
+   * Handle a selection from the light/dark appearance submenu.
+   *
+   * @param details - the menu selection details containing the chosen mode
+   */
   async function handleUserLightDarkMenuSelect(details: SelectionDetails) {
     const action = details.value;
     console.debug(action);

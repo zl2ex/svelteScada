@@ -9,6 +9,14 @@ import { DEFAULT_THEME_NAME } from "$lib/themes/defaultThemeCss";
 import { projectManager } from "$lib/server/project/projectManager";
 import { neverThrowErrorToString } from "$lib/util/neverThrow";
 
+/**
+ * Load a project page with its elements, user components and active theme.
+ *
+ * @param locals - the request locals containing the user's ability
+ * @param params - the route params containing `projectName` and `pageName`
+ * @returns the project, page, elements, project user components and theme
+ * @throws {HttpError} when the project or page is missing (404) or a lookup fails (500)
+ */
 export const load: PageServerLoad = async ({ locals, params }) => {
   assertCan(locals.ability, "read", "Project");
   assertCan(locals.ability, "read", "Page");

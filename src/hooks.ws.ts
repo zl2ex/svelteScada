@@ -34,11 +34,22 @@ export const init = hooks.init;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const expiryTimers = new WeakMap<object, ReturnType<typeof setTimeout>>();
 
+/**
+ * Close a WebSocket whose session token has expired.
+ *
+ * @param ws - the socket to close with code 4401
+ */
 function closeExpiredSocket(ws: WebSocket<SessionUser>) {
   const closed = attempt(() => ws.end(4401, "Session expired"));
   if (closed.isErr) logger.error(closed.error);
 }
 
+/**
+ * Schedule a socket to close when its token expires, re-arming for long delays.
+ *
+ * @param ws - the socket whose session is tracked
+ * @param tokenExpiresAt - epoch milliseconds at which the token expires
+ */
 function scheduleExpiry(ws: WebSocket<SessionUser>, tokenExpiresAt: number) {
   const remaining = tokenExpiresAt - Date.now();
   if (remaining <= 0) {
@@ -54,6 +65,12 @@ function scheduleExpiry(ws: WebSocket<SessionUser>, tokenExpiresAt: number) {
   expiryTimers.set(ws, timer);
 }
 
+/**
+ * Handle a new WebSocket connection and arm the token expiry timer.
+ *
+ * @param ws - the newly opened socket
+ * @param ctx - the open context supplied by the adapter
+ */
 export function open(ws: WebSocket<SessionUser>, ctx: OpenContext) {
   hooks.open(ws, ctx);
 
@@ -61,6 +78,12 @@ export function open(ws: WebSocket<SessionUser>, ctx: OpenContext) {
   if (typeof tokenExpiresAt === "number") scheduleExpiry(ws, tokenExpiresAt);
 }
 
+/**
+ * Handle a WebSocket close and clear its pending expiry timer.
+ *
+ * @param ws - the socket being closed
+ * @param ctx - the close context supplied by the adapter
+ */
 export function close(ws: WebSocket<SessionUser>, ctx: CloseContext) {
   const timer = expiryTimers.get(ws);
   if (timer) clearTimeout(timer);
@@ -69,6 +92,12 @@ export function close(ws: WebSocket<SessionUser>, ctx: CloseContext) {
   hooks.close(ws, ctx);
 }
 
+/**
+ * Authenticate an upgrade request from its session cookie.
+ *
+ * @param cookies - the upgrade context cookies, including the token
+ * @returns the authenticated session user, or false to reject the connection
+ */
 export async function upgrade({ cookies }: UpgradeContext) {
   logger.trace("hooks.ws.ts");
   if (!cookies.token) return false;

@@ -17,6 +17,12 @@
   let saving = $state(false);
   let ruleDrafts = $state<Record<string, string>>({});
 
+  /**
+   * Serialize a user's permission rules for editing as JSON.
+   *
+   * @param permissions - the user's CASL permission records
+   * @returns the formatted JSON string of the rules
+   */
   function serializeRules(permissions: PageData["users"][number]["permissions"]) {
     return JSON.stringify(
       permissions.map((permission) => ({
@@ -40,6 +46,13 @@
     }
   });
 
+  /**
+   * Run a user-admin action, refreshing data and reporting the outcome.
+   *
+   * @param action - the async remote action to execute
+   * @param success - the toast title shown on success
+   * @returns true on success, false when the action or refresh fails
+   */
   async function run(action: () => Promise<unknown>, success: string) {
     saving = true;
     const result = await attempt(action);
@@ -54,6 +67,11 @@
     return true;
   }
 
+  /**
+   * Handle the add-user form submit.
+   *
+   * @param event - the form submit event
+   */
   async function addUser(event: SubmitEvent) {
     event.preventDefault();
     if (!name.trim() || !email.trim() || !password.trim()) return;
@@ -68,15 +86,32 @@
     role = "viewer";
   }
 
+  /**
+   * Change a user's role.
+   *
+   * @param userId - the id of the user to update
+   * @param nextRole - the role to assign
+   */
   async function changeRole(userId: string, nextRole: UserRole) {
     await run(() => updateUserRole({ userId, role: nextRole }), "Role updated");
   }
 
+  /**
+   * Confirm and delete a user.
+   *
+   * @param userId - the id of the user to delete
+   * @param userName - the name shown in the confirmation prompt
+   */
   async function removeUser(userId: string, userName: string) {
     if (!confirm(`Delete ${userName}?`)) return;
     await run(() => deleteUser({ userId }), "User deleted");
   }
 
+  /**
+   * Validate the permission JSON draft and save it for a user.
+   *
+   * @param userId - the id of the user whose rules are saved
+   */
   async function saveRules(userId: string) {
     const draft = ruleDrafts[userId] ?? "[]";
     let rules: unknown;

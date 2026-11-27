@@ -10,6 +10,13 @@ import type { PageRecord } from "$lib/elements/pageTypes";
 import { assertCan } from "$lib/server/auth/authorize";
 import { udtManager } from "../../../hooks.server";
 
+/**
+ * Load the collections the editor shell needs, keyed for client patch stores.
+ *
+ * @param locals - the request locals containing the user's ability
+ * @returns tag folders, projects, pages, user components, themes and UDTs
+ * @throws {NeverThrowError} when any editor collection fails to load
+ */
 export async function load({ locals }) {
   assertCan(locals.ability, "manage", "Project");
   const folderResult = tagFoldersClosureTable.getAll();

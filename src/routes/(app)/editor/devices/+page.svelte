@@ -63,6 +63,12 @@
 
   // A <select> only ever gives back a string, so the discriminant has to be
   // narrowed back before it can go anywhere near a DeviceConfigInput.
+  /**
+   * Narrow a select value to a known driver name.
+   *
+   * @param value - the raw select value
+   * @returns true when the value names an available driver
+   */
   function isDriverName(value: string): value is DriverName {
     return value in availableDrivers;
   }
@@ -94,6 +100,10 @@
   /**
    * The option fields are metadata keyed by option name, so the read goes
    * through a `string` key too.
+   *
+   * @param device - the device or draft whose option is read
+   * @param key - the option name to look up
+   * @returns the option value, or undefined when not set
    */
   function readOption(device: DeviceConfigInput | DeviceDraft, key: string) {
     return (device.options as Record<string, string | number | boolean | undefined>)[key];
@@ -103,6 +113,10 @@
    * What a field may hold is settled by the driver's zod schema, which the
    * server re-parses the whole options object against on every write - a value
    * it rejects comes back as an error and the patch is rolled back.
+   *
+   * @param device - the device or draft being edited
+   * @param key - the option name to set
+   * @param value - the new option value
    */
   function setOption(
     device: DeviceConfigInput | DeviceDraft,
@@ -121,7 +135,12 @@
     devicesPatchesCollection.update(device.id, { options });
   }
 
-  /** A blank or unparseable number is not an edit, so it changes nothing. */
+  /**
+   * A blank or unparseable number is not an edit, so it changes nothing.
+   *
+   * @param raw - the raw input string
+   * @returns the parsed finite number, or undefined when invalid or blank
+   */
   function numberFromInput(raw: string) {
     if (raw.trim() === "") return undefined;
     const parsed = Number(raw);
