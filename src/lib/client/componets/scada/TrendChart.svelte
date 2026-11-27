@@ -152,17 +152,34 @@
     },
   });
 
+  /**
+   * Resolves a tag id to its display name, falling back to the id.
+   *
+   * @param tagId - id of the tag to look up
+   * @returns the tag name when known, otherwise the tag id
+   */
   function tagName(tagId: string): string {
     return tags.find((tag) => tag.id === tagId)?.name ?? tagId;
   }
 
   // stable per tag - based on the tag's position in the loaded list so the
   // colour does not jump around as the selection changes
+  /**
+   * Returns a stable colour for a tag based on its position in the loaded list.
+   *
+   * @param tagId - id of the tag to colour
+   * @returns the colour assigned to the tag, defaulting to the first colour
+   */
   function colorFor(tagId: string): string {
     const index = tags.findIndex((tag) => tag.id === tagId);
     return COLORS[(index >= 0 ? index : 0) % COLORS.length];
   }
 
+  /**
+   * Adds or removes a tag id from the current selection.
+   *
+   * @param tagId - id of the tag to toggle
+   */
   function toggleTag(tagId: string) {
     if (selectedTagIds.includes(tagId)) {
       selectedTagIds = selectedTagIds.filter((id) => id !== tagId);
@@ -174,27 +191,55 @@
   // ── Tag selection tree ────────────────────────────────
 
   // folders carry `parentId`, tags carry `folderId`
+  /**
+   * Narrows a tree node to a folder node.
+   *
+   * @param node - folder or tag node from the selection tree
+   * @returns true when the node is a folder
+   */
   function isFolderNode(
     node: ClosureTableNodeWithPath | SelectedTag,
   ): node is ClosureTableNodeWithPath {
     return Object.hasOwn(node, "parentId");
   }
 
+  /**
+   * Lists the folders that have no parent.
+   *
+   * @returns the root folder nodes
+   */
   function rootFolders(): ClosureTableNodeWithPath[] {
     return folders.filter((folder) => folder.parentId == null);
   }
 
+  /**
+   * Lists the direct child folders of a folder.
+   *
+   * @param folderId - id of the parent folder
+   * @returns the child folder nodes
+   */
   function childFolders(folderId: string): ClosureTableNodeWithPath[] {
     return folders.filter((folder) => folder.parentId === folderId);
   }
 
   // tags with no folder (or a folder that no longer exists) live at the root
+  /**
+   * Lists tags that have no folder or reference a folder that no longer exists.
+   *
+   * @returns the tags shown at the tree root
+   */
   function rootTags(): SelectedTag[] {
     return tags.filter(
       (tag) => tag.folderId == null || !folders.some((folder) => folder.id === tag.folderId),
     );
   }
 
+  /**
+   * Lists the tags assigned directly to a folder.
+   *
+   * @param folderId - id of the folder
+   * @returns the tags in that folder
+   */
   function folderTags(folderId: string): SelectedTag[] {
     return tags.filter((tag) => tag.folderId === folderId);
   }
@@ -211,12 +256,24 @@
     return query;
   });
 
+  /**
+   * Tests whether a tag matches the current search query.
+   *
+   * @param tag - tag to test against the query
+   * @returns true when the tag matches the name or path query
+   */
   function tagMatchesQuery(tag: SelectedTag): boolean {
     if (normalizedTagQuery === "") return true;
     if (queryIsPath) return tag.path.toLowerCase().startsWith(normalizedPathQuery);
     return tag.name.toLowerCase().includes(normalizedTagQuery);
   }
 
+  /**
+   * Tests whether a folder matches the current search query.
+   *
+   * @param folder - folder to test against the query
+   * @returns true when the folder matches the name or path query
+   */
   function folderMatchesQuery(folder: ClosureTableNodeWithPath): boolean {
     if (normalizedTagQuery === "") return true;
     if (queryIsPath) return folder.path.toLowerCase().startsWith(normalizedPathQuery);
@@ -225,6 +282,12 @@
 
   // a folder is kept while searching when it matches itself or any tag in its
   // subtree matches
+  /**
+   * Tests whether a folder or any tag in its subtree matches the search query.
+   *
+   * @param folderId - id of the folder to test
+   * @returns true when the folder or a descendant matches
+   */
   function folderHasMatch(folderId: string): boolean {
     const folder = folders.find((candidate) => candidate.id === folderId);
     if (folder && folderMatchesQuery(folder)) return true;
@@ -234,6 +297,12 @@
 
   // the collection owns the (filtered) child order and the template renders the
   // same order, so every node's indexPath stays valid while searching
+  /**
+   * Builds the filtered children of a tree node for the current query.
+   *
+   * @param node - folder or tag node whose children are rendered
+   * @returns the visible child folders and tags in display order
+   */
   function visibleChildren(
     node: ClosureTableNodeWithPath | SelectedTag,
   ): (ClosureTableNodeWithPath | SelectedTag)[] {
@@ -292,6 +361,13 @@
     normalizedTagQuery === "" ? tags.length > 0 : visibleRootNodes.length > 0,
   );
 
+  /**
+   * Clamps a time window to the current time and the allowed trend range.
+   *
+   * @param start - requested window start in epoch milliseconds
+   * @param end - requested window end in epoch milliseconds
+   * @returns the clamped start and end in epoch milliseconds
+   */
   function clampWindow(start: number, end: number) {
     const now = Date.now();
     let s = Math.min(start, now);
@@ -303,6 +379,9 @@
   }
 
   // clears the plugin's pan/zoom state; the window itself is driven by state
+  /**
+   * Clears the chart plugin's pan/zoom state without syncing it back to state.
+   */
   function clearZoom() {
     if (!chart) return;
     suppressZoomSync = true;
@@ -312,6 +391,9 @@
 
   // a finished wheel/pinch/drag gesture on the x axis: pull the axis bounds
   // back into state so the existing effects refetch and redraw
+  /**
+   * Pulls the finished chart gesture bounds back into the reactive window state.
+   */
   function syncWindowFromChart() {
     if (!chart || suppressZoomSync) return;
     const { min, max } = chart.scales.x;
@@ -322,6 +404,11 @@
     to = window.end;
   }
 
+  /**
+   * Applies a preset duration ending at the current time and resumes live follow.
+   *
+   * @param ms - preset duration in milliseconds
+   */
   function applyPreset(ms: number) {
     clearZoom();
     nowTick = Date.now();
@@ -330,6 +417,11 @@
     liveFollow = true;
   }
 
+  /**
+   * Applies a saved view, filtering its tag ids to currently available tags.
+   *
+   * @param config - saved view configuration to apply
+   */
   function applySavedConfig(config: TrendViewSavedConfig) {
     clearZoom();
     nowTick = Date.now();
@@ -341,6 +433,9 @@
     fetched = null;
   }
 
+  /**
+   * Saves the current tag selection under the entered view name.
+   */
   function handleSaveCurrentAs() {
     const name = saveViewName.trim();
     if (name.length === 0) return;
@@ -354,6 +449,11 @@
     saveViewName = "";
   }
 
+  /**
+   * Deletes a saved view by id and updates the local saved view list.
+   *
+   * @param id - id of the saved view to delete
+   */
   function handleDeleteSaved(id: string) {
     const result = deleteView(id);
     if (result.isErr()) {
@@ -363,20 +463,46 @@
     savedViews = savedViews.filter((view) => view.id !== id);
   }
 
+  /**
+   * Recomputes whether the window follows live samples from the current end time.
+   */
   function refreshLiveFollow() {
     liveFollow = to >= Date.now() - 1000;
   }
 
+  /**
+   * Formats epoch milliseconds for a datetime-local input value.
+   *
+   * @param ms - timestamp in epoch milliseconds
+   * @returns the local date-time string without seconds
+   */
   function toInputValue(ms: number): string {
     const date = new Date(ms);
+    /**
+     * Left-pads a number to two digits for date formatting.
+     *
+     * @param value - number to pad
+     * @returns the two-character padded string
+     */
     const pad = (value: number) => String(value).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
+  /**
+   * Parses a datetime-local input value into epoch milliseconds.
+   *
+   * @param value - datetime-local input string
+   * @returns the parsed timestamp in epoch milliseconds
+   */
   function fromInputValue(value: string): number {
     return new Date(value).getTime();
   }
 
+  /**
+   * Applies a new window start from the "from" input and keeps the range valid.
+   *
+   * @param event - change event from the from datetime input
+   */
   function onFromChange(event: Event) {
     const parsed = fromInputValue((event.currentTarget as HTMLInputElement).value);
     if (Number.isNaN(parsed)) return;
@@ -386,6 +512,11 @@
     refreshLiveFollow();
   }
 
+  /**
+   * Applies a new window end from the "to" input and keeps the range valid.
+   *
+   * @param event - change event from the to datetime input
+   */
   function onToChange(event: Event) {
     const parsed = fromInputValue((event.currentTarget as HTMLInputElement).value);
     if (Number.isNaN(parsed)) return;
@@ -555,6 +686,12 @@
   // effect once async creation finishes
   let chart = $state.raw<Chart<"line"> | undefined>();
 
+  /**
+   * Maps trend series into Chart.js line datasets with per-segment colouring.
+   *
+   * @param values - trend series to convert
+   * @returns Chart.js dataset definitions for the line chart
+   */
   function toDatasets(values: TrendChartSeries[]) {
     return values.map((entry) => ({
       label: entry.label,

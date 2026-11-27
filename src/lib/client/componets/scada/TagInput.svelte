@@ -28,6 +28,13 @@
 
   let isFocus = $state(false);
 
+  /**
+   * Writes a value to the looked-up tag after checking connection, value errors
+   * and write permissions.
+   *
+   * @param value - value to write to the tag
+   * @returns ok with the write result, or err when unavailable or forbidden
+   */
   async function write(value: TagValue) {
     if (!entry || entry.status !== "connected") {
       return err({
@@ -52,22 +59,46 @@
     return ok(result.value);
   }
 
+  /**
+   * Checks whether the current user may write to a tag at the given level.
+   *
+   * @param writeLevel - tag write level, defaults to "operator" when undefined
+   * @returns true when the current ability can write tags at that level
+   */
   function canWrite(writeLevel: TagWriteLevel | undefined): boolean {
     return canWriteTag(ability, writeLevel ?? "operator");
   }
 
+  /**
+   * Commits a numeric input value, treating null as a no-op.
+   *
+   * @param value - numeric value from the input, or null when empty
+   * @returns true when the write succeeded, otherwise false
+   */
   async function commitNumber(value: number | null) {
     if (value === null) return false;
     const result = await write(value);
     return result.isOk();
   }
 
+  /**
+   * Commits a text input value, treating an empty string as a no-op.
+   *
+   * @param value - text value from the input
+   * @returns true when the write succeeded, otherwise false
+   */
   async function commitText(value: string) {
     if (value === "") return false;
     const result = await write(value);
     return result.isOk();
   }
 
+  /**
+   * Appends error outline classes when the tag has a non-Good status.
+   *
+   * @param base - base class string for the input control
+   * @returns the composed class string including any custom class
+   */
   function classWithError(base: string): string {
     return entry?.value?.isOk && entry.value.value.statusString !== "Good"
       ? `${base} outline -outline-offset-1 outline-error-400-600 ${clazz ?? ""}`

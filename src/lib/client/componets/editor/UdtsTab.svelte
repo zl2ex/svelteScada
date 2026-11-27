@@ -75,26 +75,63 @@
     name: "UDTs",
   };
 
+  /**
+   * Compares two names using numeric, case-insensitive locale ordering.
+   *
+   * @param a - first name
+   * @param b - second name
+   * @returns a negative, zero, or positive locale comparison value
+   */
   function compareNames(a: string, b: string) {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
   }
 
+  /**
+   * Returns the UDT definitions sorted by name.
+   *
+   * @returns sorted definition list
+   */
   function sortedDefinitions() {
     return Object.values(collection.state).sort((a, b) => compareNames(a.name, b.name));
   }
 
+  /**
+   * Returns a definition's children sorted by name.
+   *
+   * @param definition - definition whose children are sorted
+   * @returns sorted copy of the children
+   */
   function sortedChildren(definition: UdtDefinitionInput) {
     return [...definition.children].sort((a, b) => compareNames(a.name, b.name));
   }
 
+  /**
+   * Builds the tree id for a UDT definition node.
+   *
+   * @param id - definition id
+   * @returns the prefixed tree node id
+   */
   function definitionNodeId(id: string) {
     return `udt:def:${id}`;
   }
 
+  /**
+   * Builds the tree id for a UDT child node.
+   *
+   * @param definitionId - parent definition id
+   * @param childId - child tag id
+   * @returns the prefixed tree node id
+   */
   function childNodeId(definitionId: string, childId: string) {
     return `udt:child:${definitionId}:${childId}`;
   }
 
+  /**
+   * Builds a definition tree node from a definition record.
+   *
+   * @param definition - definition to wrap
+   * @returns the definition tree node
+   */
   function definitionNode(definition: UdtDefinitionInput): DefinitionNode {
     return {
       kind: "definition",
@@ -104,6 +141,13 @@
     };
   }
 
+  /**
+   * Builds a child tree node from a definition and its child record.
+   *
+   * @param definition - parent definition
+   * @param child - child tag to wrap
+   * @returns the child tree node
+   */
   function childNode(definition: UdtDefinitionInput, child: UdtDefinitionTagInput): ChildNode {
     return {
       kind: "child",
@@ -114,6 +158,12 @@
     };
   }
 
+  /**
+   * Returns the child tree nodes for a root, definition or child node.
+   *
+   * @param node - node whose children are resolved
+   * @returns child tree nodes, or an empty array for child nodes
+   */
   function childrenOf(node: UdtTreeNode): UdtTreeNode[] {
     if (node.kind === "root") return sortedDefinitions().map(definitionNode);
     if (node.kind === "definition") {
@@ -169,6 +219,11 @@
       : undefined,
   );
 
+  /**
+   * Creates a new child definition with default field values.
+   *
+   * @returns a new child tag input
+   */
   function defaultChild(): UdtDefinitionTagInput {
     return {
       id: newId(),
@@ -187,6 +242,12 @@
     };
   }
 
+  /**
+   * Returns a definition name unique among current definitions.
+   *
+   * @param base - proposed base name
+   * @returns a unique definition name
+   */
   function uniqueName(base: string) {
     const names = new Set(definitions.map((definition) => definition.name));
     let name = base;
@@ -195,6 +256,13 @@
     return name;
   }
 
+  /**
+   * Validates and updates a definition by id, sorting its children.
+   *
+   * @param id - definition id to update
+   * @param changes - partial definition fields, id excluded
+   * @returns true when the update validated and was applied
+   */
   function updateDefinitionById(id: string, changes: Partial<Omit<UdtDefinitionInput, "id">>) {
     const current = collection.state[id];
     if (!current) return false;
@@ -218,6 +286,14 @@
     return true;
   }
 
+  /**
+   * Updates a child within a definition by id.
+   *
+   * @param definitionId - definition containing the child
+   * @param childId - child tag id to update
+   * @param changes - partial child fields to apply
+   * @returns true when the resulting definition validated and was applied
+   */
   function updateChild(
     definitionId: string,
     childId: string,
@@ -232,6 +308,9 @@
     });
   }
 
+  /**
+   * Adds a new empty UDT definition and starts inline renaming.
+   */
   function addDefinition() {
     const id = newId();
     const definition: UdtDefinitionInput = {
@@ -245,6 +324,11 @@
     treeView().expand([rootNode.id]);
   }
 
+  /**
+   * Appends a default child to a definition and starts inline renaming.
+   *
+   * @param definitionId - definition receiving the child
+   */
   function addChild(definitionId: string) {
     const definition = collection.state[definitionId];
     if (!definition) return;
@@ -256,12 +340,23 @@
     treeView().expand([definitionNodeId(definitionId)]);
   }
 
+  /**
+   * Removes a UDT definition and clears any editor state pointing at it.
+   *
+   * @param id - definition id to remove
+   */
   function deleteDefinition(id: string) {
     collection.remove(id);
     if (activeEditor?.definitionId === id) activeEditor = null;
     renamingId = null;
   }
 
+  /**
+   * Removes a child from a definition and closes its editor when active.
+   *
+   * @param definitionId - definition containing the child
+   * @param childId - child tag id to remove
+   */
   function removeChild(definitionId: string, childId: string) {
     const definition = collection.state[definitionId];
     if (!definition) return;
@@ -273,6 +368,13 @@
     }
   }
 
+  /**
+   * Wraps a child definition as a tag input for the editor popover.
+   *
+   * @param definition - parent definition
+   * @param child - child tag to wrap
+   * @returns tag input with UDT linkage fields populated
+   */
   function childAsTag(
     definition: UdtDefinitionInput,
     child: UdtDefinitionTagInput,
@@ -287,6 +389,12 @@
     };
   }
 
+  /**
+   * Strips UDT-specific and placement fields from tag changes.
+   *
+   * @param changes - tag changes to filter
+   * @returns changes containing only child-editable fields
+   */
   function childChanges(changes: Partial<Omit<TagOptionsInput, "id">>) {
     const {
       folderId: _folderId,
@@ -299,6 +407,13 @@
     return rest;
   }
 
+  /**
+   * Returns whether a child has a non-blank binding for a key.
+   *
+   * @param child - child tag to inspect
+   * @param key - binding key to check
+   * @returns true when the binding expression is non-blank
+   */
   function isChildBound(child: UdtDefinitionTagInput, key: TagBindingKey) {
     return Boolean(child.bindings?.[key]?.trim());
   }
@@ -330,6 +445,9 @@
 
   /**
    * Returns whether the active child binding exists for a key.
+   *
+   * @param key - binding key to inspect
+   * @returns bound and mixed flags for the active child
    */
   function childBindingState(key: TagBindingKey) {
     return {
@@ -340,11 +458,21 @@
 
   /**
    * Returns the cached binding error for the active child.
+   *
+   * @param key - binding key to read
+   * @returns the cached error message, or null when unavailable
    */
   function childBindingError(key: TagBindingKey) {
     return childBindingErrors.get(key) ?? null;
   }
 
+  /**
+   * Saves a binding expression on a child of the active definition.
+   *
+   * @param child - child tag to update
+   * @param key - binding key to update
+   * @param expression - binding expression to store, blank to clear
+   */
   function saveChildBinding(child: UdtDefinitionTagInput, key: TagBindingKey, expression: string) {
     if (!activeDefinition) return;
     updateChild(activeDefinition.id, child.id, {
@@ -352,10 +480,21 @@
     });
   }
 
+  /**
+   * Returns the active child's binding expression for a key.
+   *
+   * @param key - binding key to read
+   * @returns the binding expression, or "" when unset
+   */
   function childBindingValue(key: TagBindingKey) {
     return activeChild?.bindings?.[key] ?? "";
   }
 
+  /**
+   * Saves tag-style changes onto the active child definition.
+   *
+   * @param changes - tag changes to apply to the active child
+   */
   function saveActiveChild(changes: Partial<Omit<TagOptionsInput, "id">>) {
     if (!activeDefinition || !activeChild) return;
     updateChild(
@@ -365,6 +504,11 @@
     );
   }
 
+  /**
+   * Saves property changes onto the active child definition.
+   *
+   * @param updater - function producing the next properties from the current ones
+   */
   function saveActiveChildProperties(
     updater: (
       properties: NonNullable<UdtDefinitionTagInput["properties"]>,
@@ -376,11 +520,22 @@
     });
   }
 
+  /**
+   * Saves a binding expression on the active child definition.
+   *
+   * @param key - binding key to update
+   * @param expression - binding expression to store, blank to clear
+   */
   function saveActiveChildBinding(key: TagBindingKey, expression: string) {
     if (!activeChild) return;
     saveChildBinding(activeChild, key, expression);
   }
 
+  /**
+   * Saves property changes onto the active definition.
+   *
+   * @param updater - function producing the next properties from the current ones
+   */
   function saveDefinitionProperties(
     updater: (properties: UdtDefinitionInput["properties"]) => UdtDefinitionInput["properties"],
   ) {
@@ -390,30 +545,62 @@
     });
   }
 
+  /**
+   * Opens the editor popover for a UDT definition.
+   *
+   * @param definition - definition to edit
+   */
   function openDefinitionEditor(definition: UdtDefinitionInput) {
     activeEditor = { kind: "definition", definitionId: definition.id };
   }
 
+  /**
+   * Opens the editor popover for a child of a UDT definition.
+   *
+   * @param definition - parent definition
+   * @param child - child tag to edit
+   */
   function openChildEditor(definition: UdtDefinitionInput, child: UdtDefinitionTagInput) {
     activeEditor = { kind: "child", definitionId: definition.id, childId: child.id };
   }
 
+  /**
+   * Closes the active definition or child editor popover.
+   */
   function closeEditor() {
     activeEditor = null;
   }
 
+  /**
+   * Commits an inline definition rename when the trimmed name is non-empty.
+   *
+   * @param definitionId - definition being renamed
+   * @param newName - new definition name
+   */
   function finalizeDefinitionRename(definitionId: string, newName: string) {
     renamingId = null;
     const name = newName.trim();
     if (name) updateDefinitionById(definitionId, { name });
   }
 
+  /**
+   * Commits an inline child rename when the trimmed name is non-empty.
+   *
+   * @param definitionId - definition containing the child
+   * @param childId - child being renamed
+   * @param newName - new child name
+   */
   function finalizeChildRename(definitionId: string, childId: string, newName: string) {
     renamingId = null;
     const name = newName.trim();
     if (name) updateChild(definitionId, childId, { name });
   }
 
+  /**
+   * Opens the context menu for the UDT definition or child under the pointer.
+   *
+   * @param event - contextmenu event
+   */
   function handleTreeContextMenu(event: MouseEvent) {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -438,6 +625,11 @@
     treeView().setSelectedValue([contextMenuNode.id]);
   }
 
+  /**
+   * Handles a context menu action for the current UDT tree node.
+   *
+   * @param value - menu item value identifying the action
+   */
   function handleMenuSelect(value: string) {
     const node = contextMenuNode;
     contextMenuNode = null;
@@ -485,10 +677,21 @@
     }
   }
 
+  /**
+   * Returns whether the current user may manage UDT definitions.
+   *
+   * @returns true when the user has the manage ability on UdtDefinition
+   */
   function canManage() {
     return ability.can("manage", "UdtDefinition");
   }
 
+  /**
+   * Writes text to the system clipboard, reporting failures through formError.
+   *
+   * @param text - text to copy
+   * @returns true on success, false when the write failed
+   */
   async function copyToClipboard(text: string) {
     const result = await attempt(() => navigator.clipboard.writeText(text));
     if (result.isErr) {
@@ -498,6 +701,11 @@
     return true;
   }
 
+  /**
+   * Reads text from the system clipboard, reporting failures through formError.
+   *
+   * @returns the clipboard text, or null when the read failed
+   */
   async function readClipboard() {
     const result = await attempt(() => navigator.clipboard.readText());
     if (result.isErr) {
@@ -507,12 +715,23 @@
     return result.data;
   }
 
+  /**
+   * Returns the tree node for the first selected tree value.
+   *
+   * @returns the selected tree node, or null when none is selected
+   */
   function selectedTreeNode(): UdtTreeNode | null {
     const selected = treeView().selectedValue[0];
     if (!selected) return null;
     return collectionView.findNode(selected) ?? null;
   }
 
+  /**
+   * Resolves the definition associated with a tree node.
+   *
+   * @param node - tree node to resolve, may be null
+   * @returns the related definition, or undefined when none applies
+   */
   function definitionForNode(node: UdtTreeNode | null) {
     if (!node) return undefined;
     if (node.kind === "definition") return node.definition;
@@ -520,6 +739,12 @@
     return undefined;
   }
 
+  /**
+   * Builds a clipboard payload for a definition or child tree node.
+   *
+   * @param node - tree node to serialize
+   * @returns the clipboard payload, or null for root or missing nodes
+   */
   function clipboardPayload(node: UdtTreeNode): UdtClipboardPayload | null {
     if (node.kind === "definition") {
       return { kind: "definition", definition: node.definition };
@@ -533,6 +758,12 @@
     return null;
   }
 
+  /**
+   * Copies a UDT definition or child node to the clipboard as JSON.
+   *
+   * @param node - tree node to copy
+   * @returns true when the payload was written, false when unavailable or failed
+   */
   async function copyNode(node: UdtTreeNode) {
     const payload = clipboardPayload(node);
     if (!payload) return false;
@@ -540,6 +771,11 @@
     return copyToClipboard(JSON.stringify(payload));
   }
 
+  /**
+   * Copies a UDT node to the clipboard and removes it.
+   *
+   * @param node - tree node to cut
+   */
   async function cutNode(node: UdtTreeNode) {
     if (!(await copyNode(node))) return;
     undoManager.beginTransaction();
@@ -548,6 +784,13 @@
     undoManager.endTransaction();
   }
 
+  /**
+   * Returns a child name unique within a definition.
+   *
+   * @param definition - definition whose children are checked
+   * @param base - proposed base name
+   * @returns a unique child name
+   */
   function uniqueChildName(definition: UdtDefinitionInput, base: string) {
     const names = new Set(definition.children.map((child) => child.name));
     if (!names.has(base)) return base;
@@ -560,6 +803,12 @@
     return name;
   }
 
+  /**
+   * Parses and validates a UDT clipboard payload.
+   *
+   * @param text - clipboard text to parse
+   * @returns the parsed payload, or null when invalid
+   */
   function parseClipboardPayload(text: string): UdtClipboardPayload | null {
     const parsed = attempt(() => JSON.parse(text));
     if (parsed.isErr) {
@@ -577,6 +826,13 @@
     return null;
   }
 
+  /**
+   * Pastes a UDT definition or child payload into the tree.
+   *
+   * @param payload - clipboard payload to paste
+   * @param target - tree node receiving a child payload
+   * @returns true when the paste succeeded
+   */
   function pastePayload(payload: UdtClipboardPayload, target: UdtTreeNode | null) {
     if (payload.kind === "definition") {
       const definition: UdtDefinitionInput = {
@@ -608,6 +864,11 @@
     return pasted;
   }
 
+  /**
+   * Reads the clipboard and pastes a UDT payload into the target.
+   *
+   * @param target - tree node receiving the pasted payload
+   */
   async function pasteFromClipboard(target: UdtTreeNode | null) {
     const text = await readClipboard();
     if (text === null) return;
@@ -616,6 +877,11 @@
     pastePayload(payload, target);
   }
 
+  /**
+   * Handles a paste event on the UDT tree.
+   *
+   * @param event - clipboard paste event
+   */
   async function handleTreePaste(event: ClipboardEvent) {
     event.stopPropagation();
     const text = event.clipboardData?.getData("text/plain");
@@ -626,6 +892,11 @@
     pastePayload(payload, selectedTreeNode());
   }
 
+  /**
+   * Handles tree keyboard shortcuts for delete, rename, add child, copy and cut.
+   *
+   * @param event - keyup event from the UDT tree
+   */
   function handleTreeKeyup(event: KeyboardEvent) {
     if (isEditableTarget(event.target)) return;
     const node = selectedTreeNode();

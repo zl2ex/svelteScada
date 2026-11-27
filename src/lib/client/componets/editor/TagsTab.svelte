@@ -129,20 +129,40 @@
 
   /**
    * Returns the effective property map stored on the tag row.
+   *
+   * @param tag - tag options whose properties are read
+   * @returns the tag properties, or an empty map when unset
    */
   function propertiesForTag(tag: TagOptionsInput): TagProperties {
     return (tag.properties ?? {}) as TagProperties;
   }
 
+  /**
+   * Resolves a tag config through the script evaluator.
+   *
+   * @param config - tag options to resolve
+   * @returns the resolved tag options
+   */
   function resolvedTagConfig(config: TagOptionsInput) {
     return editorEvaluator.resolveTagConfig(config);
   }
 
+  /**
+   * Saves a partial change to a tag after resolving the resulting config.
+   *
+   * @param node - existing tag options
+   * @param changes - partial tag fields to apply
+   */
   function saveTagConfig(node: TagOptionsInput, changes: Partial<Omit<TagOptionsInput, "id">>) {
     const resolved = resolvedTagConfig({ ...node, ...changes });
     tagPatchesCollection.update(node.id, resolved);
   }
 
+  /**
+   * Adds a resolved tag, expanding UDT definitions into effective rows when applicable.
+   *
+   * @param config - tag options to resolve and add
+   */
   function addResolvedTag(config: TagOptionsInput) {
     const resolved = resolvedTagConfig(config);
     const definition = udtDefinitionsByName[resolved.dataType];
@@ -157,10 +177,10 @@
   }
 
   /**
-   * Returns whether a top-level tag binding is currently configured.
-   */
-  /**
    * Returns the effective binding expressions for a tag, including UDT instance overrides.
+   *
+   * @param node - tag options whose bindings are read
+   * @returns merge of top-level bindings and UDT override bindings
    */
   function bindingsForTag(node: TagOptionsInput) {
     return { ...(node.bindings ?? {}), ...(node.udtOverrides?.bindings ?? {}) };
@@ -168,6 +188,10 @@
 
   /**
    * Returns whether a tag binding is configured.
+   *
+   * @param node - tag options to inspect
+   * @param key - binding key to check
+   * @returns true when the effective binding expression is non-blank
    */
   function isTagBound(node: TagOptionsInput, key: TagBindingKey) {
     return Boolean(bindingsForTag(node)[key]?.trim());
@@ -192,6 +216,11 @@
     ),
   );
 
+  /**
+   * Selects a tag if needed and opens its editor popover.
+   *
+   * @param tag - tag to open in the editor
+   */
   function openTagEditor(tag: TagOptionsInput) {
     if (!editor.tagSelectionIds.includes(tag.id)) {
       editor.tagSelectionIds = [tag.id];
@@ -200,6 +229,9 @@
     activeTagId = tag.id;
   }
 
+  /**
+   * Closes the active tag editor popover.
+   */
   function closeTagEditor() {
     activeTagId = null;
   }
@@ -210,12 +242,25 @@
     }
   });
 
+  /**
+   * Returns whether a tag represents a UDT definition or child instance.
+   *
+   * @param tag - tag options to inspect
+   * @returns true when the tag is linked to a UDT definition
+   */
   function isUdtInstance(tag: TagOptionsInput): boolean {
     return Boolean(
       tag.udtDefinitionChildId || tag.udtDefinitionId || udtDefinitionsByName[tag.dataType],
     );
   }
 
+  /**
+   * Compares two values by their JSON serialization.
+   *
+   * @param a - first value to compare
+   * @param b - second value to compare
+   * @returns true when both values serialize identically
+   */
   function sameValue(a: unknown, b: unknown): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
   }
@@ -224,6 +269,8 @@
    * Saves edits to selected tags.
    * UDT rows write effective values to the top level and keep explicit override differences
    * in `udtOverrides` for indicators and later reset behavior.
+   *
+   * @param changes - partial tag fields to apply to every selected tag
    */
   function saveSelectedTags(changes: Partial<Omit<TagOptionsInput, "id">>) {
     if (selectedTags.length === 0) return;
@@ -288,6 +335,8 @@
   /**
    * Saves property edits, writing effective properties to the top level and keeping
    * explicit property differences in `udtOverrides.properties`.
+   *
+   * @param updater - function producing the next properties from the current ones
    */
   function updateSelectedTagProperties(updater: (properties: TagProperties) => TagProperties) {
     if (selectedTags.length === 0) return;
@@ -348,12 +397,24 @@
     rebuildUdtInstances(tagPatchesCollection, udtDefinitionsCollection);
   }
 
+  /**
+   * Returns the shared binding value for the selection, or an empty string when mixed.
+   *
+   * @param key - binding key to read
+   * @returns the common binding expression, or "" when the selection differs or is empty
+   */
   function selectedBindingValue(key: TagBindingKey) {
     if (selectedTags.length === 0) return "";
     const first = bindingsForTag(selectedTags[0])[key] ?? "";
     return selectedTags.every((tag) => (bindingsForTag(tag)[key] ?? "") === first) ? first : "";
   }
 
+  /**
+   * Returns whether selected tags have differing binding expressions for a key.
+   *
+   * @param key - binding key to compare
+   * @returns true when any selected tag differs from the first
+   */
   function selectedBindingMixed(key: TagBindingKey) {
     if (selectedTags.length === 0) return false;
     const first = bindingsForTag(selectedTags[0])[key] ?? "";
@@ -362,6 +423,9 @@
 
   /**
    * Returns bound/mixed state for a field without evaluating the binding.
+   *
+   * @param key - binding key to inspect
+   * @returns bound and mixed flags for the selection
    */
   function selectedBindingState(key: TagBindingKey) {
     const boundTags = selectedTags.filter((tag) => isTagBound(tag, key));
@@ -397,6 +461,9 @@
 
   /**
    * Returns the cached binding error for the first selected tag when expressions are not mixed.
+   *
+   * @param key - binding key to read
+   * @returns the cached error message, or null when unavailable
    */
   function selectedBindingError(key: TagBindingKey) {
     if (selectedTags.length === 0 || selectedBindingMixed(key)) return null;
@@ -407,6 +474,9 @@
    * Saves a binding expression for the selected tags.
    * For UDT instances, the expression is stored as an override binding and its resolved value
    * is written directly to the effective top-level field sent to the server.
+   *
+   * @param key - binding key to update
+   * @param expression - binding expression to store, blank to clear
    */
   function saveSelectedBinding(key: TagBindingKey, expression: string) {
     if (selectedTags.length === 0) return;
@@ -484,6 +554,12 @@
     undoManager.endTransaction();
   }
 
+  /**
+   * Returns whether any selected tag has an explicit property override for a key.
+   *
+   * @param key - property key to check
+   * @returns true when at least one selected tag overrides the property
+   */
   function hasSelectedPropertyOverride(key: string) {
     return selectedTags.some(
       (tag) =>
@@ -494,6 +570,8 @@
 
   /**
    * Clears a property override and restores the inherited/default property value.
+   *
+   * @param key - property key whose override is cleared
    */
   function clearSelectedPropertyOverride(key: string) {
     if (selectedTags.length === 0) return;
@@ -541,6 +619,12 @@
     rebuildUdtInstances(tagPatchesCollection, udtDefinitionsCollection);
   }
 
+  /**
+   * Returns whether any selected tag has an explicit top-level UDT override.
+   *
+   * @param key - override key to check
+   * @returns true when at least one selected tag overrides the key
+   */
   function hasSelectedOverride(key: string) {
     return selectedTags.some(
       (tag) => !!tag.udtOverrides && Object.prototype.hasOwnProperty.call(tag.udtOverrides, key),
@@ -549,6 +633,8 @@
 
   /**
    * Clears a top-level override and restores the value inherited from the UDT definition.
+   *
+   * @param key - override key whose value is restored
    */
   function clearSelectedOverride(key: string) {
     if (selectedTags.length === 0) return;
@@ -593,11 +679,20 @@
   let dragging = $state<TreeDragPayload | null>(null);
   let dropFolderId = $state<string | null>(null);
 
+  /**
+   * Clears the current drag payload and drop target highlight.
+   */
   function clearTagDrag() {
     dragging = null;
     dropFolderId = null;
   }
 
+  /**
+   * Starts dragging a tag or folder and writes the payload to the data transfer.
+   *
+   * @param ev - drag start event
+   * @param node - tag or folder being dragged
+   */
   function handleTagDragStart(ev: DragEvent, node: ClosureTableNode | TagOptionsInput) {
     const payload: TreeDragPayload = isClosureTableNode(node)
       ? { kind: "tag-folder", id: node.id }
@@ -607,6 +702,13 @@
     writeTreeDragData(ev, payload);
   }
 
+  /**
+   * Returns whether a folder sits below an ancestor folder, including staged folders.
+   *
+   * @param candidateId - folder id to test
+   * @param ancestorId - potential ancestor folder id
+   * @returns true when candidate is a descendant of ancestor
+   */
   function isFolderDescendant(candidateId: string, ancestorId: string) {
     const allFolders = {
       ...tagFolderPatchesCollection.state,
@@ -620,6 +722,12 @@
     return false;
   }
 
+  /**
+   * Returns whether the current drag payload may be dropped on a folder.
+   *
+   * @param targetId - destination folder id
+   * @returns true when the drop is allowed
+   */
   function canDropOnFolder(targetId: string) {
     if (!dragging) return false;
     if (dragging.kind === "tag") return true;
@@ -628,6 +736,12 @@
     return !isFolderDescendant(targetId, dragging.id);
   }
 
+  /**
+   * Updates the drop highlight and transfer effect while dragging over a folder.
+   *
+   * @param ev - drag over event
+   * @param targetId - folder being hovered
+   */
   function handleTagDragOver(ev: DragEvent, targetId: string) {
     if (!canDropOnFolder(targetId)) {
       ev.stopPropagation();
@@ -641,6 +755,12 @@
     if (dropFolderId !== targetId) dropFolderId = targetId;
   }
 
+  /**
+   * Clears the drop highlight when leaving a folder without entering a child.
+   *
+   * @param ev - drag leave event
+   * @param targetId - folder being left
+   */
   function handleTagDragLeave(ev: DragEvent, targetId: string) {
     const current = ev.currentTarget;
     if (
@@ -653,6 +773,12 @@
     if (dropFolderId === targetId) dropFolderId = null;
   }
 
+  /**
+   * Moves or reparents the dragged tag or folder into the target folder.
+   *
+   * @param ev - drop event
+   * @param targetFolder - folder receiving the drop
+   */
   function handleTagDrop(ev: DragEvent, targetFolder: ClosureTableNode) {
     const payload = dragging ?? readTreeDragData(ev);
     if (!payload) {
@@ -733,6 +859,11 @@
   const id = "TAGS_TREE";
   const TREE_EXPANDED_KEY = `editor-tree-expanded-${id}`;
 
+  /**
+   * Loads the persisted expanded tree ids from local storage.
+   *
+   * @returns stored id list, or an empty array outside the browser or on error
+   */
   function loadExpandedFromStorage(): string[] {
     if (!browser) return [];
     const stored = attempt(() => localStorage.getItem(TREE_EXPANDED_KEY));
@@ -789,6 +920,11 @@
 
   // --- Helpers ------------------------------------------
 
+  /**
+   * Expands every ancestor folder of the given tree ids.
+   *
+   * @param ids - selected tag or folder ids to reveal
+   */
   function expandSelected(ids: string[]) {
     const allFolders = {
       ...tagFolderPatchesCollection.state,
@@ -813,12 +949,24 @@
     treeView().setExpandedValue([...expanded]);
   }
 
+  /**
+   * Narrows an object to a closure table folder node.
+   *
+   * @param node - object to test
+   * @returns true when the object has folder id, name and parentId fields
+   */
   function isClosureTableNode(node: object): node is ClosureTableNode {
     return (
       Object.hasOwn(node, "id") && Object.hasOwn(node, "name") && Object.hasOwn(node, "parentId")
     );
   }
 
+  /**
+   * Resolves tree ids into folder and tag records, including staged items.
+   *
+   * @param values - tree node ids to resolve
+   * @returns collected folders and tags
+   */
   function collectItems(values: string[]) {
     const allFolders = {
       ...tagFolderPatchesCollection.state,
@@ -837,12 +985,23 @@
     return { folders, tags };
   }
 
+  /**
+   * Resolves the current tree selection into folder and tag records.
+   *
+   * @returns collected folders and tags for the selection
+   */
   function getSelectedItems() {
     return collectItems(treeView().selectedValue);
   }
 
   // ── Keyboard shortcuts ────────────────────────────────
 
+  /**
+   * Writes text to the system clipboard.
+   *
+   * @param text - text to copy
+   * @returns ok(null) on success, or an err with CLIPBOARD_WRITE_FAILED
+   */
   async function copyToClipboard(text: string) {
     const result = await attempt(() => navigator.clipboard.writeText(text));
     if (result.isErr) {
@@ -856,6 +1015,12 @@
 
   // ── Folder operations ─────────────────────────────────
 
+  /**
+   * Recursively collects tags inside the given folders.
+   *
+   * @param nodes - folders whose descendant tags are collected
+   * @returns tags in the folders and all nested subfolders
+   */
   function getChildTags(nodes: ClosureTableNode[]): TagOptionsInput[] {
     return nodes.flatMap((n) => {
       let childTags = Object.values(tagPatchesCollection.state).filter((f) => f.folderId == n.id);
@@ -866,6 +1031,12 @@
     });
   }
 
+  /**
+   * Recursively collects child folders of the given folders.
+   *
+   * @param nodes - folders whose descendants are collected
+   * @returns all nested child folders
+   */
   function getChildFolders(nodes: ClosureTableNode[]): ClosureTableNode[] {
     return nodes.flatMap((n) => {
       let childFolders = Object.values(tagFolderPatchesCollection.state).filter(
@@ -875,7 +1046,11 @@
     });
   }
 
-  // delete all tags and folders inside the parent folder
+  /**
+   * Deletes the given folders together with every nested folder and tag.
+   *
+   * @param nodes - folders to delete
+   */
   function foldersDelete(nodes: ClosureTableNode[]) {
     let childTags = getChildTags(nodes);
     let childFolders = getChildFolders(nodes);
@@ -889,6 +1064,11 @@
     undoManager.endTransaction();
   }
 
+  /**
+   * Copies folder references to the clipboard and deletes the folders.
+   *
+   * @param nodes - folders to cut
+   */
   async function foldersCut(nodes: ClosureTableNode[]) {
     const copied = await copyToClipboard(
       JSON.stringify(nodes.map((n) => ({ id: n.id, name: n.name }))),
@@ -901,6 +1081,11 @@
 
   // ── Tag operations ────────────────────────────────────
 
+  /**
+   * Copies tags to the clipboard and removes them.
+   *
+   * @param tags - tags to cut
+   */
   async function tagsCut(tags: TagOptionsInput[]) {
     const copied = await copyToClipboard(JSON.stringify(tags));
     if (copied.isErr()) {
@@ -909,12 +1094,22 @@
     tagPatchesCollection.removeMany(tags.map((t) => t.id));
   }
 
+  /**
+   * Removes the given tags.
+   *
+   * @param tags - tags to remove
+   */
   function tagsDelete(tags: TagOptionsInput[]) {
     tagPatchesCollection.removeMany(tags.map((t) => t.id));
   }
 
   // ── Global tree keyboard handler ──────────────────────
 
+  /**
+   * Handles tree keyboard shortcuts for delete, rename, add, copy, path copy and cut.
+   *
+   * @param e - keyup event from the tree
+   */
   async function handleTreeKeyup(e: KeyboardEvent) {
     const { folders, tags } = getSelectedItems();
     const hasSelection = folders.length > 0 || tags.length > 0;
@@ -994,6 +1189,11 @@
   let contextMenuFolders: ClosureTableNode[] = $state([]);
   let contextMenuTags: TagOptionsInput[] = $state([]);
 
+  /**
+   * Opens the context menu for the tag or folder under the pointer and syncs selection.
+   *
+   * @param event - contextmenu event
+   */
   function handleTreeContextMenu(event: MouseEvent) {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -1026,6 +1226,11 @@
   let stagingFolders = $state<Record<string, ClosureTableNode>>({});
   let stagingTags = $state<Record<string, TagOptionsInput>>({});
 
+  /**
+   * Creates a staged folder under the parent and starts inline renaming.
+   *
+   * @param parentNode - folder that will contain the new folder
+   */
   function addFolder(parentNode: ClosureTableNode) {
     const id = newId();
     stagingFolders[id] = {
@@ -1037,6 +1242,11 @@
     treeView().expand([parentNode.id]);
   }
 
+  /**
+   * Creates a staged tag under the parent and starts inline renaming.
+   *
+   * @param parentNode - folder that will contain the new tag
+   */
   function addTag(parentNode: ClosureTableNode) {
     const id = newId();
     stagingTags[id] = {
@@ -1054,6 +1264,12 @@
     treeView().expand([parentNode.id]);
   }
 
+  /**
+   * Commits an inline folder rename, creating a staged folder when needed.
+   *
+   * @param id - id of the folder being renamed
+   * @param newName - new folder name
+   */
   function finalizeFolderRename(id: string, newName: string) {
     if (renamingId !== id) return;
     renamingId = null;
@@ -1073,12 +1289,23 @@
     }
   }
 
+  /**
+   * Cancels an inline folder rename and drops any staged folder.
+   *
+   * @param id - id of the folder being renamed
+   */
   function cancelFolderRename(id: string) {
     if (renamingId !== id) return;
     renamingId = null;
     delete stagingFolders[id];
   }
 
+  /**
+   * Commits an inline tag rename, adding a staged tag when needed.
+   *
+   * @param id - id of the tag being renamed
+   * @param newName - new tag name
+   */
   function finalizeTagRename(id: string, newName: string) {
     if (renamingId !== id) return;
     renamingId = null;
@@ -1097,13 +1324,24 @@
     }
   }
 
+  /**
+   * Cancels an inline tag rename and drops any staged tag.
+   *
+   * @param id - id of the tag being renamed
+   */
   function cancelTagRename(id: string) {
     if (renamingId !== id) return;
     renamingId = null;
     delete stagingTags[id];
   }
 
-  // checks for duplicate tag names in a specific folder and returns a new unique name if neeeded
+  /**
+   * Checks for duplicate tag names in a specific folder and returns a new unique name if needed.
+   *
+   * @param name - proposed tag name
+   * @param parentNode - folder that will own the tag
+   * @returns a unique tag name
+   */
   function checkDuplicateTagName(name: string, parentNode: ClosureTableNode | undefined) {
     let newName = name;
     const children = Object.values(tagPatchesCollection.state).filter(
@@ -1118,7 +1356,13 @@
     return newName;
   }
 
-  // checks for duplicate folder name in a specific folder and returns a new unique name if neeeded
+  /**
+   * Checks for duplicate folder names in a specific folder and returns a unique name if needed.
+   *
+   * @param name - proposed folder name
+   * @param parentNode - parent folder that will contain it
+   * @returns a unique folder name
+   */
   function checkDuplicateFolderName(name: string, parentNode: ClosureTableNode | undefined) {
     let newName = name;
     const children = Object.values(tagFolderPatchesCollection.state).filter(
@@ -1135,6 +1379,11 @@
 
   // ── Paste ─────────────────────────────────────────────
 
+  /**
+   * Reads text from the system clipboard.
+   *
+   * @returns ok with the clipboard text, or an err with CLIPBOARD_READ_FAILED
+   */
   async function readClipboard() {
     const result = await attempt(() => navigator.clipboard.readText());
     if (result.isErr) {
@@ -1146,6 +1395,13 @@
     return ok(result.data);
   }
 
+  /**
+   * Parses pasted JSON and inserts the contained tags and folders.
+   *
+   * @param text - pasted clipboard text
+   * @param parentNode - folder receiving the pasted items
+   * @returns ok(null) on success, or an err describing invalid input
+   */
   function handlePasteText(text: string, parentNode: ClosureTableNode | undefined) {
     const json = attempt(() => JSON.parse(text));
     if (json.isErr) {
@@ -1256,6 +1512,12 @@
     return ok(null);
   }
 
+  /**
+   * Handles a paste event by reading text and inserting the parsed items.
+   *
+   * @param e - clipboard paste event
+   * @param parentNode - folder receiving the pasted items
+   */
   async function handlePaste(e: ClipboardEvent, parentNode: ClosureTableNode | undefined) {
     const text = e.clipboardData?.getData("text/plain");
     e.stopPropagation();
@@ -1266,6 +1528,11 @@
     }
   }
 
+  /**
+   * Handles a context menu action for the current folder or tag selection.
+   *
+   * @param value - menu item value identifying the action
+   */
   async function handleMenuSelect(value: string) {
     switch (value) {
       case "rename": {

@@ -19,6 +19,9 @@
   let gridEnabled = $state(true);
   let gridSpacing = $state(5);
 
+  /**
+   * Resets all draft fields from the selected project.
+   */
   function resetDrafts() {
     if (!project) return;
     name = project.name;
@@ -29,6 +32,11 @@
     gridSpacing = project.grid_spacing;
   }
 
+  /**
+   * Validates and persists changes to the selected project.
+   *
+   * @param changes - Partial project fields to apply.
+   */
   function saveChanges(changes: Partial<ProjectSelect>) {
     if (!project) return;
 
@@ -49,6 +57,9 @@
     editor.projects.update(project.id, { ...changes, updatedAt });
   }
 
+  /**
+   * Normalizes and saves the project name when it changed.
+   */
   function saveName() {
     if (!project) return;
     const value = name
@@ -64,11 +75,17 @@
     saveChanges({ name: value });
   }
 
+  /**
+   * Saves the project version when it changed.
+   */
   function saveVersion() {
     if (!project || version === project.version) return;
     saveChanges({ version: version.trim() || "0.0.0" });
   }
 
+  /**
+   * Saves the project description when it changed.
+   */
   function saveDescription() {
     if (!project) return;
     const value = description.trim() === "" ? null : description;
@@ -76,18 +93,33 @@
     saveChanges({ description: value });
   }
 
+  /**
+   * Saves the project theme selection.
+   *
+   * @param value - Theme ID, or an empty string to use the fallback.
+   */
   function saveTheme(value: string) {
     if (!project) return;
     themeId = value;
     saveChanges({ themeId: value || null });
   }
 
+  /**
+   * Saves the project grid-enabled flag.
+   *
+   * @param value - Whether the grid is enabled.
+   */
   function saveGridEnabled(value: boolean) {
     if (!project) return;
     gridEnabled = value;
     saveChanges({ grid_enabled: value });
   }
 
+  /**
+   * Parses, clamps, and saves the project grid spacing.
+   *
+   * @param value - Raw spacing input; parsed as a base-10 integer.
+   */
   function saveGridSpacing(value: string) {
     if (!project) return;
     const parsed = Number.parseInt(value, 10);

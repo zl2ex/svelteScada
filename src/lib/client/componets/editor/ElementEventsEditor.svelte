@@ -23,10 +23,20 @@
     events = Object.entries(bindings?.events ?? {}).map(([name, script]) => ({ name, script }));
   });
 
+  /**
+   * Returns a shallow copy of the selected element's bindings.
+   *
+   * @returns Copy of the current bindings, or an empty object when nothing is selected.
+   */
   function currentBindings(): ElementBindings {
     return { ...(selected?.bindings ?? {}) };
   }
 
+  /**
+   * Persists bindings on the selected element.
+   *
+   * @param next - Bindings to save; an empty object stores null.
+   */
   function saveBindings(next: ElementBindings) {
     if (!selected) return;
     editor.elementsCollection?.update(selected.id, {
@@ -35,6 +45,11 @@
     });
   }
 
+  /**
+   * Filters and saves the given event scripts onto the selected element.
+   *
+   * @param nextEvents - Event name/script pairs to persist.
+   */
   function saveEvents(nextEvents: Array<{ name: string; script: string }>) {
     const record: Record<string, string> = {};
     for (const item of nextEvents) {
@@ -46,6 +61,9 @@
     saveBindings(next);
   }
 
+  /**
+   * Validates the new event name and appends an empty event row.
+   */
   function addEvent() {
     const name = newEventName.trim().replace(/^on/i, "").toLowerCase();
     if (!name) return;
@@ -61,11 +79,21 @@
     newEventName = "";
   }
 
+  /**
+   * Removes an event by name and persists the remaining events.
+   *
+   * @param name - Event name to remove.
+   */
   function removeEvent(name: string) {
     events = events.filter((item) => item.name !== name);
     saveEvents(events);
   }
 
+  /**
+   * Adds the pending event when Enter is pressed.
+   *
+   * @param event - Keyboard event from the new event input.
+   */
   function onNewEventKeydown(event: KeyboardEvent) {
     if (event.key === "Enter") addEvent();
   }

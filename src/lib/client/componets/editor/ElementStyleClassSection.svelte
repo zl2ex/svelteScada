@@ -29,10 +29,22 @@
     element,
   });
 
+  /**
+   * Returns the stored style-class binding expression for a class name.
+   *
+   * @param className - Style class name to look up.
+   * @returns Binding expression, or an empty string when unbound.
+   */
   function bindingFor(className: string) {
     return element.bindings?.styleClass?.[className] ?? "";
   }
 
+  /**
+   * Evaluates the style-class binding for a class name.
+   *
+   * @param className - Style class name to evaluate.
+   * @returns Whether the class applies and any evaluation error message.
+   */
   function bindingResult(className: string) {
     const expression = bindingFor(className);
     if (!expression.trim()) return { result: false, error: null };
@@ -42,6 +54,11 @@
       : { result: Boolean(evaluation.value), error: null };
   }
 
+  /**
+   * Replaces the element's applied style classes.
+   *
+   * @param next - Complete list of style classes to store.
+   */
   function updateClasses(next: string[]) {
     editor.elementsCollection?.update(element.id, {
       styleClass: next,
@@ -49,11 +66,21 @@
     });
   }
 
+  /**
+   * Appends a class to the element if it is not already applied.
+   *
+   * @param className - Style class name to add.
+   */
   function addClass(className: string) {
     if (!className || applied.includes(className)) return;
     updateClasses([...applied, className]);
   }
 
+  /**
+   * Removes a class and its binding from the element.
+   *
+   * @param className - Style class name to remove.
+   */
   function removeClass(className: string) {
     editor.elementsCollection?.update(element.id, {
       styleClass: applied.filter((name) => name !== className),
@@ -62,6 +89,12 @@
     });
   }
 
+  /**
+   * Saves a style-class binding expression on the element.
+   *
+   * @param className - Style class name the binding targets.
+   * @param expression - Binding expression; an empty string removes it.
+   */
   function saveBinding(className: string, expression: string) {
     editor.elementsCollection?.update(element.id, {
       bindings: setBinding(element, "styleClass", className, expression),

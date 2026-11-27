@@ -101,16 +101,32 @@
     };
   });
 
+  /**
+   * Saves the text value across the selected elements.
+   *
+   * @param value - New text; an empty string clears it.
+   */
   function saveText(value: string) {
     updateElements(editor.elementsCollection, elements, () => ({
       text: value === "" ? null : value,
     }));
   }
 
+  /**
+   * Saves the name across the selected elements.
+   *
+   * @param value - New element name.
+   */
   function saveName(value: string) {
     updateElements(editor.elementsCollection, elements, () => ({ name: value }));
   }
 
+  /**
+   * Saves an attribute or prop value on the selected elements.
+   *
+   * @param row - Row identifying the attribute or prop key.
+   * @param raw - Raw input value; an empty string clears the value.
+   */
   function saveAttributeValue(row: ElementBindingRowData, raw: string) {
     updateElements(editor.elementsCollection, elements, (element) => {
       if (attributeScope === "props") {
@@ -135,18 +151,38 @@
     });
   }
 
+  /**
+   * Saves a style value on the selected elements.
+   *
+   * @param row - Row identifying the style property key.
+   * @param raw - Raw style value; an empty string clears the property.
+   */
   function saveStyleValue(row: ElementBindingRowData, raw: string) {
     updateElements(editor.elementsCollection, elements, (element) => ({
       style: setStyleProperty(element, row.key, raw === "" ? null : raw),
     }));
   }
 
+  /**
+   * Saves a binding expression for the given scope and key on selected elements.
+   *
+   * @param scope - Binding scope to write to.
+   * @param key - Binding key within the scope.
+   * @param expression - Binding expression; an empty string removes it.
+   */
   function saveBinding(scope: BindingScope, key: string, expression: string) {
     updateElements(editor.elementsCollection, elements, (element) => ({
       bindings: setBinding(element, scope, key, expression),
     }));
   }
 
+  /**
+   * Adds an attribute or prop row to the selected elements.
+   *
+   * @param key - Attribute or prop name; must be non-empty and not already present.
+   * @param value - Initial value for the new entry.
+   * @returns True when the row was added, false when rejected.
+   */
   function addAttribute(key: string, value: string) {
     if (!key.trim()) return false;
     if (attributeRows.some((row) => row.key === key)) return false;
@@ -168,6 +204,13 @@
     return true;
   }
 
+  /**
+   * Adds a style row to the selected elements unless it is appearance-managed.
+   *
+   * @param key - Style property name; must be non-empty and not already present.
+   * @param value - Initial style value.
+   * @returns True when the row was added, false when rejected.
+   */
   function addStyleRow(key: string, value: string) {
     if (!key.trim()) return false;
     if (appearanceKeys.has(key)) {
@@ -186,6 +229,11 @@
     return true;
   }
 
+  /**
+   * Removes an attribute or prop row and its binding unless the row is required.
+   *
+   * @param row - Row identifying the attribute or prop to remove.
+   */
   function removeAttributeRow(row: ElementBindingRowData) {
     if (row.required) return;
 
@@ -197,6 +245,11 @@
     }));
   }
 
+  /**
+   * Removes a style row from the selected elements.
+   *
+   * @param row - Row identifying the style property to remove.
+   */
   function removeStyle(row: ElementBindingRowData) {
     updateElements(editor.elementsCollection, elements, (element) => removeStyleRow(element, row.key));
   }

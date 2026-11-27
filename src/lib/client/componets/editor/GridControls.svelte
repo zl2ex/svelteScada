@@ -14,6 +14,11 @@
     };
   });
 
+  /**
+   * Parses and applies a clamped grid spacing value.
+   *
+   * @param value - Raw spacing input; parsed as a base-10 integer.
+   */
   function setSpacing(value: string) {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isFinite(parsed)) return;

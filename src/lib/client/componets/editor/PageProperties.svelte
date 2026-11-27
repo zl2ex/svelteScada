@@ -22,6 +22,11 @@
     name = activePage.name;
   });
 
+  /**
+   * Saves the active project's theme selection.
+   *
+   * @param value - Theme ID, or an empty string to use the fallback.
+   */
   function saveProjectTheme(value: string) {
     if (!activeProject) return;
     projectThemeId = value;
@@ -31,6 +36,9 @@
     });
   }
 
+  /**
+   * Saves the active page's draft name.
+   */
   function saveName() {
     if (!activePage) return;
     editor.pagesCollection.update(activePage.id, { name, updatedAt: Date.now() });

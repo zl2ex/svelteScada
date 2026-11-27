@@ -77,6 +77,12 @@
     },
   });
 
+  /**
+   * Coerces a script result into an attribute value.
+   *
+   * @param value - Raw value from evaluation.
+   * @returns Primitive value as-is, a stringified object, or undefined for null/undefined.
+   */
   function toAttributeValue(value: unknown): AttributeValue | undefined {
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       return value;
@@ -163,17 +169,32 @@
       : undefined,
   );
 
+  /**
+   * Attaches preview event scripts to a DOM node and returns lifecycle controls.
+   *
+   * @param node - DOM element receiving the native event listeners.
+   * @param params - Event scripts and execution context.
+   * @returns An object with update and destroy lifecycle methods.
+   */
   function eventScripts(
     node: Element,
     params: { events: Record<string, string>; context: EventActionContext },
   ) {
     let cleanup: Array<() => void> = [];
 
+    /**
+     * Replaces all attached listeners with those from the current params.
+     */
     const attach = () => {
       for (const remove of cleanup) remove();
       cleanup = [];
       for (const [name, script] of Object.entries(params.events)) {
         if (!name.trim() || !script.trim()) continue;
+        /**
+         * Runs an event script for a single native event.
+         *
+         * @param event - Native event to snapshot and pass to the script.
+         */
         const handler = (event: Event) => {
           void runEventScript(script, {
             ...params.context,
@@ -188,10 +209,18 @@
     attach();
 
     return {
+      /**
+       * Updates the event parameters and reattaches listeners.
+       *
+       * @param next - Replacement event scripts and context.
+       */
       update(next: { events: Record<string, string>; context: EventActionContext }) {
         params = next;
         attach();
       },
+      /**
+       * Removes all attached event listeners.
+       */
       destroy() {
         for (const remove of cleanup) remove();
         cleanup = [];

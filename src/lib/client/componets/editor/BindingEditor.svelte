@@ -34,10 +34,16 @@
     draftBinding = binding;
   });
 
+  /**
+   * Saves the current draft binding after trimming whitespace.
+   */
   function saveBinding() {
     onBindingSave(draftBinding.trim());
   }
 
+  /**
+   * Reverts the draft binding to the last committed binding.
+   */
   function revertBinding() {
     draftBinding = binding;
   }

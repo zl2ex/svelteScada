@@ -28,24 +28,49 @@
   let fields = $derived(appearanceFieldsFor(elements));
   let themeCss = $derived(editor.activeTheme?.projectStyle ?? "");
 
+  /**
+   * Applies a raw style value to the given property across all selected elements.
+   *
+   * @param property - CSS style property name.
+   * @param raw - New value; an empty string clears the property.
+   */
   function saveValue(property: string, raw: string) {
     updateElements(editor.elementsCollection, elements, (element) => ({
       style: setStyleProperty(element, property, raw === "" ? null : raw),
     }));
   }
 
+  /**
+   * Saves a style binding expression for the given property across selected elements.
+   *
+   * @param property - CSS style property name.
+   * @param expression - Binding expression; an empty string removes the binding.
+   */
   function saveBinding(property: string, expression: string) {
     updateElements(editor.elementsCollection, elements, (element) => ({
       bindings: setBinding(element, "style", property, expression),
     }));
   }
 
+  /**
+   * Removes the style row for the given property across selected elements.
+   *
+   * @param property - CSS style property name.
+   */
   function removeField(property: string) {
     updateElements(editor.elementsCollection, elements, (element) =>
       removeStyleRow(element, property),
     );
   }
 
+  /**
+   * Builds select options for an appearance field.
+   *
+   * @param field - Appearance field definition.
+   * @param value - Current field value.
+   * @param mixed - Whether selected elements have differing values.
+   * @returns Option list, prefixed with a Mixed entry when values differ.
+   */
   function selectOptions(field: AppearanceField, value: string, mixed: boolean) {
     const options = appearanceOptions(field, value);
     if (!mixed) return options;

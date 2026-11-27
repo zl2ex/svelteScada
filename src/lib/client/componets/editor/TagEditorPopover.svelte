@@ -61,6 +61,12 @@
     onPropertyOverrideClear,
   }: Props = $props();
 
+  /**
+   * Reads a tag field and reports whether values differ across tags.
+   *
+   * @param read - Selector reading the field from a tag.
+   * @returns The shared value and a mixed flag.
+   */
   function valueOf<T>(read: (tag: TagOptionsInput) => T) {
     if (tags.length === 0) return { mixed: false, value: undefined as T | undefined };
     const first = read(tags[0]);
@@ -70,6 +76,12 @@
       : { mixed: false, value: first };
   }
 
+  /**
+   * Reads and JSON-serializes a tag field to compare values across tags.
+   *
+   * @param read - Selector reading the field from a tag.
+   * @returns The serialized shared value and a mixed flag.
+   */
   function jsonValueOf(read: (tag: TagOptionsInput) => unknown) {
     if (tags.length === 0) return { mixed: false, value: undefined as string | undefined };
     const values = tags.map((tag) => JSON.stringify(read(tag) ?? null));
@@ -111,6 +123,12 @@
     })),
   );
 
+  /**
+   * Merges a patch into a tag property and publishes the change.
+   *
+   * @param key - Property name to update.
+   * @param patch - Partial property value to merge.
+   */
   function updateProperty(key: string, patch: Partial<PropertyValue>) {
     onPropertiesChange((properties) => {
       const next = { ...properties };
@@ -140,6 +158,9 @@
 
   /**
    * Returns the effective binding state for a field without evaluating its script.
+   *
+   * @param key - Binding key to inspect.
+   * @returns Effective binding state for the field.
    */
   function stateOf(key: TagBindingKey) {
     return bindingState(key);
@@ -147,6 +168,10 @@
 
   /**
    * Returns whether the field should be disabled because it is bound or read-only.
+   *
+   * @param key - Binding key to inspect.
+   * @param [editable] - Whether the field is editable (defaults to canUpdate).
+   * @returns True when the field is bound or not editable.
    */
   function disabledFor(key: TagBindingKey, editable = canUpdate) {
     return stateOf(key).bound || !editable;
@@ -154,10 +179,19 @@
 
   /**
    * Sets the native checkbox indeterminate state.
+   *
+   * @param node - Checkbox input to update.
+   * @param value - Whether the checkbox is indeterminate.
+   * @returns Action with an update method for reactive changes.
    */
   function indeterminate(node: HTMLInputElement, value: boolean) {
     node.indeterminate = value;
     return {
+      /**
+       * Updates the native indeterminate state.
+       *
+       * @param next - Whether the checkbox is indeterminate.
+       */
       update(next: boolean) {
         node.indeterminate = next;
       },
@@ -195,6 +229,9 @@
 
   /**
    * Returns whether any tag in the section has a base or UDT override binding.
+   *
+   * @param section - Section definition to inspect.
+   * @returns True when any tag has a binding for a field in the section.
    */
   function isBindingsForSection(section: TagEditPopoverSections[number]) {
     return tags.some((tag) =>
@@ -204,6 +241,11 @@
     );
   }
 
+  /**
+   * Scrolls to and focuses a popover section by ID.
+   *
+   * @param id - Section element ID.
+   */
   function focusSection(id: string) {
     if (!sectionsElement) return;
     const section = sectionsElement.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
@@ -217,6 +259,11 @@
     section.focus({ preventScroll: true });
   }
 
+  /**
+   * Finds the section currently at the popover's reading line.
+   *
+   * @returns The active section ID, or null when unavailable.
+   */
   function sectionAtReadingLine() {
     if (!sectionsElement) return null;
     const line = sectionsElement.getBoundingClientRect().top + sectionsElement.clientHeight * 0.2;

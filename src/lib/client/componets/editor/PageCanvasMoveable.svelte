@@ -136,12 +136,25 @@
   let staticDrag: StaticDrag | null = null;
   let nudgeSession: Record<string, NudgeElementSnapshot> | null = null;
 
+  /**
+   * Returns whether an element uses static flow layout rather than absolute or fixed positioning.
+   *
+   * SVG elements are always treated as non-static.
+   *
+   * @param element - element record to inspect, may be undefined
+   * @returns true when the element is a non-SVG element in normal flow
+   */
   function isStaticElement(element: ElementRecord | undefined) {
     if (!element || element.kind === "svg") return false;
     const position = element.style.position;
     return position !== "absolute" && position !== "fixed";
   }
 
+  /**
+   * Builds gesture snapshots for every target that still has a selected element.
+   *
+   * @returns fresh gesture target snapshots with geometry, units and original values
+   */
   function createStates(): GestureTarget[] {
     return targets.flatMap((target, index) => {
       const selected = selectedElements[index];
@@ -170,6 +183,14 @@
     });
   }
 
+  /**
+   * Snaps each non-static gesture box to the grid and writes the preview state.
+   *
+   * Mutates the provided snapshots, updates the element collection without history and refreshes
+   * the moveable rect.
+   *
+   * @param states - gesture snapshots whose start boxes are snapped to the grid
+   */
   function snapGestureBoxes(states: GestureTarget[]) {
     const collection = editor.elementsCollection;
     if (!collection) return;
@@ -222,6 +243,11 @@
     moveable?.updateRect();
   }
 
+  /**
+   * Starts a gesture of the given kind, committing any pending nudge session first.
+   *
+   * @param kind - gesture kind to begin
+   */
   function beginGesture(kind: GestureKind) {
     if (nudgeSession) commitNudgeSelection();
     gesture = { kind, states: createStates() };
@@ -229,11 +255,24 @@
     if (kind === "drag" || kind === "resize") snapGestureBoxes(gesture.states);
   }
 
+  /**
+   * Finds the gesture snapshot for a target, starting a new gesture when needed.
+   *
+   * @param target - moveable target to look up
+   * @param kind - gesture kind the target must belong to
+   * @returns the matching gesture target snapshot, or undefined when not tracked
+   */
   function stateFor(target: MoveableElement, kind: GestureKind) {
     if (!gesture || gesture.kind !== kind) beginGesture(kind);
     return gesture?.states.find((state) => state.target === target);
   }
 
+  /**
+   * Builds an element record using the pre-gesture style, attributes and sort index.
+   *
+   * @param state - gesture target snapshot to read from
+   * @returns element record cloned from the original values
+   */
   function originalElement(state: GestureTarget): ElementRecord {
     return {
       ...state.element,
@@ -242,6 +281,12 @@
     };
   }
 
+  /**
+   * Builds an element record using the current base style and attributes of a gesture.
+   *
+   * @param state - gesture target snapshot to read from
+   * @returns element record cloned from the base values
+   */
   function previewElement(state: GestureTarget): ElementRecord {
     return {
       ...state.element,
@@ -250,6 +295,15 @@
     };
   }
 
+  /**
+   * Merges a style patch into a copy of the original style.
+   *
+   * Empty string values remove the corresponding property.
+   *
+   * @param original - base style to copy
+   * @param patch - style changes to apply, may be undefined
+   * @returns the merged style object
+   */
   function mergeStyleChanges(
     original: ElementStyle,
     patch: Record<string, string> | undefined,
@@ -262,6 +316,15 @@
     return next;
   }
 
+  /**
+   * Merges an attribute patch into a copy of the original attributes.
+   *
+   * Empty string values remove the corresponding attribute.
+   *
+   * @param original - base attributes to copy
+   * @param patch - attribute changes to apply, may be undefined
+   * @returns the merged attributes object
+   */
   function mergeAttributeChanges(
     original: ElementAttributes,
     patch: Record<string, string | number | boolean> | undefined,
@@ -274,6 +337,11 @@
     return next;
   }
 
+  /**
+   * Writes a geometry preview for a target into the element collection without history.
+   *
+   * @param state - gesture snapshot whose current box is previewed
+   */
   function previewGeometry(state: GestureTarget) {
     const changes = captureBoxChanges(
       previewElement(state),
@@ -292,6 +360,11 @@
     flushSync();
   }
 
+  /**
+   * Writes a scale preview for a target, preferring SVG scale attributes when available.
+   *
+   * @param state - gesture snapshot holding the current scale factors
+   */
   function previewScale(state: GestureTarget) {
     const source = previewElement(state);
     const attributes = svgScaleAttributes(
@@ -319,6 +392,13 @@
     flushSync();
   }
 
+  /**
+   * Previews a translation-only drag for static-flow elements using a CSS transform.
+   *
+   * @param states - gesture snapshots belonging to static elements
+   * @param dx - horizontal drag distance in pixels
+   * @param dy - vertical drag distance in pixels
+   */
   function previewStaticDrag(states: GestureTarget[], dx: number, dy: number) {
     editor.elementsCollection?.mutateStateWithoutHistory((records) => {
       for (const state of states) {
@@ -333,11 +413,21 @@
     flushSync();
   }
 
+  /**
+   * Returns the moveable target option for the current target list.
+   *
+   * @returns null for no targets, the sole target for one, or the target list otherwise
+   */
   function targetOption() {
     if (targets.length === 0) return null;
     return targets.length === 1 ? targets[0] : targets;
   }
 
+  /**
+   * Computes resize and scale support shared by every selected element.
+   *
+   * @returns capability flags that are true only when all selected elements support them
+   */
   function selectionSupport() {
     const support = selectedElements.map(moveableSupportForElement);
     return {
@@ -346,6 +436,11 @@
     };
   }
 
+  /**
+   * Builds the moveable options from the current targets, selection, grid and canvas.
+   *
+   * @returns moveable options including container, throttles and the SVG geometry control
+   */
   function moveableOptions(): MoveableOptions {
     const support = selectionSupport();
     const container = canvasElement ?? document.body;
@@ -376,10 +471,13 @@
 
   /**
    * re-orderes html nodes in the DOM with their siblings by dragging
-   * @param states
-   * @param dx
-   * @param dy
-   * @param changes
+   *
+   * Records sortIndex changes for the dragged static elements and their siblings.
+   *
+   * @param states - gesture snapshots belonging to static elements
+   * @param dx - horizontal drag distance in pixels
+   * @param dy - vertical drag distance in pixels
+   * @param changes - map collecting pending element changes per id
    */
   function applyStaticReorder(
     states: GestureTarget[],
@@ -450,6 +548,12 @@
     }
   }
 
+  /**
+   * Ends the active gesture, restoring original state and committing collected changes.
+   *
+   * Static reordering and geometry changes are written as one updateMany call; the moveable
+   * rect is refreshed after the next tick.
+   */
   function finishGesture() {
     const active = gesture;
     if (!active) return;
@@ -505,6 +609,11 @@
     void tick().then(() => moveable?.updateRect());
   }
 
+  /**
+   * Snapshots the selected elements and static siblings before a keyboard nudge begins.
+   *
+   * @returns a map of id to pre-nudge style, attributes and sort index, or null when empty
+   */
   function createNudgeSession() {
     const collection = editor.elementsCollection;
     if (!collection) return null;
@@ -532,6 +641,13 @@
     return Object.keys(snapshot).length > 0 ? snapshot : null;
   }
 
+  /**
+   * Previews a keyboard nudge, moving free elements and reordering static ones.
+   *
+   * @param dx - horizontal nudge distance in pixels
+   * @param dy - vertical nudge distance in pixels
+   * @param direction - sibling ordering direction for static elements
+   */
   function previewNudgeSelection(dx: number, dy: number, direction: NudgeDirection) {
     const collection = editor.elementsCollection;
     if (!collection) return;
@@ -584,6 +700,11 @@
     moveable?.updateRect();
   }
 
+  /**
+   * Commits the active nudge session, restoring originals and pushing one history entry.
+   *
+   * Clears the session and refreshes the moveable rect.
+   */
   function commitNudgeSelection() {
     const collection = editor.elementsCollection;
     const session = nudgeSession;
@@ -633,6 +754,13 @@
     moveable?.updateRect();
   }
 
+  /**
+   * Handles arrow-key presses that nudge the selection by one grid step.
+   *
+   * Opens a nudge session lazily and ignores events outside edit mode or in editable targets.
+   *
+   * @param event - keydown event from the canvas
+   */
   function handleNudgeKeydown(event: KeyboardEvent) {
     if (editor.mode !== "edit") return;
     if (isEditableTarget(event.target)) return;
@@ -668,6 +796,11 @@
     previewNudgeSelection(dx, dy, direction);
   }
 
+  /**
+   * Commits the nudge session when an arrow key is released.
+   *
+   * @param event - keyup event from the canvas
+   */
   function handleNudgeKeyup(event: KeyboardEvent) {
     if (nudgeSession === null) return;
     if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
@@ -676,10 +809,18 @@
     commitNudgeSelection();
   }
 
+  /**
+   * Starts a drag gesture.
+   */
   function onDragStart() {
     beginGesture("drag");
   }
 
+  /**
+   * Applies one drag event, routing static elements to reorder previews and others to geometry.
+   *
+   * @param event - moveable drag event for a single target
+   */
   function applyDragEvent(event: OnDrag) {
     const state = stateFor(event.target, "drag");
     if (!state) return;
@@ -704,26 +845,50 @@
     previewGeometry(state);
   }
 
+  /**
+   * Handles a single-target drag event.
+   *
+   * @param event - moveable drag event
+   */
   function onDrag(event: OnDrag) {
     applyDragEvent(event);
   }
 
+  /**
+   * Applies each child event of a group drag.
+   *
+   * @param event - group drag event containing per-target events
+   */
   function onDragGroup(event: OnDragGroup) {
     event.events.forEach(applyDragEvent);
   }
 
+  /**
+   * Ends a single-target drag gesture.
+   */
   function onDragEnd() {
     finishGesture();
   }
 
+  /**
+   * Ends a group drag gesture.
+   */
   function onDragGroupEnd() {
     finishGesture();
   }
 
+  /**
+   * Starts a resize gesture.
+   */
   function onResizeStart() {
     beginGesture("resize");
   }
 
+  /**
+   * Applies one resize event, updating the target box and previewing the geometry.
+   *
+   * @param event - resize event including distance and drag delta
+   */
   function applyResizeEvent(event: OnResize & { dist: number[]; drag: { delta: number[] } }) {
     const state = stateFor(event.target, "resize");
     if (!state) return;
@@ -738,28 +903,52 @@
     previewGeometry(state);
   }
 
+  /**
+   * Handles a single-target resize event.
+   *
+   * @param event - moveable resize event
+   */
   function onResize(event: OnResize) {
     applyResizeEvent(event as OnResize & { dist: number[]; drag: { delta: number[] } });
   }
 
+  /**
+   * Applies each child event of a group resize.
+   *
+   * @param event - group resize event containing per-target events
+   */
   function onResizeGroup(event: OnResizeGroup) {
     event.events.forEach((child) =>
       applyResizeEvent(child as OnResize & { dist: number[]; drag: { delta: number[] } }),
     );
   }
 
+  /**
+   * Ends a single-target resize gesture.
+   */
   function onResizeEnd() {
     finishGesture();
   }
 
+  /**
+   * Ends a group resize gesture.
+   */
   function onResizeGroupEnd() {
     finishGesture();
   }
 
+  /**
+   * Starts a scale gesture.
+   */
   function onScaleStart() {
     beginGesture("scale");
   }
 
+  /**
+   * Applies one scale event, updating the scale factors and previewing the result.
+   *
+   * @param event - moveable scale event with the current scale factors
+   */
   function applyScaleEvent(event: OnScale) {
     const state = stateFor(event.target, "scale");
     if (!state) return;
@@ -773,26 +962,50 @@
     previewScale(state);
   }
 
+  /**
+   * Handles a single-target scale event.
+   *
+   * @param event - moveable scale event
+   */
   function onScale(event: OnScale) {
     applyScaleEvent(event);
   }
 
+  /**
+   * Applies each child event of a group scale.
+   *
+   * @param event - group scale event containing per-target events
+   */
   function onScaleGroup(event: OnScaleGroup) {
     event.events.forEach(applyScaleEvent);
   }
 
+  /**
+   * Ends a single-target scale gesture.
+   */
   function onScaleEnd() {
     finishGesture();
   }
 
+  /**
+   * Ends a group scale gesture.
+   */
   function onScaleGroupEnd() {
     finishGesture();
   }
 
+  /**
+   * Starts a rotate gesture.
+   */
   function onRotateStart() {
     beginGesture("rotate");
   }
 
+  /**
+   * Applies one rotate event and previews the rotated geometry.
+   *
+   * @param event - rotate event including the rotation angle
+   */
   function applyRotateEvent(event: OnRotate & { rotation: number }) {
     const state = stateFor(event.target, "rotate");
     if (!state) return;
@@ -800,26 +1013,50 @@
     previewGeometry(state);
   }
 
+  /**
+   * Handles a single-target rotate event.
+   *
+   * @param event - moveable rotate event
+   */
   function onRotate(event: OnRotate) {
     applyRotateEvent(event as OnRotate & { rotation: number });
   }
 
+  /**
+   * Applies each child event of a group rotate.
+   *
+   * @param event - group rotate event containing per-target events
+   */
   function onRotateGroup(event: OnRotateGroup) {
     event.events.forEach((child) => applyRotateEvent(child as OnRotate & { rotation: number }));
   }
 
+  /**
+   * Ends a single-target rotate gesture.
+   */
   function onRotateEnd() {
     finishGesture();
   }
 
+  /**
+   * Ends a group rotate gesture.
+   */
   function onRotateGroupEnd() {
     finishGesture();
   }
 
+  /**
+   * Starts an origin-drag gesture.
+   */
   function onDragOriginStart() {
     beginGesture("origin");
   }
 
+  /**
+   * Applies an origin-drag event and previews the resulting geometry.
+   *
+   * @param event - moveable origin drag event with the new origin
+   */
   function onDragOrigin(event: OnDragOrigin) {
     const state = stateFor(event.target, "origin");
     if (!state) return;
@@ -827,6 +1064,9 @@
     previewGeometry(state);
   }
 
+  /**
+   * Ends an origin-drag gesture.
+   */
   function onDragOriginEnd() {
     finishGesture();
   }
@@ -878,6 +1118,9 @@
     canvasElement?.addEventListener("keydown", handleNudgeKeydown);
     canvasElement?.addEventListener("keyup", handleNudgeKeyup);
 
+    /**
+     * Schedules a cancellation-safe animation-frame update of the moveable rect.
+     */
     const syncRect = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => instance?.updateRect());

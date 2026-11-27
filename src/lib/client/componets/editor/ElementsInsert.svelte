@@ -17,18 +17,29 @@
   let target = $derived(editor.insertionTargetElement);
   let targetIsSvg = $derived(isSvgContainer(target));
 
+  /**
+   * Inserts an HTML element for the trimmed custom tag when not targeting SVG.
+   */
   function addHtml() {
     const tag = customTag.trim();
     if (!tag || targetIsSvg) return;
     editor.addElement("html", { tag });
   }
 
+  /**
+   * Inserts an SVG element for the given tag.
+   *
+   * @param tag - SVG tag name; whitespace-only values are ignored.
+   */
   function addSvg(tag: string) {
     const value = tag.trim();
     if (!value) return;
     editor.addElement("svg", { tag: value });
   }
 
+  /**
+   * Inserts the selected base component when not targeting SVG.
+   */
   function addBase() {
     if (targetIsSvg) return;
     editor.addElement("base-component", {
@@ -37,6 +48,9 @@
     });
   }
 
+  /**
+   * Inserts the selected user component when not targeting SVG.
+   */
   function addUserComponent() {
     if (!userComponentId || targetIsSvg) return;
     const component = editor.userComponents.find((item) => item.component.id === userComponentId);

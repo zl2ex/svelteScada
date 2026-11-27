@@ -131,6 +131,12 @@
     parentId: null,
   };
 
+  /**
+   * Builds a project tree node from a project record.
+   *
+   * @param project - project to wrap
+   * @returns the project tree node
+   */
   function projectNode(project: ProjectSelect): ProjectNode {
     return {
       kind: "project",
@@ -141,6 +147,12 @@
     };
   }
 
+  /**
+   * Builds a page tree node from a page record.
+   *
+   * @param page - page to wrap
+   * @returns the page tree node
+   */
   function pageNode(page: PageRecord): PageTreeNode {
     return {
       kind: "page",
@@ -151,6 +163,13 @@
     };
   }
 
+  /**
+   * Builds an element tree node from an element record and its page.
+   *
+   * @param element - element to wrap
+   * @param pageId - id of the page containing the element
+   * @returns the element tree node
+   */
   function elementNode(element: ElementRecord, pageId: string): ElementNode {
     return {
       kind: "element",
@@ -162,10 +181,22 @@
     };
   }
 
+  /**
+   * Narrows a tree node to a project node.
+   *
+   * @param node - tree node to test
+   * @returns true when the node is a project node
+   */
   function isProjectNode(node: TreeNode): node is ProjectNode {
     return node.kind === "project";
   }
 
+  /**
+   * Returns the child tree nodes for a root, project, page or element node.
+   *
+   * @param node - node whose children are resolved, may be undefined
+   * @returns child tree nodes, or an empty array when none apply
+   */
   function childrenOf(node: TreeNode | undefined): TreeNode[] {
     if (!node) return [];
 
@@ -291,11 +322,20 @@
   let dragging = $state<TreeDragPayload | null>(null);
   let dropTarget = $state<{ id: string; position: DropPosition } | null>(null);
 
+  /**
+   * Clears the current drag payload and drop target highlight.
+   */
   function clearDrag() {
     dragging = null;
     dropTarget = null;
   }
 
+  /**
+   * Starts dragging a page or element and writes the payload to the data transfer.
+   *
+   * @param ev - drag start event
+   * @param node - tree node being dragged
+   */
   function handleDragStart(ev: DragEvent, node: TreeNode) {
     const payload: TreeDragPayload | null =
       node.kind === "page"
@@ -310,6 +350,14 @@
     writeTreeDragData(ev, payload);
   }
 
+  /**
+   * Resolves the permitted drop position for a payload over a tree node.
+   *
+   * @param event - drag event used for pointer position
+   * @param node - tree node under the pointer
+   * @param payload - current drag payload
+   * @returns the allowed drop position, or null when the drop is invalid
+   */
   function resolveDrop(
     event: DragEvent,
     node: TreeNode,
@@ -361,6 +409,13 @@
     return null;
   }
 
+  /**
+   * Returns whether an element sits below an ancestor element in the tree.
+   *
+   * @param candidateId - element id to test
+   * @param ancestorId - potential ancestor element id
+   * @returns true when candidate is a descendant of ancestor
+   */
   function isElementDescendant(candidateId: string, ancestorId: string) {
     const elements = editor.elementsCollection?.state ?? {};
     let current: ElementRecord | undefined = elements[candidateId];
@@ -371,6 +426,12 @@
     return false;
   }
 
+  /**
+   * Updates the drop target highlight and transfer effect while hovering a tree node.
+   *
+   * @param ev - drag over event
+   * @param node - tree node under the pointer
+   */
   function handleDragOver(ev: DragEvent, node: TreeNode) {
     if (!dragging) return;
     const drop = resolveDrop(ev, node, dragging);
@@ -388,6 +449,12 @@
     }
   }
 
+  /**
+   * Clears the drop target highlight when leaving a node without entering a child.
+   *
+   * @param ev - drag leave event
+   * @param node - tree node being left
+   */
   function handleDragLeave(ev: DragEvent, node: TreeNode) {
     const current = ev.currentTarget;
     if (
@@ -400,6 +467,12 @@
     if (dropTarget?.id === node.id) dropTarget = null;
   }
 
+  /**
+   * Applies a page or element drop on the target node and clears drag state.
+   *
+   * @param ev - drop event
+   * @param node - tree node receiving the drop
+   */
   function handleDropOnNode(ev: DragEvent, node: TreeNode) {
     const payload = dragging ?? readTreeDragData(ev);
     if (!payload) {
@@ -419,6 +492,11 @@
     clearDrag();
   }
 
+  /**
+   * Writes sort indexes for a new page ordering.
+   *
+   * @param pages - pages in their new order
+   */
   function updatePageOrder(pages: PageRecord[]) {
     const now = Date.now();
     editor.pagesCollection.updateMany(
@@ -429,6 +507,13 @@
     );
   }
 
+  /**
+   * Reparents or reorders a page after a drop on a project or page node.
+   *
+   * @param pageId - id of the dragged page
+   * @param node - tree node receiving the drop
+   * @param position - resolved drop position
+   */
   function applyPageDrop(pageId: string, node: TreeNode, position: DropPosition) {
     const dragged = editor.pagesCollection.state[pageId];
     if (!dragged) return;
@@ -453,6 +538,13 @@
     }
   }
 
+  /**
+   * Moves an element after a drop on a page or element node.
+   *
+   * @param elementId - id of the dragged element
+   * @param node - tree node receiving the drop
+   * @param position - resolved drop position
+   */
   function applyElementDrop(elementId: string, node: TreeNode, position: DropPosition) {
     const elements = editor.elementsCollection?.state ?? {};
     const dragged = elements[elementId];
@@ -474,6 +566,14 @@
     moveElement(elementId, target.parentId, target.id, position);
   }
 
+  /**
+   * Moves an element to a parent and reorders affected siblings.
+   *
+   * @param elementId - id of the element to move
+   * @param newParentId - destination parent id, or null for the page root
+   * @param [targetId] - sibling id used to position the element
+   * @param [position] - drop position relative to targetId (defaults to "inside")
+   */
   function moveElement(
     elementId: string,
     newParentId: string | null,
@@ -538,7 +638,8 @@
 
   /**
    * expand all parent elements in the tree and the page itself
-   * @param node tree node to expand all parents of including the page it's on
+   *
+   * @param node - tree node to expand all parents of, including the page it's on
    */
   function expandParents(node: TreeNode) {
     const expanded = treeView().expandedValue;
@@ -552,6 +653,12 @@
     treeView().setExpandedValue(expanded);
   }
 
+  /**
+   * Opens a page by id, navigating to the editor route when elsewhere.
+   *
+   * @param id - page id to open
+   * @returns ok(null) on success, or the error from opening the page
+   */
   async function open(id: string) {
     const result = await editor.openPage(id);
     if (result.isErr()) {
@@ -569,12 +676,22 @@
     return ok(null);
   }
 
+  /**
+   * Adds a page to a project, opens it and starts inline renaming.
+   *
+   * @param projectId - project receiving the new page
+   */
   async function addPage(projectId: string) {
     const id = editor.addPage(projectId);
     await open(id);
     renamingId = id;
   }
 
+  /**
+   * Deletes a page and clears the page context menu target.
+   *
+   * @param id - page id to delete
+   */
   function removePage(id: string) {
     editor.deletePage(id);
     contextMenuPageId = null;
@@ -585,6 +702,11 @@
     | { kind: "page"; projectId: string; pageId: string }
     | { kind: "project"; projectId: string };
 
+  /**
+   * Returns the tree nodes for all selected tree values.
+   *
+   * @returns selected tree nodes in selection order
+   */
   function selectedTreeNodes() {
     const nodes: TreeNode[] = [];
     for (const id of treeView().selectedValue) {
@@ -594,10 +716,20 @@
     return nodes;
   }
 
+  /**
+   * Returns the last selected tree node.
+   *
+   * @returns the primary selected node, or null when selection is empty
+   */
   function primarySelectedNode() {
     return selectedTreeNodes().at(-1) ?? null;
   }
 
+  /**
+   * Returns the tree node representing the current context menu target.
+   *
+   * @returns the context menu tree node, or undefined when none is set
+   */
   function contextTreeNode() {
     if (contextMenuElement && editor.activePageId) {
       return elementNode(contextMenuElement, editor.activePageId);
@@ -607,6 +739,13 @@
     return undefined;
   }
 
+  /**
+   * Returns whether a node is already covered by another selected ancestor node.
+   *
+   * @param node - node to test
+   * @param selected - currently selected nodes
+   * @returns true when an ancestor in the selection already includes the node
+   */
   function isCoveredBySelection(node: TreeNode, selected: TreeNode[]) {
     if (node.kind === "root") return true;
     for (const other of selected) {
@@ -634,6 +773,12 @@
     return false;
   }
 
+  /**
+   * Returns element values sorted by sort index, then name, then id.
+   *
+   * @param elements - element records keyed by id
+   * @returns sorted element records
+   */
   function sortedElementValues(elements: Record<string, ElementRecord>) {
     return Object.values(elements).sort(
       (a, b) =>
@@ -641,6 +786,12 @@
     );
   }
 
+  /**
+   * Writes text to the system clipboard.
+   *
+   * @param text - text to copy
+   * @returns ok(null) on success, or an err with CLIPBOARD_WRITE_FAILED
+   */
   async function copyToClipboard(text: string) {
     const result = await attempt(() => navigator.clipboard.writeText(text));
     if (result.isErr) {
@@ -652,6 +803,11 @@
     return ok(null);
   }
 
+  /**
+   * Reads text from the system clipboard.
+   *
+   * @returns ok with the clipboard text, or an err with CLIPBOARD_READ_FAILED
+   */
   async function readClipboard() {
     const result = await attempt(() => navigator.clipboard.readText());
     if (result.isErr) {
@@ -663,6 +819,12 @@
     return ok(result.data);
   }
 
+  /**
+   * Loads elements for every page of a project, using local state when active.
+   *
+   * @param projectId - project whose page elements are collected
+   * @returns ok with elements keyed by page id, or an err on failure
+   */
   async function projectElementsForCopy(projectId: string) {
     if (editor.activeProjectId === projectId) {
       const elementsByPage: Record<string, Record<string, ElementRecord>> = {};
@@ -683,10 +845,22 @@
     return ok(loaded.data.value);
   }
 
+  /**
+   * Builds clipboard items for the given tree nodes.
+   *
+   * @param nodes - tree nodes to serialize
+   * @returns ok with clipboard items, or an err when element loading fails
+   */
   async function buildClipboardItems(nodes: TreeNode[]) {
     const items: ProjectClipboardItemInput[] = [];
     const cache = new Map<string, Record<string, Record<string, ElementRecord>>>();
 
+    /**
+     * Loads and caches page elements for a project during clipboard building.
+     *
+     * @param projectId - project whose page elements are loaded
+     * @returns ok with elements keyed by page id, or an err on failure
+     */
     async function loadProjectElements(projectId: string) {
       const cached = cache.get(projectId);
       if (cached) return ok(cached);
@@ -743,6 +917,11 @@
     return ok(items);
   }
 
+  /**
+   * Copies the given tree nodes to the clipboard, skipping covered descendants.
+   *
+   * @param nodes - tree nodes to copy
+   */
   async function copyNodes(nodes: TreeNode[]) {
     const roots = nodes.filter(
       (node) => node.kind !== "root" && !isCoveredBySelection(node, nodes),
@@ -761,6 +940,12 @@
     }
   }
 
+  /**
+   * Resolves the clipboard target for a tree node.
+   *
+   * @param node - tree node to paste into, may be null or undefined
+   * @returns ok with the clipboard target, or an err when no target is valid
+   */
   function resolvePasteTarget(node: TreeNode | null | undefined) {
     if (!node || node.kind === "root") {
       return err({
@@ -798,12 +983,25 @@
     return ok({ kind: "project", projectId: node.project.id } as const);
   }
 
+  /**
+   * Resolves the project id associated with a clipboard target.
+   *
+   * @param target - clipboard target to inspect
+   * @returns the target project id, or null when it cannot be resolved
+   */
   function projectIdForTarget(target: ClipboardTarget) {
     if (target.kind === "project") return target.projectId;
     if (target.kind === "page") return target.projectId;
     return editor.pagesCollection.state[target.pageId]?.projectId ?? null;
   }
 
+  /**
+   * Validates that the clipboard items may be pasted into the target.
+   *
+   * @param items - clipboard items to paste
+   * @param target - destination clipboard target
+   * @returns ok(null) when supported, or an err describing the incompatibility
+   */
   function validatePasteSupport(items: ProjectClipboardItem[], target: ClipboardTarget) {
     if (items.some((item) => item.type === "element") && target.kind === "project") {
       return err({
@@ -820,6 +1018,12 @@
     return ok(null);
   }
 
+  /**
+   * Opens a project, reporting failure with an error toast.
+   *
+   * @param projectId - project to open
+   * @returns ok(null) on success, or the error from opening the project
+   */
   async function ensureProjectOpen(projectId: string) {
     const opened = await editor.openProject(projectId);
     if (opened.isErr()) {
@@ -834,6 +1038,13 @@
     return ok(null);
   }
 
+  /**
+   * Pastes one element clipboard item into a page or container element.
+   *
+   * @param item - clipboard item expected to be an element
+   * @param target - destination page or element target
+   * @returns ok with the pasted element ids, or an err on failure
+   */
   async function pasteElementItem(item: ProjectClipboardItem, target: ClipboardTarget) {
     if (item.type !== "element") {
       return err({
@@ -872,6 +1083,13 @@
     return ok(elements.map((element) => element.id));
   }
 
+  /**
+   * Pastes one page clipboard item into a project.
+   *
+   * @param item - clipboard item expected to be a page
+   * @param targetProjectId - project receiving the page
+   * @returns ok with the new page id, or an err on failure
+   */
   async function pastePageItem(item: ProjectClipboardItem, targetProjectId: string) {
     if (item.type !== "page") {
       return err({
@@ -893,6 +1111,12 @@
     return ok(copied.page.id);
   }
 
+  /**
+   * Pastes one project clipboard item, including its pages and elements.
+   *
+   * @param item - clipboard item expected to be a project
+   * @returns ok with the new project id, or an err on failure
+   */
   async function pasteProjectItem(item: ProjectClipboardItem) {
     if (item.type !== "project") {
       return err({
@@ -924,6 +1148,13 @@
     return ok(copied.project.id);
   }
 
+  /**
+   * Parses clipboard text and pastes its items into the target node.
+   *
+   * @param text - clipboard text to parse
+   * @param node - tree node to paste into, may be null or undefined
+   * @returns ok(null) on success, or an err describing the failure
+   */
   async function pasteClipboardText(text: string, node: TreeNode | null | undefined) {
     const parsed = parseProjectClipboard(text);
     if (parsed.isErr()) {
@@ -1010,6 +1241,11 @@
     }
   }
 
+  /**
+   * Handles a paste event on the projects tree.
+   *
+   * @param event - clipboard paste event
+   */
   async function handleTreePaste(event: ClipboardEvent) {
     if (isEditableTarget(event.target)) return;
 
@@ -1024,6 +1260,11 @@
     }
   }
 
+  /**
+   * Sets the context menu target from the row under the pointer.
+   *
+   * @param event - contextmenu event
+   */
   function handleTreeContextMenu(event: MouseEvent) {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -1059,6 +1300,12 @@
     }
   }
 
+  /**
+   * Normalizes a name for renaming and clears the rename state.
+   *
+   * @param name - raw name to normalize
+   * @returns the lowercased, hyphenated name
+   */
   function formatRename(name: string) {
     const value = name
       .trim()
@@ -1068,6 +1315,11 @@
     return value;
   }
 
+  /**
+   * Handles a context menu action for the current project, page or element target.
+   *
+   * @param value - menu item value identifying the action
+   */
   async function handleMenuSelect(value: string) {
     const target = contextTreeNode();
 
@@ -1135,6 +1387,11 @@
     }
   }
 
+  /**
+   * Handles tree keyboard shortcuts for copy and rename.
+   *
+   * @param ev - keyup event from the projects tree
+   */
   async function handleTreeKeyup(ev: KeyboardEvent) {
     if (isEditableTarget(ev.target)) return;
 

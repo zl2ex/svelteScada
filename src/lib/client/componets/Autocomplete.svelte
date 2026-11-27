@@ -35,6 +35,11 @@
       : null;
   });
 
+  /**
+   * Selects an item when the typed value exactly matches one, then clears input.
+   *
+   * @param event - change event whose target holds the typed value
+   */
   function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
     const item = findExactAutocompleteItem(items, event.currentTarget.value);
     if (!item) return;

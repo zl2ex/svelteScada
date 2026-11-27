@@ -14,6 +14,11 @@
       .filter((page) => page !== undefined && page.projectId === editor.activeProjectId),
   );
 
+  /**
+   * Opens a page and navigates to the editor route when needed.
+   *
+   * @param id - Page ID to activate.
+   */
   async function activate(id: string) {
     const result = await editor.openPage(id);
     if (result.isErr()) {
@@ -30,6 +35,12 @@
     }
   }
 
+  /**
+   * Stops propagation and closes the given page tab.
+   *
+   * @param event - Click event from the close control.
+   * @param id - Page ID to close.
+   */
   function close(event: MouseEvent, id: string) {
     event.stopPropagation();
     editor.closePage(id);

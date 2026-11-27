@@ -47,6 +47,9 @@
   let newDescription = $state("");
   let newRequired = $state(false);
 
+  /**
+   * Validates and adds a new property row, then clears the draft inputs.
+   */
   function addRow() {
     const key = newKey.trim();
     if (!key || !onAdd) return;

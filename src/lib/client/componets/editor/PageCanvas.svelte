@@ -46,12 +46,24 @@
   let previousZoom = editor?.canvasZoom ?? 1;
   let lastResetToken = editor?.canvasViewResetToken ?? 0;
 
+  /**
+   * Converts viewport coordinates to canvas-relative coordinates.
+   *
+   * @param clientX - Pointer X position in viewport coordinates.
+   * @param clientY - Pointer Y position in viewport coordinates.
+   * @returns Position relative to the canvas and its bounding rect, or null when unmounted.
+   */
   function canvasPoint(clientX: number, clientY: number) {
     if (!canvasElement) return null;
     const rect = canvasElement.getBoundingClientRect();
     return { x: clientX - rect.left, y: clientY - rect.top, rect };
   }
 
+  /**
+   * Records the last pointer position while inside the canvas or panning.
+   *
+   * @param event - Pointer event carrying viewport coordinates.
+   */
   function updateLastCursor(event: PointerEvent) {
     const point = canvasPoint(event.clientX, event.clientY);
     if (!point) return;
@@ -60,6 +72,11 @@
     if (inside || panGesture) lastCursor = { x: point.x, y: point.y };
   }
 
+  /**
+   * Starts a canvas pan gesture on middle-click or Ctrl+left-click.
+   *
+   * @param event - Pointer down event on the canvas.
+   */
   function handleCanvasPointerDown(event: PointerEvent) {
     if (isEditableTarget(event.target)) return;
     canvasElement?.focus({ preventScroll: true });
@@ -82,6 +99,11 @@
     };
   }
 
+  /**
+   * Updates the canvas pan while a pan gesture is active.
+   *
+   * @param event - Pointer move event from the window.
+   */
   function handlePointerMove(event: PointerEvent) {
     updateLastCursor(event);
     if (!panGesture || event.pointerId !== panGesture.pointerId || !editor) return;
@@ -92,6 +114,11 @@
     editor.setCanvasPan(panGesture.originX + dx, panGesture.originY + dy);
   }
 
+  /**
+   * Ends the active pan gesture and releases pointer capture.
+   *
+   * @param event - Pointer up or cancel event from the window.
+   */
   function endPan(event: PointerEvent) {
     if (!panGesture || event.pointerId !== panGesture.pointerId) return;
     if (panGesture.moved && panGesture.button === 0) suppressClick = true;
@@ -101,6 +128,12 @@
     panGesture = null;
   }
 
+  /**
+   * Handles Ctrl/Cmd zoom and reset keyboard shortcuts in edit mode.
+   *
+   * @param event - Keydown event from the canvas.
+   * @returns True when the shortcut was handled, false otherwise.
+   */
   function handleZoomKeydown(event: KeyboardEvent) {
     if (activeMode !== "edit" || !editor) return;
     if (!(event.ctrlKey || event.metaKey) || isEditableTarget(event.target)) return;
@@ -126,6 +159,11 @@
   onMount(() => {
     if (!canvasElement) return;
 
+    /**
+     * Zooms the canvas with Ctrl/Cmd plus wheel.
+     *
+     * @param event - Wheel event from the canvas.
+     */
     const handleWheel = (event: WheelEvent) => {
       if (activeMode !== "edit" || !editor) return;
       if (!(event.ctrlKey || event.metaKey)) return;
@@ -142,6 +180,11 @@
       else editor.zoomOut();
     };
 
+    /**
+     * Tracks the Control key being held down over the canvas.
+     *
+     * @param event - Keydown event from the window.
+     */
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Control" || event.repeat) return;
       if (activeMode !== "edit" || isEditableTarget(event.target)) return;
@@ -150,6 +193,11 @@
       ctrlPressed = true;
     };
 
+    /**
+     * Clears the Control-key pressed state.
+     *
+     * @param event - Keyup event from the window.
+     */
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key !== "Control") return;
       ctrlPressed = false;
