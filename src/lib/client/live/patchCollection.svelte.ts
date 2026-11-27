@@ -60,6 +60,11 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
   #unsubscribeTravels?: () => void;
   #unsubscribePatches?: () => void;
 
+  /**
+   * Creates a patch-synced collection, wiring Travels history and remote patches.
+   *
+   * @param options - initial state, patch transport, and lifecycle callbacks
+   */
   constructor(options: PatchCollectionOptions<T, E>) {
     Object.assign(this.state, options.initial);
 
@@ -129,6 +134,12 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
   // Travels notifies synchronously from inside a mutation, so the sends
   // cannot be awaited there - capture their outcome instead of letting a
   // rejection escape unhandled.
+  /**
+   * Sends a forward patch batch without awaiting, recording failures on `syncError`.
+   *
+   * @param ops - forward patch operations
+   * @param inverseOps - inverse operations used to revert on failure
+   */
   #dispatchOps(ops: Ops, inverseOps: Ops) {
     attempt(() => this.#sendOps(ops, inverseOps)).then((sent) => {
       if (sent.isErr) {
@@ -140,6 +151,12 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
     });
   }
 
+  /**
+   * Reverts the single inverse operation at the given index.
+   *
+   * @param inverseOps - inverse patch operations
+   * @param index - index of the operation to apply
+   */
   #revertOps(inverseOps: Ops, index: number) {
     const reverted = attempt(() =>
       apply(this.state, inverseOps.slice(index, index + 1), { mutable: true }),
@@ -152,6 +169,12 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
     }
   }
 
+  /**
+   * Sends each forward patch in order, reverting and reporting any that fail.
+   *
+   * @param ops - forward patch operations
+   * @param inverseOps - inverse operations used to revert failures
+   */
   async #sendOps(ops: Ops, inverseOps: Ops) {
     let hadError = false;
     for (let i = 0; i < ops.length; i++) {
@@ -208,6 +231,12 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
   // sent to the server via the subscribe listener. Use this for any
   // compound edit that doesn't fit the three named methods (e.g. mutating
   // several fields across several ids in one undoable step).
+  /**
+   * Applies a tracked mutation through Travels, producing history and a server patch.
+   *
+   * @param fn - recipe mutating the draft collection
+   * @param [label] - optional label for the history entry
+   */
   mutateState(fn: (draft: Record<string, T>) => void, label?: string) {
     const tracked = attempt(() => this.#travels.setState(fn as any, label ? { label } : undefined));
     if (tracked.isErr) {
@@ -227,16 +256,32 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
   // local-only `selected`/`hovered` UI flag on an item). Because `state` is
   // already a live reactive object, `fn` can mutate it directly — no
   // Mutative recipe/draft finalization needed for the untracked path.
+  /**
+   * Applies an untracked mutation directly to state, bypassing history and sync.
+   *
+   * @param fn - callback receiving the live state object
+   */
   mutateStateWithoutHistory(fn: (state: Record<string, T>) => void) {
     fn(this.state);
   }
 
+  /**
+   * Adds an item as a tracked, syncable mutation.
+   *
+   * @param item - item to add
+   */
   add(item: T) {
     this.mutateState((draft) => {
       draft[item.id] = item;
     }, `Add ${item.id}`);
   }
 
+  /**
+   * Updates an item as a tracked, syncable mutation, sending the full object.
+   *
+   * @param id - id of the item to update
+   * @param changes - fields to merge into the item
+   */
   update(id: string, changes: Partial<Omit<T, "id">>) {
     this.mutateState((draft) => {
       // always send the entire object to the server for flat ["id"] = {entire object}
@@ -245,12 +290,22 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
     }, `Edit ${id}`);
   }
 
+  /**
+   * Removes an item as a tracked, syncable mutation.
+   *
+   * @param id - id of the item to remove
+   */
   remove(id: string) {
     this.mutateState((draft) => {
       delete draft[id];
     }, `Delete ${id}`);
   }
 
+  /**
+   * Adds multiple items as one tracked, syncable mutation.
+   *
+   * @param items - items to add
+   */
   addMany(items: T[]) {
     this.mutateState(
       (draft) => {
@@ -260,6 +315,11 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
     );
   }
 
+  /**
+   * Updates multiple items as one tracked, syncable mutation.
+   *
+   * @param items - id and changes pairs to merge
+   */
   updateMany(items: { id: string; changes: Partial<Omit<T, "id">> }[]) {
     this.mutateState(
       (draft) => {
@@ -271,12 +331,20 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
     );
   }
 
+  /**
+   * Removes multiple items as one tracked, syncable mutation.
+   *
+   * @param ids - ids of the items to remove
+   */
   removeMany(ids: string[]) {
     this.mutateState((draft) => {
       ids.forEach((id) => delete draft[id]);
     }, `Delete ${ids}`);
   }
 
+  /**
+   * Steps the collection back one history position.
+   */
   undo() {
     const undone = attempt(() => this.#travels.back());
     if (undone.isErr) {
@@ -287,6 +355,9 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
     }
   }
 
+  /**
+   * Steps the collection forward one history position.
+   */
   redo() {
     const redone = attempt(() => this.#travels.forward());
     if (redone.isErr) {
@@ -297,22 +368,33 @@ export class PatchCollection<T extends Identifiable, E extends NeverThrowError> 
     }
   }
 
+  /**
+   * Returns whether the collection can undo.
+   *
+   * @returns true when a previous history position exists
+   */
   canUndo() {
     return this.#travels.canBack();
   }
 
+  /**
+   * Returns whether the collection can redo.
+   *
+   * @returns true when a forward history position exists
+   */
   canRedo() {
     return this.#travels.canForward();
   }
 
+  /**
+   * Disposes the collection when used with a `using` declaration.
+   */
   [Symbol.dispose]() {
     this.dispose();
   }
-  // Call this from onDestroy (or wherever the owning component/page
-  // tears down) if this collection's lifetime is scoped to something
-  // shorter than the whole app — e.g. a per-document instance closed
-  // when a tab closes. Module-level singletons (like a global tags
-  // collection) generally never need to call this.
+  /**
+   * Unsubscribes from Travels and remote patches.
+   */
   dispose() {
     this.#unsubscribeTravels?.();
     this.#unsubscribePatches?.();

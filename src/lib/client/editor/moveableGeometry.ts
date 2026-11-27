@@ -24,31 +24,68 @@ const AXIS: Record<Prop, Axis> = { x: "x", y: "y", w: "x", h: "y" };
 const EPS = 1e-1;
 const POSITION_TAGS = new Set(["rect", "foreignobject", "use", "pattern", "text", "tspan"]);
 
+/**
+ * Checks whether a moveable element is an SVG element.
+ * @param el - Element to test.
+ * @returns True when the element is an SVGElement.
+ */
 function isSvgElement(el: MoveableElement): el is SVGElement {
   return typeof SVGElement !== "undefined" && el instanceof SVGElement;
 }
 
+/**
+ * Reports whether an element is positioned by its centre coordinates.
+ * @param el - Element to test.
+ * @returns True for circle and ellipse elements.
+ */
 export function usesCenter(el: MoveableElement): boolean {
   return el.tagName === "circle" || el.tagName === "ellipse";
 }
 
+/**
+ * Reports whether an SVG tag is positioned by its centre coordinates.
+ * @param tag - SVG tag name.
+ * @returns True for circle and ellipse tags.
+ */
 function usesCenterTag(tag: string | null | undefined): boolean {
   return tag === "circle" || tag === "ellipse";
 }
 
+/**
+ * Reports whether an SVG tag stores position in x/y attributes.
+ * @param tag - SVG tag name.
+ * @returns True when the tag uses position attributes.
+ */
 function usesPositionAttributesTag(tag: string | null | undefined): boolean {
   return POSITION_TAGS.has((tag ?? "").toLowerCase());
 }
 
+/**
+ * Reads an element attribute as a string.
+ * @param element - Element record to read.
+ * @param name - Attribute name.
+ * @returns The attribute value, or null when unset.
+ */
 function attributeValue(element: ElementRecord, name: string) {
   const value = element.attributes[name];
   return value === undefined || value === null ? null : String(value);
 }
 
+/**
+ * Reads an element style property.
+ * @param element - Element record to read.
+ * @param name - Style property name.
+ * @returns The style value, or null when unset.
+ */
 function styleValue(element: ElementRecord, name: string) {
   return element.style[name] ?? null;
 }
 
+/**
+ * Parses the rotation angle from an element's style.
+ * @param element - Element record to read.
+ * @returns The rotation in degrees.
+ */
 function parseRotate(element: ElementRecord): number {
   const rotate = styleValue(element, "rotate")?.trim();
   if (rotate) {
@@ -59,14 +96,33 @@ function parseRotate(element: ElementRecord): number {
   return Number.parseFloat(/rotate\(([-\d.]+)deg\)/.exec(transform)?.[1] ?? "0");
 }
 
+/**
+ * Checks whether two values differ by more than the geometry epsilon.
+ * @param a - First value.
+ * @param b - Second value.
+ * @returns True when the values differ beyond tolerance.
+ */
 function changed(a: number, b: number): boolean {
   return Math.abs(a - b) > EPS;
 }
 
+/**
+ * Extracts the unit suffix from a CSS length value.
+ * @param raw - Raw CSS length.
+ * @param fallback - Unit returned when no suffix is present.
+ * @returns The detected or fallback unit.
+ */
 export function unitOf(raw: string | null | undefined, fallback: string): string {
   return /^-?[\d.]+([a-z%]*)$/i.exec(raw?.trim() ?? "")?.[1] ?? fallback;
 }
 
+/**
+ * Computes how many pixels one unit represents along an axis.
+ * @param unit - CSS unit.
+ * @param axis - Axis being measured.
+ * @param el - Element used as the measurement reference.
+ * @returns Pixels per unit.
+ */
 function pxPer(unit: string, axis: Axis, el: MoveableElement): number {
   switch (unit) {
     case "":
@@ -95,12 +151,27 @@ function pxPer(unit: string, axis: Axis, el: MoveableElement): number {
   }
 }
 
+/**
+ * Formats a pixel length as a snapped CSS length in the given unit.
+ * @param px - Length in pixels.
+ * @param unit - Target CSS unit.
+ * @param axis - Axis being formatted.
+ * @param el - Element used as the measurement reference.
+ * @returns The formatted CSS length.
+ */
 export function formatLength(px: number, unit: string, axis: Axis, el: MoveableElement): string {
   const snapped = toSnapGrid(px);
   const value = +(snapped / (pxPer(unit, axis, el) || 1)).toFixed(4);
   return `${value}${unit}`;
 }
 
+/**
+ * Parses a CSS length into pixels.
+ * @param raw - Raw length value.
+ * @param axis - Axis being measured.
+ * @param el - Element used as the measurement reference.
+ * @returns The length in pixels, or 0 when invalid.
+ */
 export function parseLength(
   raw: string | number | null | undefined,
   axis: Axis,
@@ -112,6 +183,11 @@ export function parseLength(
   return value * pxPer(unitOf(raw === null || raw === undefined ? "" : String(raw), ""), axis, el);
 }
 
+/**
+ * Snaps a pixel value to the active editor grid when snapping is enabled.
+ * @param px - Pixel value to snap.
+ * @returns The snapped pixel value.
+ */
 export function toSnapGrid(px: number): number {
   const grid = getEditorInstance()?.grid;
 
@@ -120,6 +196,11 @@ export function toSnapGrid(px: number): number {
   return Math.round(px / grid.spacing) * grid.spacing;
 }
 
+/**
+ * Snaps a bounding box position and size to the active editor grid.
+ * @param box - Box to snap.
+ * @returns The snapped box.
+ */
 export function snapBoxToGrid(box: MoveableBox): MoveableBox {
   const grid = getEditorInstance()?.grid;
   if (!grid?.enabled || grid.spacing <= 0) return box;
@@ -133,6 +214,14 @@ export function snapBoxToGrid(box: MoveableBox): MoveableBox {
   };
 }
 
+/**
+ * Formats a box property as a CSS length using its configured unit.
+ * @param px - Pixel value.
+ * @param prop - Box property being formatted.
+ * @param units - Units per box property.
+ * @param el - Element used as the measurement reference.
+ * @returns The formatted CSS length.
+ */
 function fmt(px: number, prop: Prop, units: MoveableUnits, el: MoveableElement): string {
   return formatLength(px, units[prop], AXIS[prop], el);
 }
@@ -145,6 +234,11 @@ const KEYWORD: Record<string, string> = {
   bottom: "100%",
 };
 
+/**
+ * Splits a transform-origin value into x and y tokens with keyword expansion.
+ * @param raw - Raw transform-origin value.
+ * @returns The x and y origin tokens.
+ */
 function originTokens(raw: string): [string, string] {
   const tokens = raw
     .trim()
@@ -154,6 +248,15 @@ function originTokens(raw: string): [string, string] {
   return [tokens[0] ?? "50%", tokens[1] ?? "50%"];
 }
 
+/**
+ * Converts a transform-origin token into pixels.
+ * @param token - Origin token.
+ * @param axis - Axis being measured.
+ * @param el - Element used as the measurement reference.
+ * @param w - Reference width.
+ * @param h - Reference height.
+ * @returns The origin offset in pixels.
+ */
 function originPx(token: string, axis: Axis, el: MoveableElement, w: number, h: number): number {
   const value = Number.parseFloat(token);
   const unit = unitOf(token, "px");
@@ -161,6 +264,16 @@ function originPx(token: string, axis: Axis, el: MoveableElement, w: number, h: 
   return value * pxPer(unit, axis, el);
 }
 
+/**
+ * Formats a transform-origin offset as a CSS length in the given unit.
+ * @param px - Origin offset in pixels.
+ * @param axis - Axis being formatted.
+ * @param unit - Target CSS unit.
+ * @param el - Element used as the measurement reference.
+ * @param w - Reference width.
+ * @param h - Reference height.
+ * @returns The formatted origin token.
+ */
 function fmtOrigin(
   px: number,
   axis: Axis,
@@ -181,6 +294,14 @@ type OriginReference = {
   offsetY: number;
 };
 
+/**
+ * Resolves the coordinate reference used for an element's transform origin.
+ * @param element - Element record being measured.
+ * @param el - Live element being measured.
+ * @param width - Fallback width.
+ * @param height - Fallback height.
+ * @returns The reference size and offset.
+ */
 function originReference(
   element: ElementRecord,
   el: MoveableElement,
@@ -210,6 +331,14 @@ function originReference(
   };
 }
 
+/**
+ * Reads an element's transform-origin as pixel offsets.
+ * @param element - Element record to read.
+ * @param el - Live element used for measurement.
+ * @param w - Element width.
+ * @param h - Element height.
+ * @returns The origin offsets in pixels.
+ */
 function readOrigin(element: ElementRecord, el: MoveableElement, w: number, h: number) {
   const reference = originReference(element, el, w, h);
   const [originX, originY] = originTokens(styleValue(element, "transform-origin") ?? "50% 50%");
@@ -222,6 +351,15 @@ function readOrigin(element: ElementRecord, el: MoveableElement, w: number, h: n
 
 const LENGTH_PATTERN = /^[-+]?\d*\.?\d+(?:[a-z%]+)?$/i;
 
+/**
+ * Shifts a length-based attribute by a pixel delta while preserving its unit.
+ * @param element - Element record to read.
+ * @param name - Attribute name.
+ * @param axis - Axis being shifted.
+ * @param delta - Pixel delta to apply.
+ * @param el - Element used as the measurement reference.
+ * @returns The shifted attribute value, or null when not a length.
+ */
 function shiftLengthAttribute(
   element: ElementRecord,
   name: string,
@@ -236,6 +374,13 @@ function shiftLengthAttribute(
   return formatLength(parseLength(raw, axis, el) + delta, unit, axis, el);
 }
 
+/**
+ * Shifts every coordinate pair in a points attribute.
+ * @param raw - Raw points attribute.
+ * @param dx - Horizontal delta in pixels.
+ * @param dy - Vertical delta in pixels.
+ * @returns The shifted points, or null when malformed.
+ */
 function shiftPointsAttribute(raw: string | null, dx: number, dy: number): string | null {
   if (raw === null) return null;
 
@@ -255,6 +400,12 @@ function shiftPointsAttribute(raw: string | null, dx: number, dy: number): strin
   return shifted.join(" ");
 }
 
+/**
+ * Reads an element's translate style as pixel offsets.
+ * @param element - Element record to read.
+ * @param el - Element used for measurement.
+ * @returns The x and y translation in pixels.
+ */
 function readTranslate(element: ElementRecord, el: MoveableElement): [number, number] {
   const raw = (styleValue(element, "translate") ?? "").trim();
   if (!raw || raw === "none") return [0, 0];
@@ -262,6 +413,11 @@ function readTranslate(element: ElementRecord, el: MoveableElement): [number, nu
   return [parseLength(tokens[0], "x", el), parseLength(tokens[1] ?? "0", "y", el)];
 }
 
+/**
+ * Measures an element's rendered size and position.
+ * @param el - Element to measure.
+ * @returns The measured width, height, x, and y.
+ */
 function measuredSize(el: MoveableElement) {
   if (typeof SVGGraphicsElement !== "undefined" && el instanceof SVGGraphicsElement) {
     const box = el.getBBox();
@@ -276,6 +432,14 @@ function measuredSize(el: MoveableElement) {
   };
 }
 
+/**
+ * Reads a length attribute as pixels.
+ * @param element - Element record to read.
+ * @param name - Attribute name.
+ * @param axis - Axis being measured.
+ * @param el - Element used as the measurement reference.
+ * @returns The attribute length in pixels.
+ */
 function readAttributeLength(
   element: ElementRecord,
   name: string,
@@ -285,13 +449,28 @@ function readAttributeLength(
   return parseLength(attributeValue(element, name), axis, el);
 }
 
+/**
+ * Reports whether an SVG element is nested inside another element.
+ * @param element - Element record to test.
+ * @returns True when the element has a parent.
+ */
 function isNestedSvg(element: ElementRecord) {
   return element.parentId !== null;
 }
 
+/**
+ * Reads an SVG element's geometry into a moveable box.
+ * @param element - Element record to read.
+ * @param el - Live SVG element used for measurement.
+ * @returns The element's box.
+ */
 function readSvgBox(element: ElementRecord, el: MoveableElement): MoveableBox {
   const tag = (element.tag ?? "").toLowerCase();
   let measured: ReturnType<typeof measuredSize> | null = null;
+  /**
+   * Lazily measures the element once and caches the result.
+   * @returns The measured element size and position.
+   */
   const measure = () => (measured ??= measuredSize(el));
 
   let w: number;
@@ -345,10 +524,20 @@ function readSvgBox(element: ElementRecord, el: MoveableElement): MoveableBox {
   };
 }
 
+/**
+ * Reads an element's geometry into a moveable box.
+ * @param element - Element record to read.
+ * @param el - Live element used for measurement.
+ * @returns The element's box.
+ */
 export function readBox(element: ElementRecord, el: MoveableElement): MoveableBox {
   if (element.kind === "svg") return readSvgBox(element, el);
 
   let measured: ReturnType<typeof measuredSize> | null = null;
+  /**
+   * Lazily measures the element once and caches the result.
+   * @returns The measured element size and position.
+   */
   const measure = () => (measured ??= measuredSize(el));
   const left = styleValue(element, "left");
   const top = styleValue(element, "top");
@@ -369,6 +558,11 @@ export function readBox(element: ElementRecord, el: MoveableElement): MoveableBo
   };
 }
 
+/**
+ * Resolves the units used for an element's box properties.
+ * @param element - Element record to inspect.
+ * @returns The units per box property and origin.
+ */
 export function readUnits(element: ElementRecord): MoveableUnits {
   const [originX, originY] = originTokens(styleValue(element, "transform-origin") ?? "50% 50%");
   const ox = unitOf(originX, "%");
@@ -408,6 +602,16 @@ export function readUnits(element: ElementRecord): MoveableUnits {
   };
 }
 
+/**
+ * Computes attribute and style writes for a box geometry change.
+ * @param element - Element being changed.
+ * @param base - Starting box.
+ * @param next - Requested box.
+ * @param units - Units per box property.
+ * @param el - Live element used for measurement.
+ * @param [wholeBox] - Snap the whole box instead of individual edits (defaults to false).
+ * @returns The attribute and style changes to apply.
+ */
 function boxWrites(
   element: ElementRecord,
   base: MoveableBox,
@@ -555,6 +759,16 @@ function boxWrites(
   };
 }
 
+/**
+ * Captures geometry writes for a box change, or null when nothing changed.
+ * @param element - Element being changed.
+ * @param start - Starting box.
+ * @param current - Current box.
+ * @param units - Units per box property.
+ * @param el - Live element used for measurement.
+ * @param [wholeBox] - Snap the whole box instead of individual edits (defaults to false).
+ * @returns The changes to apply, or null when the box is unchanged.
+ */
 export function captureBoxChanges(
   element: ElementRecord,
   start: MoveableBox,
@@ -567,6 +781,14 @@ export function captureBoxChanges(
   return changes.attributes || changes.style ? changes : null;
 }
 
+/**
+ * Applies a drag delta to a box.
+ * @param start - Starting box.
+ * @param dist - Drag distance as [x, y].
+ * @param el - Live element being dragged.
+ * @param [zoom] - Canvas zoom factor (defaults to 1).
+ * @returns The dragged box.
+ */
 export function applyDrag(
   start: MoveableBox,
   dist: number[],
@@ -580,6 +802,16 @@ export function applyDrag(
   };
 }
 
+/**
+ * Applies a resize delta to a box.
+ * @param start - Starting box.
+ * @param current - Current box.
+ * @param sizeDist - Size delta as [w, h].
+ * @param dragDelta - Position delta as [x, y].
+ * @param el - Live element being resized.
+ * @param [zoom] - Canvas zoom factor (defaults to 1).
+ * @returns The resized box.
+ */
 export function applyResize(
   start: MoveableBox,
   current: MoveableBox,
@@ -597,10 +829,23 @@ export function applyResize(
   };
 }
 
+/**
+ * Applies a rotation angle to a box.
+ * @param box - Box to rotate.
+ * @param rotation - Rotation in degrees.
+ * @returns The rotated box.
+ */
 export function applyRotate(box: MoveableBox, rotation: number): MoveableBox {
   return { ...box, rotate: rotation };
 }
 
+/**
+ * Computes the box position adjustment for a transform-origin move.
+ * @param base - Reference box.
+ * @param ox - New origin x.
+ * @param oy - New origin y.
+ * @returns The origin and adjusted position.
+ */
 function originPatch(base: MoveableBox, ox: number, oy: number): Partial<MoveableBox> {
   const angle = (base.rotate * Math.PI) / 180;
   const cos = Math.cos(angle);
@@ -615,6 +860,13 @@ function originPatch(base: MoveableBox, ox: number, oy: number): Partial<Moveabl
   };
 }
 
+/**
+ * Applies a transform-origin drag to a box.
+ * @param box - Current box.
+ * @param start - Starting box.
+ * @param origin - New origin as [x, y].
+ * @returns The box with the updated origin and position.
+ */
 export function applyOriginDrag(
   box: MoveableBox,
   start: MoveableBox,

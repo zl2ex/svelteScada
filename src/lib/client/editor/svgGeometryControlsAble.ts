@@ -28,14 +28,34 @@ type ActiveDrag = {
   previewAttributes: ElementAttributes | null;
 };
 
+/**
+ * Creates a Moveable able that renders and drags SVG geometry control handles.
+ *
+ * @param handlers - Preview and commit callbacks for geometry changes
+ * @returns The Moveable able definition
+ */
 export function createSvgGeometryControlsAble({ preview, commit }: SvgGeometryControlHandlers) {
   return {
     name: "svgGeometryControls",
     always: true,
+    /**
+     * Checks whether a drag should start on an SVG geometry control.
+     *
+     * @param _moveable - Moveable instance (unused)
+     * @param e - Moveable drag event
+     * @returns True when the input target is a geometry control
+     */
     dragControlCondition(_moveable: any, e: any) {
       const target = e.inputEvent?.target;
       return target instanceof Element && !!target.closest("[data-svg-control]");
     },
+    /**
+     * Captures the control and base attributes when a geometry drag starts.
+     *
+     * @param moveable - Moveable instance owning the target element
+     * @param e - Moveable drag event
+     * @returns True when the drag was initialized
+     */
     dragControlStart(moveable: any, e: any) {
       const inputTarget = e.inputEvent?.target;
       const controlElement =
@@ -64,6 +84,13 @@ export function createSvgGeometryControlsAble({ preview, commit }: SvgGeometryCo
       } satisfies ActiveDrag;
       return true;
     },
+    /**
+     * Previews updated attributes as a geometry control is dragged.
+     *
+     * @param _moveable - Moveable instance (unused)
+     * @param e - Moveable drag event
+     * @returns True when the attributes were updated
+     */
     dragControl(_moveable: any, e: any) {
       const active = e.datas.svgControl as ActiveDrag | undefined;
       if (!active) return false;
@@ -84,6 +111,13 @@ export function createSvgGeometryControlsAble({ preview, commit }: SvgGeometryCo
       preview(active.element, attributes, active.baseAttributes);
       return true;
     },
+    /**
+     * Commits the previewed attributes when a geometry drag ends.
+     *
+     * @param moveable - Moveable instance owning the target element
+     * @param e - Moveable drag event
+     * @returns True when a previewed change was committed
+     */
     dragControlEnd(moveable: any, e: any) {
       const dragged = e.datas.svgControl as ActiveDrag | undefined;
       delete e.datas.svgControl;
@@ -94,6 +128,13 @@ export function createSvgGeometryControlsAble({ preview, commit }: SvgGeometryCo
       moveable.updateRect?.();
       return true;
     },
+    /**
+     * Renders a positioned control handle for each supported geometry control.
+     *
+     * @param moveable - Moveable instance owning the target element
+     * @param renderer - Moveable renderer used to create elements
+     * @returns The rendered control elements, or an empty array when unsupported
+     */
     render(moveable: any, renderer: Renderer) {
       const element = moveable.props.svgGeometryElement as ElementRecord | null | undefined;
       const target = moveable.state.target;

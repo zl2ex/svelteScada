@@ -26,6 +26,12 @@ export type TrendViewSavedConfigList = z.infer<
 
 const z_TagIds = z.array(z.string().min(1));
 
+/**
+ * Loads the tag ids selected in the last session.
+ *
+ * @returns Ok with the saved tag ids (empty when absent or off-browser), or Err
+ * on read, parse, or validation failure
+ */
 export function loadLastSessionTagIds(): Result<string[], NeverThrowError> {
   if (!browser) return ok([]);
 
@@ -59,6 +65,12 @@ export function loadLastSessionTagIds(): Result<string[], NeverThrowError> {
   return ok(validated.data);
 }
 
+/**
+ * Persists the tag ids selected in the current session.
+ *
+ * @param tagIds - tag ids to save
+ * @returns Ok when saved, or Err when the write fails
+ */
 export function saveLastSessionTagIds(
   tagIds: string[],
 ): Result<void, NeverThrowError> {
@@ -78,6 +90,12 @@ export function saveLastSessionTagIds(
   return ok(undefined);
 }
 
+/**
+ * Loads saved trend views, newest first.
+ *
+ * @returns Ok with the saved views (empty when absent or off-browser), or Err
+ * on read, parse, or validation failure
+ */
 export function loadSavedViews(): Result<
   TrendViewSavedConfigList,
   NeverThrowError
@@ -114,6 +132,12 @@ export function loadSavedViews(): Result<
   return ok(validated.data.slice().sort((a, b) => b.updatedAt - a.updatedAt));
 }
 
+/**
+ * Writes saved trend views to localStorage.
+ *
+ * @param views - views to persist
+ * @returns Ok when saved, or Err when the write fails
+ */
 function persistSavedViews(
   views: TrendViewSavedConfigList,
 ): Result<void, NeverThrowError> {
@@ -132,6 +156,14 @@ function persistSavedViews(
   return ok(undefined);
 }
 
+/**
+ * Creates and persists a new saved trend view.
+ *
+ * @param name - view name, trimmed and limited to 1-100 characters
+ * @param tagIds - tag ids to capture in the view
+ * @returns Ok with the created view, or Err when the name is invalid or
+ * persistence fails
+ */
 export function saveView(
   name: string,
   tagIds: string[],
@@ -162,6 +194,12 @@ export function saveView(
   return ok(next);
 }
 
+/**
+ * Deletes a saved trend view by id.
+ *
+ * @param id - id of the view to delete
+ * @returns Ok when deleted, or Err when loading or persistence fails
+ */
 export function deleteView(id: string): Result<void, NeverThrowError> {
   const loaded = loadSavedViews();
   if (loaded.isErr()) return err(loaded.error);

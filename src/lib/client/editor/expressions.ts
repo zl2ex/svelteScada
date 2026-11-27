@@ -17,6 +17,11 @@ export type BindingContext = {
   tagStatus: TagStatusRead;
 };
 
+/**
+ * Clones a context into a sandbox scope with wrapped tag lookups.
+ * @param context - Binding context to convert.
+ * @returns A cloned scope safe for sandbox evaluation.
+ */
 export function createBindingScope<Context extends Record<string, unknown>>(context: Context) {
   const scope: Record<string, unknown> = {};
 
@@ -38,6 +43,12 @@ export function createBindingScope<Context extends Record<string, unknown>>(cont
   return scope;
 }
 
+/**
+ * Evaluates an expression in a sandboxed binding scope.
+ * @param expression - Expression to evaluate.
+ * @param context - Binding context used for tag lookups.
+ * @returns Ok with the result, or Err with an evaluation error.
+ */
 export function evaluateExpression<Context extends Record<string, unknown>>(
   expression: string,
   context: Context,

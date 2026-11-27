@@ -25,6 +25,12 @@ type TagEntryValue = Payload<TagStreamPayload>;
 export type TagMapEntry = UseStreamResult<TagStreamPayload>;
 export type TagMapStatus = TagMapEntry["status"] | "missing";
 
+/**
+ * Returns whether a value is an `{ error: RpcError }` payload.
+ *
+ * @param value - value to test
+ * @returns true when the value carries an RpcError
+ */
 function isRpcErrorPayload(value: unknown): value is { error: RpcError } {
   return (
     typeof value === "object" &&
@@ -34,10 +40,21 @@ function isRpcErrorPayload(value: unknown): value is { error: RpcError } {
   );
 }
 
+/**
+ * Creates a stream entry representing a loading tag.
+ *
+ * @returns a loading tag map entry
+ */
 function loadingEntry(): TagMapEntry {
   return { status: "loading", value: null, error: null };
 }
 
+/**
+ * Creates a tag value map for the given tags.
+ *
+ * @param options - tag records and optional id-to-path overrides
+ * @returns a new tag value map
+ */
 export function createTagValueMap(options: {
   tags: Record<string, unknown>;
   tagPaths?: Record<string, string>;
@@ -60,6 +77,11 @@ export class TagValueMap {
   #tagPatchesUnsubscribe?: () => void;
   #disposed = false;
 
+  /**
+   * Creates a tag value map, subscribing to patches and initial tag streams.
+   *
+   * @param options - tag ids and optional id-to-path overrides
+   */
   constructor(options: { tagIds: string[]; tagPaths?: Record<string, string> }) {
     const tagIds = new Set([...options.tagIds, ...Object.keys(options.tagPaths ?? {})]);
     for (const id of tagIds) {
@@ -84,20 +106,44 @@ export class TagValueMap {
     for (const id of tagIds) this.#subscribe(id);
   }
 
+  /**
+   * Looks up a tag entry by id or path.
+   *
+   * @param lookup - tag id or path
+   * @returns the matching entry, or undefined when unknown
+   */
   get(lookup: string): TagMapEntry | undefined {
     const id = this.#lookupToId.get(lookup) ?? lookup;
     return this.entries.get(id);
   }
 
+  /**
+   * Looks up a tag entry by id or path; alias of `get`.
+   *
+   * @param lookup - tag id or path
+   * @returns the matching entry, or undefined when unknown
+   */
   tag(lookup: string) {
     const entry = this.get(lookup);
     return entry;
   }
 
+  /**
+   * Returns the status of a tag by id or path.
+   *
+   * @param lookup - tag id or path
+   * @returns the tag status, or `"missing"` when unknown
+   */
   tagStatus(lookup: string): TagMapStatus {
     return this.get(lookup)?.status ?? "missing";
   }
 
+  /**
+   * Returns the current value of a connected tag.
+   *
+   * @param lookup - tag id or path
+   * @returns the tag value, or undefined when missing or not loaded
+   */
   tagValue(lookup: string): ClientTagValue | undefined {
     const entry = this.get(lookup);
     if (!entry) return undefined;
@@ -105,6 +151,13 @@ export class TagValueMap {
     return entry.value.isOk ? entry.value.value : undefined;
   }
 
+  /**
+   * Writes a tag value and reports failures as toasts.
+   *
+   * @param lookup - tag id or path
+   * @param value - value to write
+   * @returns Ok with success, or Err when the RPC or write fails
+   */
   async writeTag(
     lookup: string,
     value: TagValue,
@@ -136,6 +189,9 @@ export class TagValueMap {
     return written.data;
   }
 
+  /**
+   * Unsubscribes from all tag streams and clears the map.
+   */
   dispose() {
     if (this.#disposed) return;
     this.#disposed = true;
@@ -150,6 +206,11 @@ export class TagValueMap {
     this.#parentId.clear();
   }
 
+  /**
+   * Subscribes to a tag's value, error, and status streams.
+   *
+   * @param id - tag id to subscribe to
+   */
   #subscribe(id: string) {
     if (this.#disposed || this.#subscriptions.has(id)) return;
 
@@ -161,6 +222,9 @@ export class TagValueMap {
     let error: RpcError | null = null;
     let connection: ConnectionStatus = "loading";
 
+    /**
+     * Rebuilds the tag entry from the latest value, error, and connection state.
+     */
     const publish = () => {
       let entry: TagMapEntry;
       if (error) {
@@ -206,6 +270,12 @@ export class TagValueMap {
     publish();
   }
 
+  /**
+   * Subscribes to child tags and drops those no longer present.
+   *
+   * @param parentId - id of the parent tag
+   * @param children - current child tag values
+   */
   #syncChildren(parentId: string, children: ClientTagValue[]) {
     const nextIds = new Set(children.map((child) => child.id));
     const previousIds = this.#childIds.get(parentId) ?? new Set<string>();
@@ -224,6 +294,12 @@ export class TagValueMap {
     }
   }
 
+  /**
+   * Recursively unsubscribes a tag and all of its descendants.
+   *
+   * @param id - tag id to unsubscribe
+   * @param [seen] - ids already visited to avoid cycles (defaults to a new set)
+   */
   #unsubscribeTree(id: string, seen = new Set<string>()) {
     if (seen.has(id)) return;
     seen.add(id);
@@ -245,6 +321,11 @@ export class TagValueMap {
     this.#unsubscribeSelf(id);
   }
 
+  /**
+   * Unsubscribes a single tag and removes its bookkeeping entries.
+   *
+   * @param id - tag id to unsubscribe
+   */
   #unsubscribeSelf(id: string) {
     this.#subscriptions.get(id)?.();
     this.#subscriptions.delete(id);
@@ -264,6 +345,12 @@ export class TagValueMap {
     this.#lookupToId.delete(id);
   }
 
+  /**
+   * Records a tag's path and rebuilds the id/path lookup maps.
+   *
+   * @param id - tag id
+   * @param path - tag path
+   */
   #setPath(id: string, path: string) {
     if (!path) return;
     const previous = this.#pathById.get(id);

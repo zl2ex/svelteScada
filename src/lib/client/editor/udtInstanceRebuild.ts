@@ -5,6 +5,14 @@ import { buildEffectiveUdtRows } from "./udtBuilder";
 import type { TagCollection } from "./tagCollectionContext";
 import type { UdtDefinitionCollection } from "./udtDefinitionContext";
 
+/**
+ * Collects all descendant rows below a parent id.
+ *
+ * @param parentId - Id whose descendants should be collected
+ * @param childrenByParent - Tag rows grouped by parent id
+ * @param [out] - Accumulator map keyed by id (defaults to an empty map)
+ * @returns The accumulated descendants keyed by id
+ */
 function collectDescendants(
   parentId: string,
   childrenByParent: Map<string, TagOptionsInput[]>,
@@ -20,6 +28,9 @@ function collectDescendants(
 /**
  * Rebuilds all flattened UDT instance rows after a definition, binding, or override change.
  * Rows are materialized so top-level fields always contain effective binding results.
+ *
+ * @param tagCollection - Live tag collection to update
+ * @param udtCollection - UDT definition collection driving the rebuild
  */
 export function rebuildUdtInstances(
   tagCollection: TagCollection,

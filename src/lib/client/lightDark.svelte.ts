@@ -9,8 +9,19 @@ export type LightDark = (typeof lightDarkManager.themes)[number];
 export class LightDarkManager {
   themes = ["system", "light", "dark"] as const;
   current: LightDark = $state("system");
+  /**
+   * Creates a light/dark theme manager defaulting to the system preference.
+   */
   constructor() {}
 
+  /**
+   * Loads the persisted light/dark preference and applies it.
+   *
+   * No-op in non-browser environments.
+   *
+   * @returns Ok with the applied theme, or Err when loading or applying the
+   * theme fails
+   */
   loadLightDark() {
     if (!browser) return ok(this.current);
 
@@ -27,6 +38,14 @@ export class LightDarkManager {
     return this.setLightDark(localStorageTheme);
   }
 
+  /**
+   * Applies and persists a light/dark theme preference.
+   *
+   * @param newTheme - theme to apply; `"system"` removes the `color-scheme`
+   * attribute
+   * @returns Ok with the applied theme, or Err when applying or saving the
+   * theme fails
+   */
   setLightDark(newTheme: LightDark) {
     this.current = newTheme;
 

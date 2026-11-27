@@ -168,6 +168,11 @@ export const appearanceFields: AppearanceField[] = [
   },
 ];
 
+/**
+ * Selects appearance fields that apply to a set of elements.
+ * @param elements - Selected elements.
+ * @returns The applicable fields, or none for mixed or user component selections.
+ */
 export function appearanceFieldsFor(elements: ElementRecord[]) {
   if (elements.length === 0 || elements.some((element) => element.kind === "user-component")) {
     return [];
@@ -186,10 +191,21 @@ export function appearanceFieldsFor(elements: ElementRecord[]) {
   );
 }
 
+/**
+ * Returns the style keys managed by appearance controls for elements.
+ * @param elements - Selected elements.
+ * @returns The managed style keys.
+ */
 export function appearanceManagedStyleKeys(elements: ElementRecord[]) {
   return new Set(appearanceFieldsFor(elements).map((field) => field.property));
 }
 
+/**
+ * Builds suggestion values for an appearance field, including theme variables.
+ * @param field - Appearance field.
+ * @param themeCss - Theme CSS used to extract variables.
+ * @returns Deduplicated suggestion values.
+ */
 export function appearanceSuggestions(field: AppearanceField, themeCss: string) {
   const themeVariables = extractCssVariableNames(themeCss).map((name) => `var(${name})`);
   const suggestions = [...(field.suggestions ?? []), ...themeVariables];
@@ -205,12 +221,24 @@ export function appearanceSuggestions(field: AppearanceField, themeCss: string) 
   return [...new Set(suggestions)];
 }
 
+/**
+ * Returns select options, appending a custom option for unlisted values.
+ * @param field - Appearance field.
+ * @param value - Current value.
+ * @returns The available options.
+ */
 export function appearanceOptions(field: AppearanceField, value: string) {
   const options = field.options ?? [];
   if (!value || options.some((option) => option.value === value)) return options;
   return [...options, { label: `Custom (${value})`, value }];
 }
 
+/**
+ * Normalizes a CSS hex color to six-digit form.
+ * @param value - Color value to normalize.
+ * @param [fallback] - Value returned for non-hex colors (defaults to "#000000").
+ * @returns The normalized hex color or fallback.
+ */
 export function toHexColor(value: string, fallback = "#000000") {
   const trimmed = value.trim();
   const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(trimmed);

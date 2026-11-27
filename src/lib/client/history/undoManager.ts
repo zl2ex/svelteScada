@@ -3,6 +3,11 @@ import { UnifiedUndoManager } from "../live/undoManager.svelte";
 
 export const undoManager = new UnifiedUndoManager();
 
+/**
+ * Returns whether the currently focused element is inside a Monaco editor.
+ *
+ * @returns true when focus is within a `.monaco-editor` element
+ */
 function isMonacoEditorFocused() {
   return document.activeElement?.closest(".monaco-editor") != null;
 }

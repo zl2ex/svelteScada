@@ -8,6 +8,12 @@ import { attempt } from "$lib/util/attempt";
 import { newId } from "$lib/util/newId";
 import { errorToString, type NeverThrowError } from "$lib/util/neverThrow";
 
+/**
+ * Converts a toast message into zag-js toast options with a fresh id.
+ *
+ * @param message - toast payload without an id
+ * @returns the toast options accepted by the toaster
+ */
 function toastOptions(message: Omit<ToastMessage, "id">): Options {
   return {
     id: newId(),
@@ -20,6 +26,13 @@ function toastOptions(message: Omit<ToastMessage, "id">): Options {
 
 let _toaster: Store | undefined;
 
+/**
+ * Returns the shared toaster instance, creating it on first use.
+ *
+ * Only available in the browser.
+ *
+ * @returns Ok with the toaster, or Err when unavailable or creation fails
+ */
 export function getToaster() {
   if (!browser) {
     return err({
@@ -42,6 +55,12 @@ export function getToaster() {
   return ok(_toaster);
 }
 
+/**
+ * Pushes the given options onto the shared toaster.
+ *
+ * @param options - toast options to display
+ * @returns Ok with the toaster, or Err when the toaster or push fails
+ */
 function pushToaster(options: Options) {
   const toaster = getToaster();
   if (toaster.isErr()) return err(toaster.error);
@@ -58,11 +77,21 @@ function pushToaster(options: Options) {
   return ok(toaster.value);
 }
 
-// Local client push: call from any client component without hitting the server.
+/**
+ * Displays a local client toast without hitting the server.
+ *
+ * @param message - toast payload without an id
+ * @returns Ok with the toaster, or Err when the toast cannot be shown
+ */
 export function toast(message: Omit<ToastMessage, "id">) {
   return pushToaster(toastOptions(message));
 }
 
+/**
+ * Subscribes to server-pushed toast messages and forwards them to the toaster.
+ *
+ * @returns Ok when subscribed, or Err when the subscription fails
+ */
 function subscribeToastPush() {
   const subscribed = attempt(() =>
     toastPush.subscribe((message: ToastMessage | undefined) => {

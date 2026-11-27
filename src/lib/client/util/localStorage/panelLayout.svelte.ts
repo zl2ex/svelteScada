@@ -13,8 +13,19 @@ export type PanelLayoutStorage = {
 export class PanelLayout {
   dragging = $state({ left: false, right: false });
   width: PanelLayoutStorage = $state({ left: undefined, right: undefined });
+  /**
+   * Creates a panel layout store with no persisted widths yet.
+   */
   constructor() {}
 
+  /**
+   * Loads panel widths from localStorage and installs resize listeners.
+   *
+   * No-op in non-browser environments.
+   *
+   * @returns Ok with the loaded layout, or Err when loading, parsing, or
+   * listener setup fails
+   */
   loadFromLocalStorage() {
     if (!browser) return ok(this.width);
 
@@ -42,6 +53,9 @@ export class PanelLayout {
     }
     this.width = parsed.data;
 
+    /**
+     * Clears both resize flags and persists the current widths.
+     */
     const stopResize = () => {
       if (this.dragging.left) this.dragging.left = false;
       if (this.dragging.right) this.dragging.right = false;
@@ -77,6 +91,12 @@ export class PanelLayout {
     return ok(this.width);
   }
 
+  /**
+   * Persists panel widths to localStorage.
+   *
+   * @param [layout] - layout to save (defaults to the current widths)
+   * @returns Ok when saved, or Err when the write fails
+   */
   setWidth(layout?: PanelLayoutStorage) {
     if (!browser) return ok(undefined);
 

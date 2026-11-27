@@ -23,6 +23,12 @@ const readers = {
   },
 };
 
+/**
+ * Returns whether a field is a checkbox or radio input.
+ *
+ * @param el - field element to test
+ * @returns true for checkbox and radio inputs
+ */
 const isToggle = (el: Field) =>
   el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio");
 
@@ -31,6 +37,12 @@ const isToggle = (el: Field) =>
  *
  * `onCommit` may return `false` (or resolve to `false`) to request a revert. `onCancel`
  * runs after an Escape-triggered revert, which is useful for cancelling rename/edit modes.
+ *
+ * @param onCommit - called with the parsed field value; return false to revert
+ * @param kind - value reader to use, `"string"` or `"number"` (defaults to `"string"`)
+ * @param [onCancel] - called after an Escape-triggered revert
+ * @param [options] - commit behaviour overrides
+ * @returns a Svelte attachment that wires the handlers to a field element
  */
 export function commitOrRevert(
   onCommit: (value: string) => CommitResult,
@@ -62,17 +74,29 @@ export function commitOrRevert(
     let enterCommit = false;
     let original = el.value;
 
+    /**
+     * Restores the field to its original value and dispatches the input/change
+     * event so Svelte's binding updates.
+     */
     function restore() {
       el.value = original;
       el.dispatchEvent(new Event(restoreEvent, { bubbles: true })); // for svelte bind:value
     }
 
+    /**
+     * Resets per-interaction state and captures the current value as original.
+     */
     function onFocus() {
       cancelled = false;
       enterCommit = false;
       original = el.value;
     }
 
+    /**
+     * Handles Enter (commit) and Escape (cancel) key presses.
+     *
+     * @param e - keyboard event from the field
+     */
     function onKeydown(e: KeyboardEvent) {
       if (e.isComposing) return;
 
@@ -88,6 +112,10 @@ export function commitOrRevert(
       }
     }
 
+    /**
+     * Commits the current value on blur, or restores it when cancelled or
+     * rejected.
+     */
     async function onBlur() {
       if (cancelled) {
         cancelled = false;

@@ -29,6 +29,13 @@ import tagBindingTypes from "$generated/scriptTagBindings.d.ts?raw";
 import { scriptScopeIds, scriptScopes } from "./scriptScopes";
 
 globalThis.MonacoEnvironment = {
+  /**
+   * Selects the Monaco web worker for a language label.
+   *
+   * @param _workerId - Worker identifier supplied by Monaco (unused)
+   * @param label - Language label requesting a worker
+   * @returns The worker instance for the label
+   */
   getWorker(_workerId, label) {
     if (label === "css" || label === "scss" || label === "less") return new cssWorker();
     return label === "typescript" || label === "javascript" || scriptScopeIds.has(label)
@@ -52,6 +59,12 @@ type DefaultsConstructor = new (
   modeConfiguration: monaco.typescript.ModeConfiguration,
 ) => monaco.typescript.LanguageServiceDefaults;
 
+/**
+ * Builds the ambient declaration that lists valid script tag paths.
+ *
+ * @param paths - Tag paths to declare
+ * @returns TypeScript declaration source
+ */
 function tagPathsDeclaration(paths: Set<string>) {
   const properties = [...paths]
     .sort()
@@ -67,6 +80,12 @@ function tagPathsDeclaration(paths: Set<string>) {
       export {};`;
 }
 
+/**
+ * Creates a TypeScript language-service defaults instance for a scoped mode.
+ *
+ * @param extraLib - Ambient declaration source exposed to the mode
+ * @returns Configured language-service defaults
+ */
 function createScopedDefaults(extraLib: string) {
   const Defaults = monaco.typescript.javascriptDefaults.constructor as DefaultsConstructor;
   const defaults = new Defaults(
@@ -95,14 +114,31 @@ function createScopedDefaults(extraLib: string) {
   return defaults;
 }
 
+/**
+ * Registers a scoped language using the JavaScript tokenizer and configuration.
+ *
+ * @param modeId - Language identifier to register
+ */
 function registerScopedLanguage(modeId: string) {
   monaco.languages.register({ id: modeId });
   monaco.languages.setLanguageConfiguration(modeId, jsConf);
   monaco.languages.setMonarchTokensProvider(modeId, jsLanguage);
 }
 
+/**
+ * Wires a scoped language's editors to a TypeScript language-service worker.
+ *
+ * @param modeId - Language identifier to set up
+ * @param defaults - Language-service defaults backing the mode
+ */
 function setupScopedMode(modeId: string, defaults: monaco.typescript.LanguageServiceDefaults) {
   const manager = new WorkerManager(modeId, defaults);
+  /**
+   * Requests the language-service worker for one or more URIs.
+   *
+   * @param uris - Documents the worker should track
+   * @returns Promise resolving to the language-service worker
+   */
   const worker = (...uris: monaco.Uri[]) => manager.getLanguageServiceWorker(...uris);
   const libFiles = new LibFiles(worker);
   const modeConfiguration = defaults.modeConfiguration;
@@ -151,6 +187,13 @@ function setupScopedMode(modeId: string, defaults: monaco.typescript.LanguageSer
   }
 }
 
+/**
+ * Registers a scoped language and optionally shares tag-path declarations with it.
+ *
+ * @param modeId - Language identifier to create
+ * @param extraLib - Ambient declaration source exposed to the mode
+ * @param shareTagPaths - Whether the mode should receive tag-path completions
+ */
 function createScopedLanguage(modeId: string, extraLib: string, shareTagPaths: boolean) {
   registerScopedLanguage(modeId);
   const defaults = createScopedDefaults(extraLib);
@@ -158,12 +201,18 @@ function createScopedLanguage(modeId: string, extraLib: string, shareTagPaths: b
   if (shareTagPaths) tagPathDefaults.push(defaults);
 }
 
+/**
+ * Pushes the current tag-path declarations into every sharing language service.
+ */
 function applyTagPaths() {
   for (const defaults of tagPathDefaults) {
     defaults.addExtraLib(tagPathsDeclaration(tagPaths), tagPathsLibPath);
   }
 }
 
+/**
+ * Registers tag-path completion providers for the element and event script scopes.
+ */
 function registerTagPathCompletions() {
   registerTagPathCompletion(
     scriptScopes.element,
@@ -175,9 +224,22 @@ function registerTagPathCompletions() {
   );
 }
 
+/**
+ * Registers a tag-path completion provider for a language mode.
+ *
+ * @param modeId - Language identifier to attach the provider to
+ * @param pattern - Regex matching an unfinished tag lookup before the cursor
+ */
 function registerTagPathCompletion(modeId: string, pattern: RegExp) {
   monaco.languages.registerCompletionItemProvider(modeId, {
     triggerCharacters: ['"', "'", "`"],
+    /**
+     * Suggests known tag paths for the lookup being typed.
+     *
+     * @param model - Editor model containing the cursor
+     * @param position - Current cursor position
+     * @returns Completion suggestions for the model
+     */
     provideCompletionItems(model, position) {
       const line = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
       const match = line.match(pattern);
@@ -204,6 +266,9 @@ function registerTagPathCompletion(modeId: string, pattern: RegExp) {
   });
 }
 
+/**
+ * Configures Monaco's script modes once per session.
+ */
 export function configureMonaco() {
   if (configured) return;
   configured = true;
@@ -216,6 +281,11 @@ export function configureMonaco() {
   registerTagPathCompletions();
 }
 
+/**
+ * Replaces the known tag paths and refreshes completions when configured.
+ *
+ * @param paths - Current tag paths to expose to scripts
+ */
 export function updateScriptTagPaths(paths: Iterable<string>) {
   const next = new Set(paths);
 

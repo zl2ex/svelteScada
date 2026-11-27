@@ -30,6 +30,11 @@ export type EventContext = BindingContext & {
   writeTag: TagWrite;
 };
 
+/**
+ * Runs an element event script and reports failures as a toast.
+ * @param script - Script source to execute.
+ * @param context - Event context including tag writes and element bindings.
+ */
 export async function runEventScript(script: string, context: EventContext) {
   if (!script.trim()) return;
 

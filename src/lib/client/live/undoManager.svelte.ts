@@ -50,6 +50,14 @@ export class UnifiedUndoManager {
 
   // ── registration ─────────────────────────────────────
 
+  /**
+   * Registers a patch collection under a context name.
+   *
+   * @param name - context name used on the timeline
+   * @param collection - collection to undo and redo
+   * @param [contextType] - whether the context is project or document
+   * (defaults to "project")
+   */
   register(
     name: string,
     collection: PatchCollection<any, any>,
@@ -58,10 +66,20 @@ export class UnifiedUndoManager {
     this.#contexts.set(name, { collection, contextType });
   }
 
+  /**
+   * Unregisters a context by name.
+   *
+   * @param name - context name to remove
+   */
   unregister(name: string) {
     this.#contexts.delete(name);
   }
 
+  /**
+   * Clears undo/redo history, optionally only for one context.
+   *
+   * @param [context] - context to clear; clears everything when omitted
+   */
   clearHistory(context?: string) {
     if (!context) {
       this.#undoTimeline.length = 0;
@@ -76,10 +94,20 @@ export class UnifiedUndoManager {
 
   // ── active document ──────────────────────────────────
 
+  /**
+   * Sets the active document context used to prioritize undo/redo.
+   *
+   * @param name - document context name, or null to clear it
+   */
   setActiveDocument(name: string | null) {
     this.#activeDocument = name;
   }
 
+  /**
+   * Returns the active document context name.
+   *
+   * @returns the active document name, or null when none is set
+   */
   getActiveDocument(): string | null {
     return this.#activeDocument;
   }
@@ -95,6 +123,8 @@ export class UnifiedUndoManager {
    * `recordMutation` once after the batch, not once per item.
    * Use `batchBegin` / `batchEnd` or call `recordMutation` manually
    * with `onMutation` disabled for that purpose.
+   *
+   * @param context - context name that recorded the mutation
    */
   recordMutation(context: string) {
     // During a transaction, count the mutations per context instead of
@@ -162,6 +192,9 @@ export class UnifiedUndoManager {
   /**
    * Record that a collection just undid or redid a step.
    * Called internally by `undo()` / `redo()` — not meant for external use.
+   *
+   * @param direction - whether the move is an undo or a redo
+   * @param entry - timeline entry being moved
    */
   #recordMove(direction: "undo" | "redo", entry: UndoRedoRecord) {
     const timestamp = Date.now();
@@ -230,6 +263,8 @@ export class UnifiedUndoManager {
 
   /**
    * Walk the timeline from the end looking for the best entry to undo.
+   *
+   * @returns the entry to undo, or undefined when the timeline is empty
    */
   #peekUndoTimeline(): UndoRedoRecord | undefined {
     if (this.#undoTimeline.length === 0) return undefined;
@@ -249,6 +284,11 @@ export class UnifiedUndoManager {
     return this.#undoTimeline[this.#undoTimeline.length - 1];
   }
 
+  /**
+   * Walk the redo stack from the end looking for the best entry to redo.
+   *
+   * @returns the entry to redo, or undefined when the stack is empty
+   */
   #peekRedoTimeline(): UndoRedoRecord | undefined {
     if (this.#redoTimeline.length === 0) return undefined;
 
@@ -268,20 +308,38 @@ export class UnifiedUndoManager {
 
   // ── query helpers ────────────────────────────────────
 
+  /**
+   * Returns whether there is an entry to undo.
+   *
+   * @returns true when an undo is available
+   */
   canUndo(): boolean {
     return this.#peekUndoTimeline() !== undefined;
   }
 
+  /**
+   * Returns whether there is an entry to redo.
+   *
+   * @returns true when a redo is available
+   */
   canRedo(): boolean {
     return this.#peekRedoTimeline() !== undefined;
   }
 
-  /** Snapshot of the unified timeline (newest last). */
+  /**
+   * Snapshot of the unified timeline (newest last).
+   *
+   * @returns the current undo timeline entries
+   */
   getTimeline(): readonly UndoRedoRecord[] {
     return this.#undoTimeline;
   }
 
-  /** Snapshot of the redo stack (newest last). */
+  /**
+   * Snapshot of the redo stack (newest last).
+   *
+   * @returns the current redo timeline entries
+   */
   getRedoTimeline(): readonly UndoRedoRecord[] {
     return this.#redoTimeline;
   }

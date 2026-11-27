@@ -13,6 +13,13 @@ const STRUCTURAL_KEYS = new Set([
   "updatedAt",
 ]);
 
+/**
+ * Compares two values with Object.is, falling back to JSON equality for objects.
+ *
+ * @param a - First value to compare
+ * @param b - Second value to compare
+ * @returns True when the values are deeply equal
+ */
 function valueEquals(a: unknown, b: unknown) {
   if (Object.is(a, b)) return true;
   if (a === null || b === null || a === undefined || b === undefined) return false;
@@ -20,6 +27,13 @@ function valueEquals(a: unknown, b: unknown) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/**
+ * Compares two property values including their metadata.
+ *
+ * @param a - First property value
+ * @param b - Second property value
+ * @returns True when value, description, and required flag match
+ */
 export function propertyMetadataEqual(a: PropertyValue, b: PropertyValue) {
   return (
     a.value === b.value &&
@@ -28,6 +42,12 @@ export function propertyMetadataEqual(a: PropertyValue, b: PropertyValue) {
   );
 }
 
+/**
+ * Returns the default value for a root tag field.
+ *
+ * @param key - Tag field to look up
+ * @returns The default value, or undefined when the field has no default
+ */
 function defaultRootFieldValue(key: keyof TagOptionsInput): unknown {
   switch (key) {
     case "initalValue":
@@ -53,6 +73,14 @@ function defaultRootFieldValue(key: keyof TagOptionsInput): unknown {
   }
 }
 
+/**
+ * Finds the definition child entry backing a flattened child tag.
+ *
+ * @param tag - Child tag to resolve
+ * @param definitionsByName - Definitions keyed by name
+ * @param tagsById - Tag rows keyed by id for parent lookup
+ * @returns The matching definition child, or undefined
+ */
 function childDefinitionFor(
   tag: TagOptionsInput,
   definitionsByName: Record<string, UdtDefinitionInput>,
@@ -65,6 +93,15 @@ function childDefinitionFor(
     : undefined;
 }
 
+/**
+ * Resolves the inherited value of a tag field from its definition or parent.
+ *
+ * @param tag - Tag whose inherited value is needed
+ * @param key - Tag field to resolve
+ * @param definitionsByName - Definitions keyed by name
+ * @param tagsById - Tag rows keyed by id for parent lookup
+ * @returns The inherited field value
+ */
 export function inheritedTagFieldValue(
   tag: TagOptionsInput,
   key: keyof TagOptionsInput,
@@ -124,6 +161,13 @@ export function inheritedTagFieldValue(
   }
 }
 
+/**
+ * Keeps only the properties that differ from their definition defaults.
+ *
+ * @param properties - Effective properties to filter
+ * @param definitionProperties - Definition properties used as defaults
+ * @returns The explicitly overridden properties
+ */
 export function explicitPropertiesFrom(
   properties: PropertyMap,
   definitionProperties: PropertyMap,
@@ -137,6 +181,15 @@ export function explicitPropertiesFrom(
   return explicit;
 }
 
+/**
+ * Builds the explicit override map for a UDT instance or child tag change.
+ *
+ * @param tag - Current tag holding existing overrides
+ * @param changes - Field changes to compare against definition defaults
+ * @param definition - Root UDT definition, when available
+ * @param childDefinition - Child definition entry, when available
+ * @returns The merged overrides, or null when no definition applies
+ */
 export function buildUdtOverrides(
   tag: TagOptionsInput,
   changes: Partial<Omit<TagOptionsInput, "id">>,

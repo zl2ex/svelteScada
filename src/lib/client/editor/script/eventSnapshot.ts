@@ -1,21 +1,56 @@
 import type { ScriptEvent, ScriptEventTarget } from "./scriptApi";
 
+/**
+ * Reads an arbitrary property from an object without narrowing its type.
+ *
+ * @param source - Object to read from
+ * @param key - Property name to read
+ * @returns The property value, or undefined when absent
+ */
 function read(source: object, key: string): unknown {
   return (source as Record<string, unknown>)[key];
 }
 
+/**
+ * Coerces a value to a finite number when possible.
+ *
+ * @param value - Candidate value to coerce
+ * @param [fallback] - Value returned when coercion fails (defaults to 0)
+ * @returns The finite number or the fallback
+ */
 function numberOr(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+/**
+ * Coerces a value to a string when possible.
+ *
+ * @param value - Candidate value to coerce
+ * @param [fallback] - Value returned when the input is not a string (defaults to "")
+ * @returns The string or the fallback
+ */
 function stringOr(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
 }
 
+/**
+ * Coerces a value to a boolean when possible.
+ *
+ * @param value - Candidate value to coerce
+ * @param [fallback] - Value returned when the input is not a boolean (defaults to false)
+ * @returns The boolean or the fallback
+ */
 function booleanOr(value: unknown, fallback = false): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+/**
+ * Captures a serializable snapshot of an event target.
+ * Password input values are intentionally omitted.
+ *
+ * @param target - Event target to snapshot
+ * @returns The snapshot, or null when the target is not an object
+ */
 function targetSnapshot(target: EventTarget | null): ScriptEventTarget | null {
   if (!target || typeof target !== "object") return null;
 
@@ -39,6 +74,12 @@ function targetSnapshot(target: EventTarget | null): ScriptEventTarget | null {
   };
 }
 
+/**
+ * Builds the plain data snapshot exposed to event scripts.
+ *
+ * @param event - Browser event to snapshot
+ * @returns The script-facing event snapshot
+ */
 export function createEventSnapshot(event: Event): ScriptEvent {
   return {
     type: event.type,

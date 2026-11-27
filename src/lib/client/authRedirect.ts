@@ -3,6 +3,13 @@ import { goto } from "$app/navigation";
 
 let redirecting = false;
 
+/**
+ * Redirects the browser to the login page, preserving the current path as a
+ * `redirect` query parameter.
+ *
+ * No-op outside the browser, on the login page, or while a redirect is already
+ * in progress.
+ */
 export function redirectToLogin() {
   if (!browser || redirecting) return;
 

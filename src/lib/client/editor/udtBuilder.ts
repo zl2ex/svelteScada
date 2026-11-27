@@ -5,6 +5,12 @@ import { scriptEvaluator } from "./scriptEvaluator";
 import { inheritedTagFieldValue } from "./udtOverrides";
 import { applyUdtOverrides } from "$lib/tagOverrides";
 
+/**
+ * Reads a tag's instance property map.
+ *
+ * @param tag - Tag whose properties should be read
+ * @returns The property map, or an empty object when invalid
+ */
 function instanceProps(tag: TagOptionsInput): TagProperties {
   if (tag.properties && typeof tag.properties === "object" && !Array.isArray(tag.properties)) {
     return tag.properties as TagProperties;
@@ -16,6 +22,12 @@ function instanceProps(tag: TagOptionsInput): TagProperties {
  * Builds base child rows for a UDT instance.
  * Base rows contain definition defaults, inherited values, and resolved definition bindings;
  * explicit instance overrides are attached separately for later materialization.
+ *
+ * @param parent - Effective parent row whose children are being built
+ * @param definition - Definition providing the child structure
+ * @param definitionsByName - Definitions keyed by name for nested UDTs
+ * @param preserved - Existing saved rows keyed by id
+ * @returns The flattened base child rows
  */
 function buildChildren(
   parent: TagOptionsInput,
@@ -79,6 +91,11 @@ function buildChildren(
 /**
  * Normalizes the root row into a base/default configuration.
  * Legacy effective values that still equal their override are converted back into defaults.
+ *
+ * @param instance - Root UDT instance row to normalize
+ * @param definition - Definition of the instance's UDT
+ * @param definitionsByName - Definitions keyed by name for inherited lookups
+ * @returns The normalized base root row
  */
 function normalizeRootBase(
   instance: TagOptionsInput,
@@ -117,6 +134,11 @@ function normalizeRootBase(
 
 /**
  * Builds base/default rows for a UDT instance and its flattened children.
+ *
+ * @param instance - Root UDT instance row
+ * @param definitionsByName - Definitions keyed by name for nested UDTs
+ * @param [preserved] - Existing saved rows keyed by id (defaults to an empty map)
+ * @returns The root row followed by its flattened child rows
  */
 export function buildResolvedUdtRows(
   instance: TagOptionsInput,
@@ -134,6 +156,9 @@ export function buildResolvedUdtRows(
 /**
  * Applies overrides and evaluates all binding expressions to produce the effective tag object
  * that is persisted and sent to the server.
+ *
+ * @param row - Base UDT row to materialize
+ * @returns The effective tag object
  */
 export function materializeUdtRow(row: TagOptionsInput): TagOptionsInput {
   const effective = applyUdtOverrides(row);
@@ -156,6 +181,9 @@ export function materializeUdtRow(row: TagOptionsInput): TagOptionsInput {
 
 /**
  * Materializes a list of base UDT rows into effective tag objects.
+ *
+ * @param rows - Base UDT rows to materialize
+ * @returns The effective tag objects
  */
 export function materializeUdtRows(rows: TagOptionsInput[]): TagOptionsInput[] {
   return rows.map(materializeUdtRow);
@@ -163,6 +191,11 @@ export function materializeUdtRows(rows: TagOptionsInput[]): TagOptionsInput[] {
 
 /**
  * Builds fully materialized effective rows for a UDT instance.
+ *
+ * @param instance - Root UDT instance row
+ * @param definitionsByName - Definitions keyed by name for nested UDTs
+ * @param [preserved] - Existing saved rows keyed by id (defaults to an empty map)
+ * @returns The effective root and child rows
  */
 export function buildEffectiveUdtRows(
   instance: TagOptionsInput,

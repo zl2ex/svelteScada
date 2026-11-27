@@ -1,3 +1,12 @@
+/**
+ * Updates a binding expression within a scope.
+ * @param bindings - Existing bindings, or null.
+ * @param scope - Binding scope key.
+ * @param key - Key inside the scope map, or null for a scope-level expression.
+ * @param expression - New expression, or empty to remove it.
+ * @returns The updated bindings, or null when empty.
+ * @throws {Error} when the scope holds a non-map value.
+ */
 export function updateBinding<T extends object>(
   bindings: T | null | undefined,
   scope: keyof T,
@@ -26,6 +35,11 @@ export function updateBinding<T extends object>(
   return Object.keys(next).length > 0 ? next : null;
 }
 
+/**
+ * Formats a binding result for display.
+ * @param value - Value to format.
+ * @returns The display string.
+ */
 export function formatBindingResult(value: unknown): string {
   if (value === undefined) return "";
   if (value === null) return "null";

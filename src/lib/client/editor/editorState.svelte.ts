@@ -28,6 +28,11 @@ import { clampCanvasZoom, stepCanvasZoom } from "./canvasZoom";
 const OPEN_PAGES_KEY = "editor-open-page-ids";
 const MAX_FOCUS_HISTORY = 50;
 
+/**
+ * Builds the undo-manager document id for a page.
+ * @param pageId - Page id to encode.
+ * @returns The namespaced document id.
+ */
 const pageDocumentId = (pageId: string) => `page:${pageId}`;
 
 export type UserComponentDefinition = {
@@ -53,10 +58,22 @@ export type EditorFocusSnapshot = {
   path: string;
 };
 
+/**
+ * Checks whether two string arrays have equal length and identical entries.
+ * @param a - First array.
+ * @param b - Second array.
+ * @returns True when both arrays match.
+ */
 function stringArraysEqual(a: string[], b: string[]) {
   return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
+/**
+ * Compares two editor focus snapshots for equality.
+ * @param a - First snapshot.
+ * @param b - Second snapshot.
+ * @returns True when every focus field matches.
+ */
 function focusEquals(a: EditorFocusSnapshot, b: EditorFocusSnapshot) {
   return (
     a.projectId === b.projectId &&
@@ -106,6 +123,10 @@ export class EditorState {
     path: "/editor",
   };
 
+  /**
+   * Creates the editor state and restores persisted open pages.
+   * @param options - Collections, user components, and the initial route path.
+   */
   constructor(options: {
     pages: PatchCollection<PageRecord, NeverThrowError>;
     userThemes: PatchCollection<UserThemeSelect, NeverThrowError>;
@@ -121,49 +142,89 @@ export class EditorState {
     this.#loadOpenPages();
   }
 
+  /**
+   * Returns the currently opened project.
+   * @returns The active project, or null when none is open.
+   */
   get activeProject(): ProjectSelect | null {
     if (!this.activeProjectId) return null;
     return this.projects.state[this.activeProjectId] ?? null;
   }
 
+  /**
+   * Lists all projects sorted by name.
+   * @returns Projects in alphabetical order.
+   */
   get projectList(): ProjectSelect[] {
     return Object.values(this.projects.state).sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  /**
+   * Lists all user themes sorted by name.
+   * @returns Themes in alphabetical order.
+   */
   get themes(): UserThemeSelect[] {
     return Object.values(this.userThemesCollection.state).sort((a, b) =>
       a.name.localeCompare(b.name),
     );
   }
 
+  /**
+   * Resolves the theme for the active project, falling back to the first theme.
+   * @returns The active theme, or null when no themes exist.
+   */
   get activeTheme(): UserThemeSelect | null {
     const project = this.activeProject;
     const themes = this.userThemesCollection.state;
     return (project?.themeId ? themes[project.themeId] : undefined) ?? this.themes[0] ?? null;
   }
 
+  /**
+   * Returns the currently opened page.
+   * @returns The active page, or null when none is open.
+   */
   get activePage(): PageRecord | null {
     if (!this.activePageId) return null;
     return this.pagesCollection.state[this.activePageId] ?? null;
   }
 
+  /**
+   * Reports whether the focus history has an entry to go back to.
+   * @returns True when a back navigation is available.
+   */
   get canFocusBack() {
     return this.#focusHistory.length > 0;
   }
 
+  /**
+   * Reports whether the focus future has an entry to go forward to.
+   * @returns True when a forward navigation is available.
+   */
   get canFocusForward() {
     return this.#focusFuture.length > 0;
   }
 
+  /**
+   * Returns the last selected element id as the primary selection.
+   * @returns The primary element id, or null when nothing is selected.
+   */
   get primarySelectedElementId(): string | null {
     return this.selectedElementIds.at(-1) ?? null;
   }
 
+  /**
+   * Returns the records for all currently selected elements.
+   * @returns Selected element records in selection order.
+   */
   get selectedElements(): ElementRecord[] {
     const state = this.elementsCollection?.state ?? {};
     return this.selectedElementIds.map((id) => state[id]).filter(Boolean);
   }
 
+  /**
+   * Resolves where new elements should be inserted based on the selection.
+   * @returns The target parent element id, or null for the page root.
+   */
   get insertionTarget(): string | null {
     return findContainerInsertionTarget(
       this.elementsCollection?.state ?? {},
@@ -171,10 +232,20 @@ export class EditorState {
     );
   }
 
+  /**
+   * Checks whether an element is part of the current selection.
+   * @param id - Element id to test.
+   * @returns True when the element is selected.
+   */
   isElementSelected(id: string) {
     return this.selectedElementIds.includes(id);
   }
 
+  /**
+   * Replaces the element selection, deduplicating ids and keeping only loaded elements.
+   * @param ids - Element ids to select.
+   * @param [primaryId] - Element id to place last as the primary selection (defaults to null).
+   */
   setElementSelection(ids: string[], primaryId: string | null = null) {
     const unique = [...new Set(ids)].filter((id) => this.elementsCollection?.state[id]);
     if (primaryId && unique.includes(primaryId)) {
@@ -190,20 +261,35 @@ export class EditorState {
     });*/
   }
 
+  /**
+   * Clears the current element selection.
+   */
   clearElementSelection() {
     this.selectedElementIds = [];
   }
 
+  /**
+   * Selects a project and clears any element selection.
+   * @param id - Project id to select.
+   */
   selectProject(id: string) {
     if (!this.projects.state[id]) return;
     this.selectedProjectId = id;
     this.clearElementSelection();
   }
 
+  /**
+   * Clears the currently selected project.
+   */
   clearProjectSelection() {
     this.selectedProjectId = null;
   }
 
+  /**
+   * Updates the element selection for a plain, additive, or range click.
+   * @param id - Element id to select.
+   * @param [options] - Additive or range selection flags (defaults to {}).
+   */
   selectElement(id: string, options: { additive?: boolean; range?: boolean } = {}) {
     if (options.range) {
       const order = this.#elementOrder();
@@ -234,9 +320,17 @@ export class EditorState {
     this.setElementSelection([id], id);
   }
 
+  /**
+   * Flattens the page element tree into depth-first selection order.
+   * @returns Element ids in visual tree order.
+   */
   #elementOrder() {
     const state = this.elementsCollection?.state ?? {};
     const order: string[] = [];
+    /**
+     * Appends a parent's children and their descendants to the order list.
+     * @param parentId - Parent element id, or null for the page root.
+     */
     const visit = (parentId: string | null) => {
       for (const element of sortedChildren(state, parentId)) {
         order.push(element.id);
@@ -247,15 +341,29 @@ export class EditorState {
     return order;
   }
 
+  /**
+   * Returns the element record for the current insertion target.
+   * @returns The target element, or null when none is available.
+   */
   get insertionTargetElement(): ElementRecord | null {
     const id = this.insertionTarget;
     return id ? (this.elementsCollection?.state[id] ?? null) : null;
   }
 
+  /**
+   * Builds the full path for a page.
+   * @param id - Page id to resolve.
+   * @returns The page path.
+   */
   pagePath(id: string) {
     return pagePath(this.pagesCollection.state, id);
   }
 
+  /**
+   * Builds the editor route for a page.
+   * @param id - Page id to resolve.
+   * @returns The page route, or the editor route when the page is missing.
+   */
   route(id: string) {
     const page = this.pagesCollection.state[id];
     if (!page) return "/editor";
@@ -263,10 +371,20 @@ export class EditorState {
     return pageRoute(this.pagesCollection.state, project?.name ?? "project", id);
   }
 
+  /**
+   * Returns the project that owns a page.
+   * @param page - Page to resolve.
+   * @returns The owning project record.
+   */
   projectForPage(page: PageRecord) {
     return this.projects.state[page.projectId];
   }
 
+  /**
+   * Lists the pages belonging to a project.
+   * @param [projectId] - Project to filter by; all pages when omitted.
+   * @returns Sorted page records.
+   */
   children(projectId?: string) {
     const pages = Object.fromEntries(
       Object.entries(this.pagesCollection.state).filter(
@@ -278,7 +396,7 @@ export class EditorState {
 
   /**
    * Returns the loaded element state for a page.
-   * @param pageId Page id to inspect.
+   * @param pageId - Page id to inspect.
    * @returns The loaded element map, or null when the page collection is not loaded.
    */
   getPageElementsSnapshot(pageId: string) {
@@ -287,8 +405,8 @@ export class EditorState {
 
   /**
    * Adds elements to a page in the active project.
-   * @param pageId Page that will own the elements.
-   * @param elements Element records to insert.
+   * @param pageId - Page that will own the elements.
+   * @param elements - Element records to insert.
    * @returns A neverthrow result indicating whether the elements were added.
    */
   addElementsToPage(pageId: string, elements: ElementRecord[]) {
@@ -311,6 +429,11 @@ export class EditorState {
     return ok(null);
   }
 
+  /**
+   * Loads a project's element collections and marks it ready for editing.
+   * @param projectId - Project id to open.
+   * @returns Ok when the project is ready, or Err with the load failure.
+   */
   async openProject(projectId: string) {
     if (this.activeProjectId === projectId && this.#projectReady) return ok(null);
 
@@ -361,6 +484,10 @@ export class EditorState {
     return ok(null);
   }
 
+  /**
+   * Updates the editor grid and persists the change to the active project.
+   * @param next - Partial grid settings to merge.
+   */
   setGrid(next: Partial<EditorGrid>) {
     this.grid = { ...this.grid, ...next };
     const project = this.activeProject;
@@ -372,28 +499,51 @@ export class EditorState {
     });
   }
 
+  /**
+   * Sets the canvas zoom, clamped to the supported range.
+   * @param value - Desired zoom factor.
+   */
   setCanvasZoom(value: number) {
     this.canvasZoom = clampCanvasZoom(value);
   }
 
+  /**
+   * Steps the canvas zoom up by one increment.
+   */
   zoomIn() {
     this.canvasZoom = stepCanvasZoom(this.canvasZoom, 1);
   }
 
+  /**
+   * Steps the canvas zoom down by one increment.
+   */
   zoomOut() {
     this.canvasZoom = stepCanvasZoom(this.canvasZoom, -1);
   }
 
+  /**
+   * Sets the canvas pan offset.
+   * @param x - Horizontal offset.
+   * @param y - Vertical offset.
+   */
   setCanvasPan(x: number, y: number) {
     this.canvasPanX = x;
     this.canvasPanY = y;
   }
 
+  /**
+   * Offsets the canvas pan by the given delta.
+   * @param dx - Horizontal delta.
+   * @param dy - Vertical delta.
+   */
   panBy(dx: number, dy: number) {
     this.canvasPanX += dx;
     this.canvasPanY += dy;
   }
 
+  /**
+   * Resets zoom and pan, and signals the canvas view to reset.
+   */
   resetCanvasZoom() {
     this.canvasZoom = 1;
     this.canvasPanX = 0;
@@ -401,6 +551,10 @@ export class EditorState {
     this.canvasViewResetToken++;
   }
 
+  /**
+   * Switches the active page and binds its element collection to the undo manager.
+   * @param id - Page id to activate, or null to clear the active page.
+   */
   setActivePage(id: string | null) {
     const page = id ? this.pagesCollection.state[id] : undefined;
     const nextId = page ? id : null;
@@ -421,6 +575,11 @@ export class EditorState {
     }
   }
 
+  /**
+   * Opens a page, loading its project first when necessary.
+   * @param id - Page id to open.
+   * @returns Ok when the page is active, or Err when the page or project cannot open.
+   */
   async openPage(id: string) {
     const page = this.pagesCollection.state[id];
     if (!page) {
@@ -439,6 +598,11 @@ export class EditorState {
     return ok(null);
   }
 
+  /**
+   * Removes a page from the open tabs and activates a neighbouring page when needed.
+   * @param id - Page id to close.
+   * @returns The id of the newly active page, or null when none is active.
+   */
   closePage(id: string) {
     const closing = this.pagesCollection.state[id];
     this.openPageIds = this.openPageIds.filter((pageId) => pageId !== id);
@@ -457,6 +621,10 @@ export class EditorState {
     return next;
   }
 
+  /**
+   * Creates and selects a new project with a generated unique name.
+   * @returns The id of the new project.
+   */
   addProject() {
     const names = new Set(this.projectList.map((project) => project.name));
     let index = this.projectList.length + 1;
@@ -484,6 +652,10 @@ export class EditorState {
     return project.id;
   }
 
+  /**
+   * Removes a project, its open pages, and disposes its collections when active.
+   * @param id - Project id to remove.
+   */
   removeProject(id: string) {
     if (!this.projects.state[id]) return;
 
@@ -502,6 +674,11 @@ export class EditorState {
     this.projects.remove(id);
   }
 
+  /**
+   * Creates a new page under a project with a generated unique name.
+   * @param projectId - Project that will own the page.
+   * @returns The id of the new page.
+   */
   addPage(projectId: string) {
     const siblings = this.children(projectId);
     let index = siblings.length + 1;
@@ -527,10 +704,20 @@ export class EditorState {
     return page.id;
   }
 
+  /**
+   * Renames a page and updates its timestamp.
+   * @param id - Page id to rename.
+   * @param name - New page name.
+   */
   renamePage(id: string, name: string) {
     this.pagesCollection.update(id, { name, updatedAt: Date.now() });
   }
 
+  /**
+   * Closes and deletes a page along with its element collection.
+   * @param id - Page id to delete.
+   * @returns The id of the page that becomes active, or null when none is active.
+   */
   deletePage(id: string) {
     const next = this.closePage(id);
     this.#disposePageCollection(id);
@@ -538,6 +725,12 @@ export class EditorState {
     return next;
   }
 
+  /**
+   * Adds a new element to the insertion target of the active page.
+   * @param kind - Element kind to create.
+   * @param [options] - Optional tag, component, attributes, properties, and style.
+   * @returns The new element id, or null when no collection is active or the parent is invalid.
+   */
   addElement(
     kind: ElementKind,
     options: {
@@ -598,11 +791,18 @@ export class EditorState {
     return id;
   }
 
+  /**
+   * Removes a single element and drops it from the selection.
+   * @param id - Element id to remove.
+   */
   removeElement(id: string) {
     this.elementsCollection?.remove(id);
     this.setElementSelection(this.selectedElementIds.filter((selectedId) => selectedId !== id));
   }
 
+  /**
+   * Removes every currently selected element.
+   */
   removeSelectedElements() {
     const ids = [...this.selectedElementIds];
     if (ids.length === 0) return;
@@ -610,6 +810,11 @@ export class EditorState {
     this.clearElementSelection();
   }
 
+  /**
+   * Captures the current editor focus state.
+   * @param [path] - Route path to record (defaults to the last tracked path).
+   * @returns A snapshot of the current focus.
+   */
   snapshotFocus(path: string = this.#lastFocus.path): EditorFocusSnapshot {
     return {
       projectId: this.activeProjectId,
@@ -621,6 +826,10 @@ export class EditorState {
     };
   }
 
+  /**
+   * Records a focus change in the back/forward history.
+   * @param path - Route path associated with the focus.
+   */
   trackFocus(path: string) {
     const next = this.snapshotFocus(path);
     if (this.#suppressFocusRecord) {
@@ -634,6 +843,11 @@ export class EditorState {
     this.#lastFocus = next;
   }
 
+  /**
+   * Restores the previous focus snapshot from history.
+   * @param currentPath - Current route path used for the forward entry.
+   * @returns Ok with the restored path, or Err when applying the snapshot fails.
+   */
   async backFocus(currentPath: string) {
     const target = this.#focusHistory.at(-1);
     if (!target) return ok(null);
@@ -654,6 +868,11 @@ export class EditorState {
     return ok({ path: target.path });
   }
 
+  /**
+   * Restores the next focus snapshot from the forward history.
+   * @param currentPath - Current route path used for the back entry.
+   * @returns Ok with the restored path, or Err when applying the snapshot fails.
+   */
   async forwardFocus(currentPath: string) {
     const target = this.#focusFuture.at(-1);
     if (!target) return ok(null);
@@ -674,6 +893,9 @@ export class EditorState {
     return ok({ path: target.path });
   }
 
+  /**
+   * Tears down collections, active ids, selection, and focus history.
+   */
   dispose() {
     this.#disposePageCollections();
     this.activeProjectId = null;
@@ -689,6 +911,11 @@ export class EditorState {
     this.#lastFocus = this.snapshotFocus();
   }
 
+  /**
+   * Applies a focus snapshot by opening its project and page and restoring selections.
+   * @param snapshot - Focus state to restore.
+   * @returns Ok when applied, or Err when the project cannot be opened.
+   */
   async #applyFocus(snapshot: EditorFocusSnapshot) {
     if (snapshot.projectId) {
       if (this.activeProjectId !== snapshot.projectId || !this.#projectReady) {
@@ -717,6 +944,12 @@ export class EditorState {
     return ok(null);
   }
 
+  /**
+   * Creates a page element collection wired to undo history and live patches.
+   * @param pageId - Page that owns the collection.
+   * @param initial - Initial element records keyed by id.
+   * @returns The new patch collection.
+   */
   #createPageCollection(pageId: string, initial: Record<string, ElementRecord>) {
     const documentId = pageDocumentId(pageId);
     const collection = new PatchCollection<ElementRecord, NeverThrowError>({
@@ -741,6 +974,12 @@ export class EditorState {
     return collection;
   }
 
+  /**
+   * Returns the collection for a page, creating it when missing.
+   * @param pageId - Page id to resolve.
+   * @param [initial] - Initial elements used when creating the collection (defaults to {}).
+   * @returns The existing or newly created collection.
+   */
   #ensurePageCollection(pageId: string, initial: Record<string, ElementRecord> = {}) {
     const existing = this.#pageCollections[pageId];
     if (existing) return existing;
@@ -753,6 +992,10 @@ export class EditorState {
     return collection;
   }
 
+  /**
+   * Disposes a single page collection and clears its undo history.
+   * @param pageId - Page id whose collection should be disposed.
+   */
   #disposePageCollection(pageId: string) {
     const collection = this.#pageCollections[pageId];
     if (!collection) return;
@@ -773,6 +1016,9 @@ export class EditorState {
     }
   }
 
+  /**
+   * Disposes every page collection and clears undo history.
+   */
   #disposePageCollections() {
     for (const [pageId, collection] of Object.entries(this.#pageCollections)) {
       const documentId = pageDocumentId(pageId);
@@ -788,6 +1034,9 @@ export class EditorState {
     undoManager.setActiveDocument(null);
   }
 
+  /**
+   * Restores the open page ids from local storage when running in the browser.
+   */
   #loadOpenPages() {
     if (!browser) return;
     const raw = attempt(() => localStorage.getItem(OPEN_PAGES_KEY));
@@ -799,6 +1048,9 @@ export class EditorState {
     );
   }
 
+  /**
+   * Persists the open page ids to local storage when running in the browser.
+   */
   #persistOpenPages() {
     if (!browser) return;
     attempt(() => localStorage.setItem(OPEN_PAGES_KEY, JSON.stringify(this.openPageIds)));

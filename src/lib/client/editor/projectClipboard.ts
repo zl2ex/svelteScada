@@ -94,10 +94,21 @@ export type CopiedProject = {
   pages: CopiedPage[];
 };
 
+/**
+ * Builds a neverthrow error with a reason and cause.
+ * @param reason - Error reason code.
+ * @param cause - Human-readable cause.
+ * @returns An Err result carrying the clipboard error.
+ */
 function clipboardError(reason: string, cause: string) {
   return err({ reason, cause } as const satisfies NeverThrowError);
 }
 
+/**
+ * Validates an element's kind payload, attributes, and style.
+ * @param element - Clipboard element to validate.
+ * @returns An error message, or null when valid.
+ */
 function validateElementSemantics(element: ClipboardElement) {
   const payloadError = validateElementKindPayload(element);
   if (payloadError) return payloadError;
@@ -108,6 +119,12 @@ function validateElementSemantics(element: ClipboardElement) {
   return validateElementStyle(element.style);
 }
 
+/**
+ * Validates that elements form a connected, acyclic forest with a single root.
+ * @param elements - Clipboard elements to validate.
+ * @param [rootId] - Expected subtree root id.
+ * @returns An error message, or null when valid.
+ */
 function validateElementForest(elements: ClipboardElement[], rootId?: string) {
   const byId = new Map<string, ClipboardElement>();
   for (const element of elements) {
@@ -147,6 +164,11 @@ function validateElementForest(elements: ClipboardElement[], rootId?: string) {
 
   const visited = new Set<string>();
   const visiting = new Set<string>();
+  /**
+   * Depth-first walks the element tree to detect cycles and disconnected nodes.
+   * @param id - Element id to visit.
+   * @returns An error message, or null when the subtree is valid.
+   */
   function visit(id: string): string | null {
     if (visiting.has(id)) return `element tree contains a cycle at ${id}`;
     if (visited.has(id)) return null;
@@ -184,6 +206,11 @@ function validateElementForest(elements: ClipboardElement[], rootId?: string) {
   return null;
 }
 
+/**
+ * Validates a page group's forest structure and element semantics.
+ * @param group - Page group to validate.
+ * @returns An error message, or null when valid.
+ */
 function validatePageGroup(group: ClipboardPageGroup) {
   const forestError = validateElementForest(group.elements);
   if (forestError) return forestError;
@@ -196,6 +223,11 @@ function validatePageGroup(group: ClipboardPageGroup) {
   return null;
 }
 
+/**
+ * Validates a project clipboard item's pages and elements.
+ * @param item - Project clipboard item to validate.
+ * @returns An error message, or null when valid.
+ */
 function validateProjectItem(item: ClipboardProjectItem) {
   const pageIds = new Set<string>();
   const elementIds = new Set<string>();
@@ -226,7 +258,7 @@ function validateProjectItem(item: ClipboardProjectItem) {
 
 /**
  * Parses and validates a project clipboard payload.
- * @param text Raw clipboard text.
+ * @param text - Raw clipboard text.
  * @returns A neverthrow result containing the validated clipboard item list.
  */
 export function parseProjectClipboard(text: string) {
@@ -266,8 +298,8 @@ export function parseProjectClipboard(text: string) {
 
 /**
  * Collects an element and all of its descendants from a page element map.
- * @param elements Element map keyed by element id.
- * @param rootId Element subtree root.
+ * @param elements - Element map keyed by element id.
+ * @param rootId - Element subtree root.
  * @returns The root element and its descendants.
  */
 export function collectElementSubtree(elements: Record<string, ElementRecord>, rootId: string) {
@@ -275,6 +307,10 @@ export function collectElementSubtree(elements: Record<string, ElementRecord>, r
   if (!root) return [];
 
   const result: ElementRecord[] = [];
+  /**
+   * Recursively appends an element and its children in sort order.
+   * @param element - Element to append.
+   */
   const visit = (element: ElementRecord) => {
     result.push(element);
     for (const child of Object.values(elements)
@@ -289,7 +325,7 @@ export function collectElementSubtree(elements: Record<string, ElementRecord>, r
 
 /**
  * Converts an element record into its clipboard representation without timestamps.
- * @param element Element record to copy.
+ * @param element - Element record to copy.
  * @returns Clipboard-safe element data.
  */
 export function toClipboardElement(element: ElementRecord): ClipboardElementInput {
@@ -299,7 +335,7 @@ export function toClipboardElement(element: ElementRecord): ClipboardElementInpu
 
 /**
  * Converts a page record into its clipboard representation without timestamps.
- * @param page Page record to copy.
+ * @param page - Page record to copy.
  * @returns Clipboard-safe page data.
  */
 export function toClipboardPage(page: PageRecord): ClipboardPageInput {
@@ -309,7 +345,7 @@ export function toClipboardPage(page: PageRecord): ClipboardPageInput {
 
 /**
  * Converts a project record into its clipboard representation without timestamps.
- * @param project Project record to copy.
+ * @param project - Project record to copy.
  * @returns Clipboard-safe project data.
  */
 export function toClipboardProject(project: ProjectSelect): ClipboardProjectInput {
@@ -317,14 +353,19 @@ export function toClipboardProject(project: ProjectSelect): ClipboardProjectInpu
   return rest;
 }
 
+/**
+ * Checks whether a name is valid as a route/page name.
+ * @param name - Name to validate.
+ * @returns True when the name is valid.
+ */
 function routeNameIsValid(name: string) {
   return z_PageInsert.shape.name.safeParse(name).success;
 }
 
 /**
  * Generates a unique route-safe name by appending copy suffixes when needed.
- * @param name Desired route name.
- * @param existing Existing route names.
+ * @param name - Desired route name.
+ * @param existing - Existing route names.
  * @returns A unique route name no longer than 64 characters.
  */
 export function uniqueRouteName(name: string, existing: Iterable<string>) {
@@ -345,8 +386,8 @@ export function uniqueRouteName(name: string, existing: Iterable<string>) {
 
 /**
  * Remaps a validated element forest to new ids and parents.
- * @param elements Clipboard element records.
- * @param options Root remapping and sort-index options.
+ * @param elements - Clipboard element records.
+ * @param options - Root remapping and sort-index options.
  * @returns Full element records ready for insertion.
  */
 export function remapElementForest(
@@ -406,10 +447,10 @@ export function remapElementForest(
 
 /**
  * Builds a copied element subtree for insertion under a new parent.
- * @param item Validated element clipboard item.
- * @param targetParentId Parent element id, or null for the page root.
- * @param targetSortIndex First sort index to assign under the target parent.
- * @param now Timestamp fallback for records missing timestamps.
+ * @param item - Validated element clipboard item.
+ * @param targetParentId - Parent element id, or null for the page root.
+ * @param targetSortIndex - First sort index to assign under the target parent.
+ * @param now - Timestamp fallback for records missing timestamps.
  * @returns New element records with remapped ids and parents.
  */
 export function createElementCopy(
@@ -428,10 +469,10 @@ export function createElementCopy(
 
 /**
  * Builds a copied page with all of its elements for a target project.
- * @param item Validated page clipboard item.
- * @param targetProjectId Project that will own the new page.
- * @param existingPages Existing pages in the target project.
- * @param now Timestamp fallback for records missing timestamps.
+ * @param item - Validated page clipboard item.
+ * @param targetProjectId - Project that will own the new page.
+ * @param existingPages - Existing pages in the target project.
+ * @param now - Timestamp fallback for records missing timestamps.
  * @returns A new page and its remapped elements.
  */
 export function createPageCopy(
@@ -462,9 +503,9 @@ export function createPageCopy(
 
 /**
  * Builds a copied project with all pages and elements.
- * @param item Validated project clipboard item.
- * @param existingProjects Existing projects used for unique naming.
- * @param now Timestamp fallback for records missing timestamps.
+ * @param item - Validated project clipboard item.
+ * @param existingProjects - Existing projects used for unique naming.
+ * @param now - Timestamp fallback for records missing timestamps.
  * @returns A new project, its pages, and each page's remapped elements.
  */
 export function createProjectCopy(
@@ -517,8 +558,8 @@ export function createProjectCopy(
 
 /**
  * Returns the next sort index for a new child under a parent page.
- * @param elements Existing elements in the page.
- * @param parentId Parent element id, or null for the page root.
+ * @param elements - Existing elements in the page.
+ * @param parentId - Parent element id, or null for the page root.
  * @returns The next available sort index.
  */
 export function nextElementSortIndex(

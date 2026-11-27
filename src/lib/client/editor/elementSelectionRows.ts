@@ -15,9 +15,18 @@ import {
 } from "$lib/client/editor/elementBindingRows";
 
 export type ElementCollectionUpdater = {
+  /**
+   * Applies batched record updates to the collection.
+   * @param items - Updates keyed by element id.
+   */
   updateMany(items: { id: string; changes: Partial<Omit<ElementRecord, "id">> }[]): void;
 } | null;
 
+/**
+ * Finds a common string across values and reports whether they differ.
+ * @param values - Values to compare.
+ * @returns The shared value, or an empty string with mixed set when they differ.
+ */
 export function commonStrings(values: string[]): { value: string; mixed: boolean } {
   if (values.length === 0) return { value: "", mixed: false };
   const first = values[0];
@@ -26,6 +35,11 @@ export function commonStrings(values: string[]): { value: string; mixed: boolean
     : { value: "", mixed: true };
 }
 
+/**
+ * Finds a common attribute value across values and reports whether they differ.
+ * @param values - Values to compare.
+ * @returns The shared value as a string, or empty with mixed set when they differ.
+ */
 export function commonAttributeValues(values: Array<string | number | boolean>) {
   if (values.length === 0) return { value: "", mixed: false };
   const first = values[0];
@@ -34,6 +48,11 @@ export function commonAttributeValues(values: Array<string | number | boolean>) 
     : { value: "", mixed: true };
 }
 
+/**
+ * Finds keys present on every record.
+ * @param items - Records to intersect.
+ * @returns Sorted shared keys.
+ */
 export function commonKeysFor(items: Array<Record<string, unknown>>) {
   if (items.length === 0) return [];
   if (items.length === 1) return Object.keys(items[0]).sort();
@@ -42,6 +61,12 @@ export function commonKeysFor(items: Array<Record<string, unknown>>) {
     .sort();
 }
 
+/**
+ * Builds a binding context backed by a tag value map.
+ * @param element - Element whose bindings are evaluated.
+ * @param tagValueMap - Tag lookup source.
+ * @returns The binding context.
+ */
 export function bindingContextFor(
   element: ElementRecord,
   tagValueMap: TagValueMap,
@@ -55,6 +80,13 @@ export function bindingContextFor(
   };
 }
 
+/**
+ * Evaluates a binding expression against an element's context.
+ * @param element - Element whose binding is evaluated.
+ * @param expression - Binding expression.
+ * @param tagValueMap - Tag lookup source.
+ * @returns The formatted result and any evaluation error.
+ */
 export function evaluateElementBinding(
   element: ElementRecord,
   expression: string,
@@ -71,6 +103,13 @@ export function evaluateElementBinding(
   return { result: formatBindingResult(evaluation.value), error: null };
 }
 
+/**
+ * Finds a common binding expression across elements.
+ * @param elements - Elements to compare.
+ * @param scope - Binding scope.
+ * @param key - Binding key.
+ * @returns The shared binding value and mixed flag.
+ */
 export function commonBinding(elements: ElementRecord[], scope: BindingScope, key: string) {
   const values = elements.map((element) =>
     scope === "text" ? (element.bindings?.text ?? "") : (getBindingMap(element, scope)[key] ?? ""),
@@ -78,6 +117,13 @@ export function commonBinding(elements: ElementRecord[], scope: BindingScope, ke
   return commonStrings(values);
 }
 
+/**
+ * Evaluates an expression across elements and finds a common result.
+ * @param elements - Elements to evaluate.
+ * @param expression - Binding expression.
+ * @param tagValueMap - Tag lookup source.
+ * @returns The common result, or "Mixed" when values differ, plus any error.
+ */
 export function commonResult(
   elements: ElementRecord[],
   expression: string,
@@ -94,6 +140,13 @@ export function commonResult(
   };
 }
 
+/**
+ * Builds a display row for a shared style key.
+ * @param elements - Elements to inspect.
+ * @param key - Style property name.
+ * @param tagValueMap - Tag lookup source.
+ * @returns The style row data.
+ */
 export function styleRowFor(
   elements: ElementRecord[],
   key: string,
@@ -115,6 +168,12 @@ export function styleRowFor(
   };
 }
 
+/**
+ * Builds display rows for style keys shared by all elements.
+ * @param elements - Elements to inspect.
+ * @param tagValueMap - Tag lookup source.
+ * @returns The style rows.
+ */
 export function buildStyleRows(
   elements: ElementRecord[],
   tagValueMap: TagValueMap,
@@ -128,6 +187,13 @@ export function buildStyleRows(
   return keys.map((key) => styleRowFor(elements, key, tagValueMap));
 }
 
+/**
+ * Builds display rows for attribute or property keys shared by all elements.
+ * @param elements - Elements to inspect.
+ * @param scope - Attribute binding scope.
+ * @param tagValueMap - Tag lookup source.
+ * @returns The attribute rows.
+ */
 export function buildAttributeRows(
   elements: ElementRecord[],
   scope: AttributeBindingScope,
@@ -171,6 +237,12 @@ export function buildAttributeRows(
   });
 }
 
+/**
+ * Applies computed changes to elements through a collection updater.
+ * @param collection - Collection updater, or null to skip.
+ * @param elements - Elements to update.
+ * @param changesFor - Computes the changes for each element.
+ */
 export function updateElements(
   collection: ElementCollectionUpdater,
   elements: ElementRecord[],

@@ -36,6 +36,12 @@ type Executor<T> = (...scopes: Record<string, unknown>[]) => {
   run: () => T;
 };
 
+/**
+ * Creates a sandbox with the safe globals minus Function and eval.
+ *
+ * @param quota - Maximum execution steps allowed per run
+ * @returns A configured sandbox instance
+ */
 function createSandbox(quota: bigint) {
   const globals = { ...Sandbox.SAFE_GLOBALS };
   delete globals.Function;
@@ -49,6 +55,12 @@ const expressionCache = new Map<string, Result<Executor<unknown>, ScriptEvaluati
 const scriptValidationSandbox = createSandbox(EVENT_EXECUTION_QUOTA);
 const scriptValidationCache = new Map<string, Result<void, ScriptEvaluationError>>();
 
+/**
+ * Compiles a binding expression, caching both successes and failures.
+ *
+ * @param expression - JavaScript expression to compile
+ * @returns Ok with the executor, or Err with a compile failure
+ */
 function compileExpression(expression: string): Result<Executor<unknown>, ScriptEvaluationError> {
   const cached = expressionCache.get(expression);
   if (cached !== undefined) return cached;
@@ -70,6 +82,13 @@ function compileExpression(expression: string): Result<Executor<unknown>, Script
   return success;
 }
 
+/**
+ * Evaluates a binding expression inside the expression sandbox.
+ *
+ * @param expression - JavaScript expression to evaluate
+ * @param scope - Values exposed to the expression
+ * @returns Ok with the evaluated value, or Err for compile, runtime, or quota failures
+ */
 export function evaluateSandboxExpression<Scope extends Record<string, unknown>>(
   expression: string,
   scope: Scope,
@@ -104,6 +123,12 @@ export function evaluateSandboxExpression<Scope extends Record<string, unknown>>
   return ok(result.data);
 }
 
+/**
+ * Validates that an event script compiles, caching the result.
+ *
+ * @param script - Event script source to validate
+ * @returns Ok when the script compiles, or Err with a compile failure
+ */
 export function validateSandboxScript(script: string): Result<void, ScriptEvaluationError> {
   if (!script.trim()) return ok(undefined);
 
@@ -127,6 +152,14 @@ export function validateSandboxScript(script: string): Result<void, ScriptEvalua
   return success;
 }
 
+/**
+ * Compiles and runs an event script with a timeout guard.
+ *
+ * @param script - Event script source to execute
+ * @param scope - Event, element, and tag bindings exposed to the script
+ * @param [timeoutMs] - Timeout in ms (defaults to {@link EVENT_SCRIPT_TIMEOUT_MS})
+ * @returns A Result-like object with the script value, or a compile/start/run failure
+ */
 export async function executeSandboxEvent(
   script: string,
   scope: SandboxEventScope,

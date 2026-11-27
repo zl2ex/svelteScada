@@ -8,6 +8,12 @@ type NudgeElement = {
   sortIndex: number;
 };
 
+/**
+ * Finds contiguous runs of selected indices.
+ * @param ids - Ordered element ids.
+ * @param selected - Set of selected ids.
+ * @returns Inclusive start/end index pairs for each run.
+ */
 function selectedRuns(ids: string[], selected: Set<string>) {
   const runs: Array<[number, number]> = [];
 
@@ -26,6 +32,13 @@ function selectedRuns(ids: string[], selected: Set<string>) {
   return runs;
 }
 
+/**
+ * Computes new sort indices that move selected elements one step.
+ * @param elements - Elements keyed by id.
+ * @param selectedIds - Ids to move.
+ * @param direction - Move direction.
+ * @returns Changed sort indices keyed by element id.
+ */
 export function nudgeSortIndices(
   elements: Record<string, NudgeElement>,
   selectedIds: Iterable<string>,

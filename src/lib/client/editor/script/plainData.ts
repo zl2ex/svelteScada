@@ -1,5 +1,16 @@
 const MAX_CLONE_DEPTH = 8;
 
+/**
+ * Deep-clones a value into plain, script-safe data.
+ *
+ * Functions are dropped, dates become ISO strings, errors become plain objects, and
+ * cycles are preserved. Values beyond {@link MAX_CLONE_DEPTH} become undefined.
+ *
+ * @param value - Value to clone
+ * @param [depth] - Current recursion depth (defaults to 0)
+ * @param [seen] - Map of already-cloned objects for cycle handling (defaults to an empty map)
+ * @returns The cloned value
+ */
 export function clonePlain<T>(value: T, depth = 0, seen = new WeakMap<object, unknown>()): T {
   if (value === null || typeof value !== "object") return value;
 

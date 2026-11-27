@@ -60,6 +60,12 @@ export const svgMoveableSupport: Record<SvgTag, MoveableSupport> = {
   foreignObject: resizable,
 };
 
+/**
+ * Returns the Moveable capabilities for an element.
+ *
+ * @param element - Element to inspect
+ * @returns The resizable, scalable, and control support for the element
+ */
 export function moveableSupportForElement(element: ElementRecord): MoveableSupport {
   if (element.kind !== "svg" || !element.tag) {
     return { resizable: true, scalable: false, controls: [] };
@@ -69,6 +75,13 @@ export function moveableSupportForElement(element: ElementRecord): MoveableSuppo
   );
 }
 
+/**
+ * Shifts a numeric or px attribute value by a delta.
+ *
+ * @param value - Attribute value to shift
+ * @param delta - Amount to add
+ * @returns The shifted value, or null when the input cannot be parsed
+ */
 function shiftNumeric(value: AttributeValue | undefined, delta: number) {
   if (value === undefined || value === null) return String(delta);
   if (typeof value === "number") return String(value + delta);
@@ -80,6 +93,14 @@ function shiftNumeric(value: AttributeValue | undefined, delta: number) {
   return `${number + delta}${hasPx ? "px" : ""}`;
 }
 
+/**
+ * Shifts every coordinate in an SVG points attribute.
+ *
+ * @param value - Raw points attribute value
+ * @param dx - Horizontal offset to apply
+ * @param dy - Vertical offset to apply
+ * @returns The shifted points string, or null when malformed
+ */
 function shiftPoints(value: AttributeValue | undefined, dx: number, dy: number) {
   if (typeof value !== "string") return null;
   const tokens = value
@@ -98,6 +119,15 @@ function shiftPoints(value: AttributeValue | undefined, dx: number, dy: number) 
   return shifted.join(" ");
 }
 
+/**
+ * Builds the attributes for an SVG element after dragging it.
+ *
+ * @param element - SVG element being dragged
+ * @param dx - Horizontal drag offset
+ * @param dy - Vertical drag offset
+ * @param [isNestedSvg] - Whether the element is a nested svg (defaults to false)
+ * @returns The updated attributes, or null when the element cannot be dragged
+ */
 export function svgDragAttributes(
   element: ElementRecord,
   dx: number,
@@ -109,6 +139,13 @@ export function svgDragAttributes(
 
   const attributes: ElementAttributes = { ...element.attributes };
 
+  /**
+   * Shifts one attribute in place by a delta.
+   *
+   * @param name - Attribute name to shift
+   * @param delta - Amount to add
+   * @returns False when the attribute cannot be parsed, otherwise true
+   */
   const set = (name: string, delta: number) => {
     const next = shiftNumeric(attributes[name], delta);
     if (next === null) return false;
@@ -154,9 +191,18 @@ export function svgDragAttributes(
   return attributes;
 }
 
-/***
-TD 
-change svgDragAttributes() and svgScaleAttributes() to use a lookup toPositionAttributes()  instead of switch statement's. also fix the type errors in toPositionAttributes and sujjest changes to the implimentation
+/**
+ * Builds the attributes for an SVG element after scaling it.
+ *
+ * TODO: change svgDragAttributes() and svgScaleAttributes() to use a lookup
+ * toPositionAttributes() instead of switch statements, and fix its type errors.
+ *
+ * @param element - SVG element being scaled
+ * @param startWidth - Width captured when the scale started
+ * @param startHeight - Height captured when the scale started
+ * @param scaleX - Horizontal scale factor
+ * @param scaleY - Vertical scale factor
+ * @returns The updated attributes, or null when the element cannot be scaled
  */
 
 export function svgScaleAttributes(

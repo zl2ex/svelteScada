@@ -70,6 +70,8 @@ class StreamResult<S> {
    * the effect, tears the old subscription down and opens a new one. The
    * effect only exists during component initialisation, so instances have to be
    * created there.
+   *
+   * @param factory - returns the stream store to subscribe to
    */
   constructor(factory: () => StreamStore<S>) {
     $effect(() => {
@@ -105,24 +107,47 @@ class StreamResult<S> {
     });
   }
 
+  /**
+   * The current connection status.
+   *
+   * @returns the status from the derived stream state
+   */
   get status(): StreamState<S>["status"] {
     return this.#peek().status;
   }
 
-  /** Null unless the state is `connected` or `reconnecting`. */
+  /**
+   * Null unless the state is `connected` or `reconnecting`.
+   *
+   * @returns the current payload, or null when unavailable
+   */
   get value(): Payload<S> | null {
     return this.#peek().value;
   }
 
-  /** Null unless the state is `error`. */
+  /**
+   * Null unless the state is `error`.
+   *
+   * @returns the current RPC error, or null when none
+   */
   get error(): RpcError | null {
     return this.#peek().error;
   }
 
+  /**
+   * Returns the current derived stream state.
+   *
+   * @returns the current stream state snapshot
+   */
   #peek(): StreamState<S> {
     return this.#current;
   }
 
+  /**
+   * Stores or clears the current RPC error and recomputes the state.
+   *
+   * @param error - error to store, or null to clear it
+   */
   #onError(error: RpcError | null) {
     if (error === null) {
       this.#error = null;
@@ -132,6 +157,9 @@ class StreamResult<S> {
     this.#recompute();
   }
 
+  /**
+   * Rebuilds the derived state from the current value, error, and connection.
+   */
   #recompute() {
     if (this.#error) {
       this.#current = { status: "error", value: null, error: this.#error };
