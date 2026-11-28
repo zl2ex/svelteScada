@@ -8,10 +8,18 @@ import type {
 import type { PropertyValue } from "$lib/propertyValue";
 import { updateBinding } from "$lib/client/editor/bindings";
 
-export type AttributeBindingScope = "attributes" | "props";
+export type AttributeBindingScope = "attributes" | "properties";
 export type BindingScope = AttributeBindingScope | "style" | "text" | "styleClass";
 
-export type ElementBindingRowData = {
+export type InputExtension =
+  | { kind: "text" }
+  | { kind: "number"; min?: number; max?: number; step?: number }
+  | { kind: "color"; suggestions?: string[] }
+  | { kind: "select"; options: { label: string; value: string }[] }
+  | { kind: "autocomplete"; suggestions: string[] }
+  | { kind: "checkbox"; indeterminate?: boolean };
+
+export type InputWithBindingRow = {
   key: string;
   value: string;
   binding: string;
@@ -20,27 +28,10 @@ export type ElementBindingRowData = {
   placeholder?: string;
   description?: string;
   required?: boolean;
+  locked?: boolean;
+  overridden?: boolean;
+  input?: InputExtension;
 };
-
-export type ElementBindingRowControl = {
-  value: string;
-  disabled: boolean;
-  bound: boolean;
-  placeholder: string;
-  commit: (value: string) => void;
-  context?: unknown;
-};
-
-/**
- * Determines whether an element stores bindings under attributes or props.
- * @param element - Element to inspect.
- * @returns The applicable attribute binding scope.
- */
-export function attributeBindingScope(element: ElementRecord): AttributeBindingScope {
-  return element.kind === "user-component" || element.kind === "base-component"
-    ? "props"
-    : "attributes";
-}
 
 /**
  * Returns the binding map for an element scope.
@@ -127,7 +118,7 @@ export function setElementPropertyValue(
 export function removeElementPropertyRow(element: ElementRecord, key: string) {
   return {
     properties: setElementProperty(element, key, null),
-    bindings: setBinding(element, "props", key, ""),
+    bindings: setBinding(element, "properties", key, ""),
   };
 }
 
@@ -194,20 +185,15 @@ export function setStyleProperty(
 }
 
 /**
- * Removes an attribute row and its binding from an element.
+ * Removes a top-level attribute row and its binding from an element.
  * @param element - Element to update.
- * @param scope - Attribute binding scope.
  * @param key - Attribute key to remove.
  * @returns The updated attributes and bindings.
  */
-export function removeTopLevelAttributeRow(
-  element: ElementRecord,
-  scope: AttributeBindingScope,
-  key: string,
-) {
+export function removeTopLevelAttributeRow(element: ElementRecord, key: string) {
   return {
     attributes: setTopLevelAttribute(element, key, null),
-    bindings: setBinding(element, scope, key, ""),
+    bindings: setBinding(element, "attributes", key, ""),
   };
 }
 

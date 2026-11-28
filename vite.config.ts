@@ -10,4 +10,8 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ["node-opcua", "node-opcua-client"],
   },
+  // Ignore the specific folder and all its contents
+  server: {
+    watch: { ignored: ["**/your-folder-name/**"] },
+  },
 });

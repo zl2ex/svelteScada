@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import type * as Monaco from "monaco-editor";
   import { scriptScopes, type ScriptScope } from "$lib/client/editor/script/scriptScopes";
+  import type { ScriptPropertyKeyInfo } from "$lib/client/editor/propertyKeys";
 
   let {
     value = "",
@@ -9,6 +10,7 @@
     readonly = false,
     ariaLabel = "Script editor",
     scope = "element",
+    propertyKeys,
     onchange,
     onblur,
   }: {
@@ -17,6 +19,7 @@
     readonly?: boolean;
     ariaLabel?: string;
     scope?: ScriptScope;
+    propertyKeys?: Iterable<ScriptPropertyKeyInfo>;
     onchange?: (value: string) => void;
     onblur?: (value: string) => void;
   } = $props();
@@ -24,8 +27,15 @@
   let container: HTMLDivElement;
   let editor = $state.raw<Monaco.editor.IStandaloneCodeEditor>();
   let model = $state.raw<Monaco.editor.ITextModel>();
+  let monacoModule = $state.raw<typeof import("$lib/client/editor/script/monaco")>();
   let loading = $state(true);
   let syncing = false;
+
+  $effect(() => {
+    if (propertyKeys && editor?.hasTextFocus()) {
+      monacoModule?.updateScriptPropertyKeys(scope, propertyKeys);
+    }
+  });
 
   $effect(() => {
     if (!model) return;
@@ -44,12 +54,16 @@
     let cancelled = false;
     let changeListener: Monaco.IDisposable | undefined;
     let blurListener: Monaco.IDisposable | undefined;
+    let focusListener: Monaco.IDisposable | undefined;
 
     void (async () => {
-      const { configureMonaco, monaco } = await import("$lib/client/editor/script/monaco");
+      const module = await import("$lib/client/editor/script/monaco");
       if (cancelled) return;
 
+      const { configureMonaco, monaco, updateScriptPropertyKeys } = module;
       configureMonaco();
+      monacoModule = module;
+      if (propertyKeys) updateScriptPropertyKeys(scope, propertyKeys);
 
       const extension = scope === "tag" ? "ts" : "js";
       const nextModel = monaco.editor.createModel(
@@ -88,6 +102,10 @@
         onblur?.(nextModel.getValue());
       });
 
+      focusListener = nextEditor.onDidFocusEditorText(() => {
+        if (propertyKeys) updateScriptPropertyKeys(scope, propertyKeys);
+      });
+
       loading = false;
     })();
 
@@ -95,6 +113,7 @@
       cancelled = true;
       changeListener?.dispose();
       blurListener?.dispose();
+      focusListener?.dispose();
       editor?.dispose();
       model?.dispose();
     };

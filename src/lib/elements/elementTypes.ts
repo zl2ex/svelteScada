@@ -8,7 +8,6 @@ import type {
   z_ElementStyle,
 } from "./elementValidation";
 import type { z } from "zod";
-import type { PropertyValue } from "$lib/propertyValue";
 
 export const elementKinds = ["html", "svg", "base-component", "user-component"] as const;
 
@@ -25,18 +24,6 @@ export type ElementAttributes = z.infer<typeof z_ElementAttributes>;
 export type ElementProperties = z.infer<typeof z_ElementProperties>;
 
 export type ElementBindings = z.infer<typeof z_ElementBindings>;
-
-export const userComponentPropTypes = ["string", "number", "boolean", "color", "tag"] as const;
-
-export type UserComponentPropType = (typeof userComponentPropTypes)[number];
-
-export type UserComponentPropDefinition = {
-  key: string;
-  label: string;
-  type: UserComponentPropType;
-  defaultValue?: PropertyValue;
-  required?: boolean;
-};
 
 export type ElementRecord = Omit<ElementSelect, "pageId" | "userComponentId"> & {
   parentId: string | null;
@@ -108,7 +95,7 @@ export function isSvgDrawingElement(element: ElementShape | null | undefined) {
 
 /**
  * looks through selected elements and up the tree untill a parent element is found that is a
- * "container" and allows children
+ * "container" that allows children
  *
  * @param elements - all elements to look in, usually the entire elements array for the page
  * @param selectedId - current selected element id to start the search from

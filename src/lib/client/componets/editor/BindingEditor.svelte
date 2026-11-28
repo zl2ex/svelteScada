@@ -3,12 +3,15 @@
   import { Popover, Portal } from "@skeletonlabs/skeleton-svelte";
   import type { ScriptScope } from "$lib/client/editor/script/scriptScopes";
   import ScriptEditor from "./ScriptEditor.svelte";
+  import type { ScriptPropertyKeyInfo } from "$lib/client/editor/propertyKeys";
+  import { boundStyle } from "$lib/client/util/bindingStyle";
 
   let {
     label,
     binding,
-    contextDescription = "tag(), tagValue(), tagStatus(), props, and element",
+    contextDescription = "tag(), tagValue(), tagStatus(), element, and getElementById()",
     scope,
+    propertyKeys,
     savedError = null,
     onBindingSave,
     onBindingRemove,
@@ -17,6 +20,7 @@
     binding: string;
     contextDescription?: string;
     scope: ScriptScope;
+    propertyKeys?: Iterable<ScriptPropertyKeyInfo>;
     savedError?: string | null;
     onBindingSave: (expression: string) => void;
     onBindingRemove: () => void;
@@ -52,15 +56,13 @@
 <Popover positioning={{ placement: "left-end" }}>
   <Popover.Trigger
     type="button"
-    class="btn p-1.5 {hasError
-      ? 'preset-filled-error-500'
-      : isBound
-        ? 'preset-filled'
-        : 'preset-tonal'} shrink-0"
+    class="btn p-1.5 {hasError ? 'preset-filled-error-500' : ''} {isBound
+      ? 'text-primary-600-400'
+      : ''} shrink-0 hover:bg-surface-400-600"
     aria-invalid={hasError}
     title={hasError ? savedError : isBound ? binding : "Add binding"}
   >
-    <Link2Icon class="size-4" />
+    <Link2Icon class="size-4 {isBound ? '' : 'opacity-60'}" />
   </Popover.Trigger>
 
   <Portal>
@@ -90,6 +92,7 @@
             height="300px"
             ariaLabel={`${label} binding expression`}
             {scope}
+            {propertyKeys}
             onchange={(next) => (draftBinding = next)}
           />
 

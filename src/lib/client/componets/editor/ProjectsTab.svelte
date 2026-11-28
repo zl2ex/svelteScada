@@ -27,6 +27,7 @@
     useTreeView,
   } from "@skeletonlabs/skeleton-svelte";
   import { getEditorContext } from "$lib/client/editor/editorContext";
+  import { createElementLookup } from "$lib/client/editor/elementLookup";
   import { getScriptEvaluatorContext } from "$lib/client/editor/scriptEvaluatorContext";
   import { getAbilityContext } from "$lib/client/permissions/abilityContext";
   import { handleEditorKeyup, isEditableTarget } from "$lib/client/editor/editorKeyboard";
@@ -1442,8 +1443,12 @@
   </div>
 {/snippet}
 
-{#snippet elementLabel(element: ElementRecord)}
-  {@const bindingError = editorEvaluator.elementError(element)}
+{#snippet elementLabel(element: ElementRecord, pageId: string)}
+  {@const getElementById = createElementLookup(
+    editor.getPageElementsSnapshot(pageId),
+    editor.userComponents,
+  )}
+  {@const bindingError = editorEvaluator.elementError(element, getElementById)}
   <div class="flex grow gap-2 min-w-0">
     <CodeXmlIcon class="size-4 shrink-0 opacity-60" />
     {#if renamingId === element.id}
@@ -1575,7 +1580,7 @@
           >
             <TreeView.BranchIndicator />
             <TreeView.BranchText class="w-full">
-              {@render elementLabel(node.element)}
+              {@render elementLabel(node.element, node.pageId)}
             </TreeView.BranchText>
           </TreeView.BranchControl>
           <TreeView.BranchContent>
@@ -1596,7 +1601,7 @@
           ondragleave={(ev) => handleDragLeave(ev, node)}
           ondrop={(ev) => handleDropOnNode(ev, node)}
         >
-          {@render elementLabel(node.element)}
+          {@render elementLabel(node.element, node.pageId)}
         </TreeView.Item>
       {/if}
     {/if}

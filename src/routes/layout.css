@@ -17,6 +17,13 @@
   color-scheme: light;
 }
 
+/* custom syntax highlighting font 
+  https://blog.glyphdrawing.club/ */
+@font-face {
+  font-family: "FontWithASyntaxHighlighter";
+  src: url("./FontWithASyntaxHighlighter-Regular.woff2") format("woff2");
+}
+
 /* https://github.com/skeletonlabs/skeleton/issues/3993 */
 .select,
 .input,

@@ -2,7 +2,8 @@ import { getContext, setContext } from "svelte";
 import type { TagValueMap } from "$lib/client/live/tagMap.svelte";
 import type { TagOptionsInput } from "$lib/server/tag/tag";
 import type { TagProperties } from "$lib/sqlite/tagProperties";
-import type { ElementProperties, ElementRecord } from "$lib/elements/elementTypes";
+import type { ElementRecord } from "$lib/elements/elementTypes";
+import type { ElementLookup } from "$lib/client/editor/elementLookup";
 import type { UdtDefinitionCollection } from "$lib/client/editor/udtDefinitionContext";
 import { getBindingMap } from "$lib/client/editor/elementBindingRows";
 import { tagBindingKeys } from "$lib/tagBindings";
@@ -106,19 +107,16 @@ export class EditorScriptEvaluator {
    * Builds the binding context for an element, including live tag accessors.
    *
    * @param element - Element to expose to bindings
-   * @param [props] - Element properties to expose (defaults to the element's properties)
+   * @param [getElementById] - Element lookup exposed to scripts
    * @returns The element binding context
    */
-  elementContext(
-    element: ElementRecord,
-    props: ElementProperties = element.properties ?? {},
-  ): BindingContext {
+  elementContext(element: ElementRecord, getElementById: ElementLookup = () => undefined) {
     return {
       tag: (lookup: string) => this.#tagValueMap.tag(lookup),
       tagValue: (lookup: string) => this.#tagValueMap.tagValue(lookup),
       tagStatus: (lookup: string) => this.#tagValueMap.tagStatus(lookup),
-      props,
       element,
+      getElementById,
     };
   }
 
@@ -127,15 +125,15 @@ export class EditorScriptEvaluator {
    *
    * @param element - Element providing the binding context
    * @param expression - Binding expression to evaluate
-   * @param [props] - Element properties to expose (defaults to the element's properties)
+   * @param [getElementById] - Element lookup exposed to scripts
    * @returns Ok with the evaluated value, or Err on failure
    */
   evaluateElementFor(
     element: ElementRecord,
     expression: string,
-    props: ElementProperties = element.properties ?? {},
+    getElementById: ElementLookup = () => undefined,
   ) {
-    return scriptEvaluator.evaluateElement(expression, this.elementContext(element, props));
+    return scriptEvaluator.evaluateElement(expression, this.elementContext(element, getElementById));
   }
 
   /**
@@ -169,10 +167,14 @@ export class EditorScriptEvaluator {
    * Finds the first failing text, attribute, prop, style, class, or event binding on an element.
    *
    * @param element - Element whose bindings should be checked
+   * @param [getElementById] - Element lookup exposed to scripts
    * @returns The first binding error, or null when all bindings succeed
    */
-  elementError(element: ElementRecord): ScriptBindingError | null {
-    const context = this.elementContext(element);
+  elementError(
+    element: ElementRecord,
+    getElementById: ElementLookup = () => undefined,
+  ): ScriptBindingError | null {
+    const context = this.elementContext(element, getElementById);
     const bindings = element.bindings;
 
     if (bindings?.text?.trim()) {
@@ -185,7 +187,7 @@ export class EditorScriptEvaluator {
       }
     }
 
-    for (const scope of ["attributes", "props", "style", "styleClass"] as const) {
+    for (const scope of ["attributes", "properties", "style", "styleClass"] as const) {
       const expressions = getBindingMap(element, scope);
       for (const [key, expression] of Object.entries(expressions)) {
         if (!expression.trim()) continue;

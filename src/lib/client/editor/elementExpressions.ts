@@ -1,6 +1,6 @@
 import { goto } from "$app/navigation";
 import { toast } from "$lib/client/toast.svelte";
-import type { ElementProperties, ElementRecord } from "$lib/elements/elementTypes";
+import type { ElementRecord } from "$lib/elements/elementTypes";
 import type { TagValue } from "$lib/server/tag/tag";
 import type { ScriptEvent } from "$lib/client/editor/script/scriptApi";
 import {
@@ -12,6 +12,7 @@ import {
   type BindingContext as CommonBindingContext,
 } from "$lib/client/editor/expressions";
 import { errorToString, type NeverThrowError, type WireResult } from "$lib/util/neverThrow";
+import type { ElementLookup } from "$lib/client/editor/elementLookup";
 
 export type GotoFn = typeof goto;
 export type ToastFn = typeof toast;
@@ -21,8 +22,8 @@ export type TagWrite = (
 ) => Promise<WireResult<{ success: true }, NeverThrowError>>;
 
 export type BindingContext = CommonBindingContext & {
-  props: ElementProperties;
   element: ElementRecord;
+  getElementById: ElementLookup;
 };
 
 export type EventContext = BindingContext & {

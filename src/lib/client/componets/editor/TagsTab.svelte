@@ -65,6 +65,7 @@
   import { getTagCollectionContext } from "$lib/client/editor/tagCollectionContext";
   import { isTagOptions, isUdtTag } from "$lib/util/tag";
   import { inheritedTagFieldValue } from "$lib/client/editor/udtOverrides";
+  import { tagPropertyKeys } from "$lib/client/editor/propertyKeys";
 
   let {
     tagFolders,
@@ -215,6 +216,8 @@
       ),
     ),
   );
+
+  let scriptPropertyKeys = $derived(tagPropertyKeys(selectedTags, udtDefinitionsByName));
 
   /**
    * Selects a tag if needed and opens its editor popover.
@@ -1643,15 +1646,15 @@
           <span class="truncate" title={`${node.name}\n${node.dataType}`}>{node.name}</span>
 
           {#if node.trendEnabled}
-            <ChartNoAxesCombinedIcon class="size-4 shrink-0 opacity-85" title="trend active" />
+            <ChartNoAxesCombinedIcon class="size-4 shrink-0 opacity-50" title="trend active" />
           {/if}
 
           {#if node.driverPath}
-            <KeyboardIcon class="size-4 shrink-0 opacity-85" title="driver connection active" />
+            <KeyboardIcon class="size-4 shrink-0 opacity-50" title="driver connection active" />
           {/if}
 
           {#if node.bindings}
-            <Link2Icon class="size-4 shrink-0 opacity-85" title="bindings active" />
+            <Link2Icon class="size-4 shrink-0 opacity-50" title="bindings active" />
           {/if}
 
           <CircleAlertIcon
@@ -1915,6 +1918,7 @@
       onBindingRemove={(key) => saveSelectedBinding(key, "")}
       onClearOverride={clearSelectedOverride}
       onPropertiesChange={updateSelectedTagProperties}
+      propertyKeys={scriptPropertyKeys}
       {lockedPropertyKeys}
     />
   {/if}

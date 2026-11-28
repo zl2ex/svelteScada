@@ -99,7 +99,7 @@ function rewriteElementBindings(
     }
   }
 
-  for (const scope of ["attributes", "style", "props", "events", "styleClass"] as const) {
+  for (const scope of ["attributes", "style", "properties", "events", "styleClass"] as const) {
     const rewritten = rewriteStringMap(next[scope], mappings);
     if (rewritten.changed) {
       (next as Record<string, unknown>)[scope] = rewritten.value;

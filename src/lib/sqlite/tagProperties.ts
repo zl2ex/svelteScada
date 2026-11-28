@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { z_PropertyMap, z_PropertyValue } from "$lib/propertyValue";
+import { z_PropertyMap, z_PropertyValue } from "../../lib/propertyValue";
 
 export const z_TagPropertyValue = z_PropertyValue;
 

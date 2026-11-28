@@ -5,13 +5,18 @@
   import type { BindingContext } from "$lib/client/editor/elementExpressions";
   import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
   import { setBinding } from "$lib/client/editor/elementBindingRows";
+  import { createElementLookup } from "$lib/client/editor/elementLookup";
   import { extractCssClassNames } from "$lib/themes/css";
   import { neverThrowErrorToString } from "$lib/util/neverThrow";
   import type { ElementRecord } from "$lib/elements/elementTypes";
   import BindingEditor from "./BindingEditor.svelte";
   import Autocomplete from "../Autocomplete.svelte";
+  import type { ScriptPropertyKeyInfo } from "$lib/client/editor/propertyKeys";
 
-  let { element }: { element: ElementRecord } = $props();
+  let {
+    element,
+    propertyKeys,
+  }: { element: ElementRecord; propertyKeys?: Iterable<ScriptPropertyKeyInfo> } = $props();
 
   const editor = getEditorContext();
   const tagValueMap = getTagValueMapContext();
@@ -21,12 +26,15 @@
   let available = $derived(
     extractCssClassNames(activeTheme?.projectStyle ?? "").filter((name) => !applied.includes(name)),
   );
+  let getElementById = $derived(
+    createElementLookup(editor.elementsCollection?.state, editor.userComponents),
+  );
   let bindingContext = $derived<BindingContext>({
     tag: (lookup) => tagValueMap.tag(lookup),
     tagValue: (lookup) => tagValueMap.tagValue(lookup),
     tagStatus: (lookup) => tagValueMap.tagStatus(lookup),
-    props: {},
     element,
+    getElementById,
   });
 
   /**
@@ -134,6 +142,7 @@
           binding={bindingFor(className)}
           savedError={result.error}
           scope="element"
+          {propertyKeys}
           onBindingSave={(expression) => saveBinding(className, expression)}
           onBindingRemove={() => saveBinding(className, "")}
         />

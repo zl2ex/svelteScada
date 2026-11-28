@@ -24,7 +24,7 @@ export const z_ElementBindings = z.object({
   text: z_BindingExpression.optional(),
   attributes: z_BindingExpressionMap.optional(),
   style: z_BindingExpressionMap.optional(),
-  props: z_BindingExpressionMap.optional(),
+  properties: z_BindingExpressionMap.optional(),
   events: z_BindingExpressionMap.optional(),
   styleClass: z_BindingExpressionMap.optional(),
 });

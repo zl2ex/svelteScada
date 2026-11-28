@@ -81,3 +81,10 @@
     {/each}
   </datalist>
 </div>
+
+<style>
+  /* Target only inputs connected to a datalist to remove arrow */
+  input[list]::-webkit-calendar-picker-indicator {
+    display: none !important;
+  }
+</style>

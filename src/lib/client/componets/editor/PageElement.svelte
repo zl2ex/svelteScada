@@ -1,10 +1,7 @@
 <script lang="ts">
   import { getEditorContext } from "$lib/client/editor/editorContext";
   import { getTagValueMapContext } from "$lib/client/live/tagMapContext";
-  import type {
-    EditorMode,
-    UserComponentDefinition,
-  } from "$lib/client/editor/editorState.svelte";
+  import type { EditorMode, UserComponentDefinition } from "$lib/client/editor/editorState.svelte";
   import {
     runEventScript,
     type BindingContext,
@@ -25,6 +22,7 @@
   } from "$lib/elements/elementTypes";
   import { svgNamespace } from "$lib/elements/svgTags";
   import { createEventSnapshot } from "$lib/client/editor/script/eventSnapshot";
+  import type { ElementLookup } from "$lib/client/editor/elementLookup";
   import { attempt } from "$lib/util/attempt";
   import TagInput from "$lib/client/componets/scada/TagInput.svelte";
   import DeviceStatus from "$lib/client/componets/DeviceStatus.svelte";
@@ -34,7 +32,7 @@
   type Props = {
     element: ElementRecord;
     elements: Record<string, ElementRecord>;
-    propValues?: ElementProperties;
+    getElementById?: ElementLookup;
     insideSvg?: boolean;
     depth?: number;
     mode?: EditorMode;
@@ -46,7 +44,7 @@
   let {
     element,
     elements,
-    propValues = {},
+    getElementById = () => undefined,
     insideSvg = false,
     depth = 0,
     mode,
@@ -65,8 +63,8 @@
     tag: (lookup) => tagValueMap.tag(lookup),
     tagValue: (lookup) => tagValueMap.tagValue(lookup),
     tagStatus: (lookup) => tagValueMap.tagStatus(lookup),
-    props: propValues,
     element,
+    getElementById,
   });
 
   let eventAction = $derived<{ events: Record<string, string>; context: EventActionContext }>({
@@ -117,7 +115,8 @@
   let resolvedClass = $derived.by(() => {
     const base = resolvedAttributes.class;
     const baseClasses = typeof base === "string" ? base.split(/\s+/) : [];
-    return [...baseClasses, ...resolvedStyleClasses].filter(Boolean).join(" ");
+    const hoverOutline = editor?.mode === "edit" ? "edit-hover-outline" : "";
+    return [...baseClasses, ...resolvedStyleClasses, hoverOutline].filter(Boolean).join(" ");
   });
 
   let resolvedStyle = $derived.by(() => {
@@ -133,7 +132,7 @@
 
   let resolvedProps = $derived.by(() => {
     const props: ElementProperties = { ...element.properties };
-    for (const [name, expression] of Object.entries(element.bindings?.props ?? {})) {
+    for (const [name, expression] of Object.entries(element.bindings?.properties ?? {})) {
       const evaluation = scriptEvaluator.evaluateElement(expression, bindingContext);
       const value = evaluation.isOk() ? toAttributeValue(evaluation.value) : undefined;
       if (value === undefined) delete props[name];
@@ -163,9 +162,7 @@
 
   let definition = $derived(
     element.kind === "user-component" && element.referencedComponentId
-      ? componentDefinitions.find(
-          (item) => item.component.id === element.referencedComponentId,
-        )
+      ? componentDefinitions.find((item) => item.component.id === element.referencedComponentId)
       : undefined,
   );
 
@@ -244,7 +241,12 @@
     {:else if element.baseComponent === "DeviceStatus"}
       <DeviceStatus id="" {...resolvedComponentProps} class={resolvedClass} style={resolvedStyle} />
     {:else if element.baseComponent === "TrendChart"}
-      <TrendChart id={element.id} {...resolvedComponentProps} class={resolvedClass} style={resolvedStyle} />
+      <TrendChart
+        id={element.id}
+        {...resolvedComponentProps}
+        class={resolvedClass}
+        style={resolvedStyle}
+      />
     {:else}
       <span class="text-xs opacity-50">
         Unknown component: {element.baseComponent satisfies null}
@@ -258,7 +260,7 @@
         <PageElement
           element={child}
           elements={definition.elements}
-          propValues={resolvedProps}
+          {getElementById}
           {insideSvg}
           depth={depth + 1}
           mode={activeMode}
@@ -281,7 +283,7 @@
       <PageElement
         element={child}
         {elements}
-        {propValues}
+        {getElementById}
         insideSvg={true}
         depth={depth + 1}
         mode={activeMode}
@@ -304,7 +306,7 @@
       <PageElement
         element={child}
         {elements}
-        {propValues}
+        {getElementById}
         {insideSvg}
         depth={depth + 1}
         mode={activeMode}
@@ -316,3 +318,9 @@
   <pre class="text-error-400-600">{JSON.stringify(element, null, 2)}</pre>
 {/if}
 
+<style>
+  .edit-hover-outline:hover:not(:has(:hover)) {
+    outline: 0.01rem solid var(--custom-moveable-color);
+    outline-offset: -0.005rem;
+  }
+</style>

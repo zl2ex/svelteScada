@@ -1,12 +1,13 @@
 export const boundFieldStyle =
-  "background-color: light-dark(var(--color-primary-100), var(--color-primary-900))";
+  "background-color: color-mix(in oklab, var(--color-primary-300-700) 30%, transparent)";
 
+export const boundTooltip = "Field Bound";
 /**
  * Returns the style string for a bound field.
  *
- * @param view - view state indicating whether the field is bound
+ * @param bound - indicating whether the field is bound
  * @returns the bound-field style when bound, otherwise an empty string
  */
-export function fieldStyle(view: { bound: boolean }) {
-  return view.bound ? boundFieldStyle : "";
+export function boundStyle(bound: boolean) {
+  return bound ? boundFieldStyle : "";
 }

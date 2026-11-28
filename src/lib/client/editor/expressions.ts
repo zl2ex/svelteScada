@@ -35,6 +35,9 @@ export function createBindingScope<Context extends Record<string, unknown>>(cont
     } else if (key === "tagStatus") {
       const tagStatus = value as TagStatusRead;
       scope.tagStatus = (lookup: string) => tagStatus(lookup);
+    } else if (key === "getElementById") {
+      const getElementById = value as (id: string | null | undefined) => unknown;
+      scope.getElementById = (id: string | null | undefined) => clonePlain(getElementById(id));
     } else {
       scope[key] = clonePlain(value);
     }

@@ -38,6 +38,7 @@
   import { undoManager } from "$lib/client/history/undoManager";
   import TagEditorPopover from "./TagEditorPopover.svelte";
   import { materializeUdtRow } from "$lib/client/editor/udtBuilder";
+  import { tagPropertyKeys } from "$lib/client/editor/propertyKeys";
 
   type RootNode = {
     kind: "root";
@@ -217,6 +218,16 @@
     activeDefinition && activeChild
       ? materializeUdtRow(childAsTag(activeDefinition, activeChild))
       : undefined,
+  );
+
+  let udtDefinitionsByName = $derived(
+    Object.fromEntries(
+      Object.values(collection.state).map((definition) => [definition.name, definition]),
+    ),
+  );
+
+  let scriptPropertyKeys = $derived(
+    activeChildTag ? tagPropertyKeys([activeChildTag], udtDefinitionsByName) : [],
   );
 
   /**
@@ -1215,6 +1226,7 @@
       onBindingRemove={(key) => saveActiveChildBinding(key, "")}
       onClearOverride={() => {}}
       onPropertiesChange={saveActiveChildProperties}
+      propertyKeys={scriptPropertyKeys}
     />
   {:else if activeDefinition}
     <TagEditorPopover

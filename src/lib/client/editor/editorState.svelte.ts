@@ -757,12 +757,7 @@ export class EditorState {
       kind === "user-component"
         ? this.userComponents.find((item) => item.component.id === options.referencedComponentId)
         : undefined;
-    const componentProperties = Object.fromEntries(
-      (componentDefinition?.component.props ?? []).map((prop) => [
-        prop.key,
-        prop.defaultValue ?? { value: "", required: prop.required ?? true },
-      ]),
-    );
+    const componentProperties = { ...(componentDefinition?.component.properties ?? {}) };
     const element: ElementRecord = {
       id,
       parentId,

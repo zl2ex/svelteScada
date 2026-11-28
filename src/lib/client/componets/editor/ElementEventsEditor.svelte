@@ -4,6 +4,9 @@
   import { toast } from "$lib/client/toast.svelte";
   import ScriptEditor from "./ScriptEditor.svelte";
   import { commitOrRevert } from "$lib/client/util/use";
+  import type { ScriptPropertyKeyInfo } from "$lib/client/editor/propertyKeys";
+
+  let { propertyKeys }: { propertyKeys?: Iterable<ScriptPropertyKeyInfo> } = $props();
 
   const editor = getEditorContext();
   const eventNamePattern = /^[a-z][a-z0-9:_-]*$/i;
@@ -139,6 +142,7 @@
           height="300px"
           ariaLabel={`${item.name} event script`}
           scope="event"
+          {propertyKeys}
           onchange={(next) => (item.script = next)}
           onblur={() => saveEvents(events)}
         />

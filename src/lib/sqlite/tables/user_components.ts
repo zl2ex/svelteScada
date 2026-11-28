@@ -1,7 +1,7 @@
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { projects } from "./projects";
-import type { UserComponentPropDefinition } from "../../elements/elementTypes";
+import type { PropertyMap } from "$lib/propertyValue";
 
 export const user_components = sqliteTable(
   "user_components",
@@ -14,10 +14,10 @@ export const user_components = sqliteTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
-    props: text("props", { mode: "json" })
-      .$type<UserComponentPropDefinition[]>()
+    properties: text("properties", { mode: "json" })
+      .$type<PropertyMap>()
       .notNull()
-      .default([]),
+      .default({}),
     createdAt: integer("createdAt", { mode: "number" })
       .notNull()
       .$defaultFn(() => Date.now()),

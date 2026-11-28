@@ -9,14 +9,15 @@
     getElementProperties,
     getStyle,
     getTopLevelAttributes,
+    removeElementPropertyRow,
     removeStyleRow,
+    removeTopLevelAttributeRow,
     setBinding,
     setElementPropertyValue,
     setStyleProperty,
     setTopLevelAttribute,
-    type AttributeBindingScope,
     type BindingScope,
-    type ElementBindingRowData,
+    type InputWithBindingRow,
   } from "$lib/client/editor/elementBindingRows";
   import {
     buildAttributeRows,
@@ -27,8 +28,10 @@
     updateElements,
   } from "$lib/client/editor/elementSelectionRows";
   import { appearanceManagedStyleKeys } from "$lib/client/editor/elementAppearance";
-  import ElementBindingRow from "./ElementBindingRow.svelte";
-  import ElementBindingSection from "./ElementBindingSection.svelte";
+  import { createElementLookup } from "$lib/client/editor/elementLookup";
+  import { elementPropertyKeys } from "$lib/client/editor/propertyKeys";
+  import InputWithBinding from "./InputWithBinding.svelte";
+  import InputWithBindingSection from "./InputWithBindingSection.svelte";
   import ElementEventsEditor from "./ElementEventsEditor.svelte";
   import ElementStyleClassSection from "./ElementStyleClassSection.svelte";
   import ElementAppearanceEditor from "./ElementAppearanceEditor.svelte";
@@ -40,31 +43,34 @@
   let elements = $derived(editor.selectedElements);
   let selected = $derived(elements.length === 1 ? elements[0] : null);
   let isMulti = $derived(elements.length > 1);
-  let attributeScope = $derived<AttributeBindingScope>(
-    elements.length > 0 &&
-      elements.every(
-        (element) => element.kind === "user-component" || element.kind === "base-component",
-      )
-      ? "props"
-      : "attributes",
-  );
   let showStyle = $derived(
     elements.length > 0 && (elements.length > 1 || selected?.kind !== "user-component"),
   );
+  let getElementById = $derived(
+    createElementLookup(editor.elementsCollection?.state, editor.userComponents),
+  );
+  let propertyKeys = $derived(elementPropertyKeys(elements, editor.userComponents));
   let appearanceKeys = $derived(appearanceManagedStyleKeys(elements));
-  let attributeRows = $derived(buildAttributeRows(elements, attributeScope, tagValueMap));
+  let attributeRows = $derived(
+    buildAttributeRows(elements, "attributes", tagValueMap, getElementById),
+  );
+  let propertyRows = $derived(
+    buildAttributeRows(elements, "properties", tagValueMap, getElementById),
+  );
   let styleRows = $derived(
-    buildStyleRows(elements, tagValueMap).filter((row) => !appearanceKeys.has(row.key)),
+    buildStyleRows(elements, tagValueMap, getElementById).filter(
+      (row) => !appearanceKeys.has(row.key),
+    ),
   );
   let commonName = $derived(commonStrings(elements.map((element) => element.name)));
 
-  let textRow = $derived.by((): ElementBindingRowData | null => {
+  let textRow = $derived.by((): InputWithBindingRow | null => {
     if (elements.length === 0) return null;
 
     if (elements.length === 1) {
       const element = elements[0];
       const binding = element.bindings?.text ?? "";
-      const evaluation = evaluateElementBinding(element, binding, tagValueMap);
+      const evaluation = evaluateElementBinding(element, binding, tagValueMap, getElementById);
       return {
         key: "text",
         value: element.text ?? "",
@@ -89,7 +95,7 @@
       };
     }
 
-    const result = commonResult(elements, binding.value, tagValueMap);
+    const result = commonResult(elements, binding.value, tagValueMap, getElementById);
     const value = commonStrings(elements.map((element) => element.text ?? ""));
     return {
       key: "text",
@@ -122,27 +128,35 @@
   }
 
   /**
-   * Saves an attribute or prop value on the selected elements.
+   * Saves an attribute value on the selected elements.
    *
-   * @param row - Row identifying the attribute or prop key.
+   * @param row - Row identifying the attribute key.
    * @param raw - Raw input value; an empty string clears the value.
    */
-  function saveAttributeValue(row: ElementBindingRowData, raw: string) {
+  function saveAttributeValue(row: InputWithBindingRow, raw: string) {
     updateElements(editor.elementsCollection, elements, (element) => {
-      if (attributeScope === "props") {
-        const previous = getElementProperties(element)[row.key]?.value;
-        return {
-          properties: setElementPropertyValue(
-            element,
-            row.key,
-            raw === "" ? null : coerceAttributeValue(previous, raw),
-          ),
-        };
-      }
-
       const previous = getTopLevelAttributes(element)[row.key];
       return {
         attributes: setTopLevelAttribute(
+          element,
+          row.key,
+          raw === "" ? null : coerceAttributeValue(previous, raw),
+        ),
+      };
+    });
+  }
+
+  /**
+   * Saves a property value on the selected elements.
+   *
+   * @param row - Row identifying the property key.
+   * @param raw - Raw input value; an empty string clears the value.
+   */
+  function savePropertyValue(row: InputWithBindingRow, raw: string) {
+    updateElements(editor.elementsCollection, elements, (element) => {
+      const previous = getElementProperties(element)[row.key]?.value;
+      return {
+        properties: setElementPropertyValue(
           element,
           row.key,
           raw === "" ? null : coerceAttributeValue(previous, raw),
@@ -157,7 +171,7 @@
    * @param row - Row identifying the style property key.
    * @param raw - Raw style value; an empty string clears the property.
    */
-  function saveStyleValue(row: ElementBindingRowData, raw: string) {
+  function saveStyleValue(row: InputWithBindingRow, raw: string) {
     updateElements(editor.elementsCollection, elements, (element) => ({
       style: setStyleProperty(element, row.key, raw === "" ? null : raw),
     }));
@@ -177,9 +191,9 @@
   }
 
   /**
-   * Adds an attribute or prop row to the selected elements.
+   * Adds an attribute row to the selected elements.
    *
-   * @param key - Attribute or prop name; must be non-empty and not already present.
+   * @param key - Attribute name; must be non-empty and not already present.
    * @param value - Initial value for the new entry.
    * @returns True when the row was added, false when rejected.
    */
@@ -187,20 +201,28 @@
     if (!key.trim()) return false;
     if (attributeRows.some((row) => row.key === key)) return false;
 
-    updateElements(editor.elementsCollection, elements, (element) =>
-      attributeScope === "props"
-        ? {
-            properties: setElementPropertyValue(
-              element,
-              key,
-              coerceAttributeValue(undefined, value),
-              { required: false },
-            ),
-          }
-        : {
-            attributes: setTopLevelAttribute(element, key, coerceAttributeValue(undefined, value)),
-          },
-    );
+    updateElements(editor.elementsCollection, elements, (element) => ({
+      attributes: setTopLevelAttribute(element, key, coerceAttributeValue(undefined, value)),
+    }));
+    return true;
+  }
+
+  /**
+   * Adds a property row to the selected elements.
+   *
+   * @param key - Property name; must be non-empty and not already present.
+   * @param value - Initial value for the new entry.
+   * @returns True when the row was added, false when rejected.
+   */
+  function addProperty(key: string, value: string) {
+    if (!key.trim()) return false;
+    if (propertyRows.some((row) => row.key === key)) return false;
+
+    updateElements(editor.elementsCollection, elements, (element) => ({
+      properties: setElementPropertyValue(element, key, coerceAttributeValue(undefined, value), {
+        required: false,
+      }),
+    }));
     return true;
   }
 
@@ -230,19 +252,29 @@
   }
 
   /**
-   * Removes an attribute or prop row and its binding unless the row is required.
+   * Removes an attribute row and its binding unless the row is required.
    *
-   * @param row - Row identifying the attribute or prop to remove.
+   * @param row - Row identifying the attribute to remove.
    */
-  function removeAttributeRow(row: ElementBindingRowData) {
+  function removeAttributeRow(row: InputWithBindingRow) {
     if (row.required) return;
 
-    updateElements(editor.elementsCollection, elements, (element) => ({
-      ...(attributeScope === "props"
-        ? { properties: setElementPropertyValue(element, row.key, null) }
-        : { attributes: setTopLevelAttribute(element, row.key, null) }),
-      bindings: setBinding(element, attributeScope, row.key, ""),
-    }));
+    updateElements(editor.elementsCollection, elements, (element) =>
+      removeTopLevelAttributeRow(element, row.key),
+    );
+  }
+
+  /**
+   * Removes a property row and its binding unless the row is required.
+   *
+   * @param row - Row identifying the property to remove.
+   */
+  function removePropertyRow(row: InputWithBindingRow) {
+    if (row.required) return;
+
+    updateElements(editor.elementsCollection, elements, (element) =>
+      removeElementPropertyRow(element, row.key),
+    );
   }
 
   /**
@@ -250,8 +282,10 @@
    *
    * @param row - Row identifying the style property to remove.
    */
-  function removeStyle(row: ElementBindingRowData) {
-    updateElements(editor.elementsCollection, elements, (element) => removeStyleRow(element, row.key));
+  function removeStyle(row: InputWithBindingRow) {
+    updateElements(editor.elementsCollection, elements, (element) =>
+      removeStyleRow(element, row.key),
+    );
   }
 </script>
 
@@ -283,7 +317,7 @@
         {/if}
 
         {#if textRow}
-          <ElementBindingRow
+          <InputWithBinding
             label="Text"
             value={textRow.value}
             binding={textRow.binding}
@@ -291,28 +325,46 @@
             savedError={textRow.error}
             placeholder={textRow.placeholder}
             multiline
+            {propertyKeys}
             onValueCommit={saveText}
             onBindingSave={(expression) => saveBinding("text", "text", expression)}
             onBindingRemove={() => saveBinding("text", "text", "")}
           />
         {/if}
 
-        <ElementBindingSection
-          title={attributeScope === "props" ? "Props" : "Attributes"}
+        <InputWithBindingSection
+          mode="element"
+          title="Properties"
+          rows={propertyRows}
+          keyPlaceholder="new property"
+          valuePlaceholder="value"
+          onAdd={addProperty}
+          onValueCommit={savePropertyValue}
+          onBindingSave={(row, expression) => saveBinding("properties", row.key, expression)}
+          onBindingRemove={(row) => saveBinding("properties", row.key, "")}
+          onRemoveRow={removePropertyRow}
+          {propertyKeys}
+        />
+
+        <InputWithBindingSection
+          mode="element"
+          title="Attributes"
           rows={attributeRows}
-          keyPlaceholder={attributeScope === "props" ? "prop" : "attribute"}
+          keyPlaceholder="new attribute"
           valuePlaceholder="value"
           onAdd={addAttribute}
           onValueCommit={saveAttributeValue}
-          onBindingSave={(row, expression) => saveBinding(attributeScope, row.key, expression)}
-          onBindingRemove={(row) => saveBinding(attributeScope, row.key, "")}
+          onBindingSave={(row, expression) => saveBinding("attributes", row.key, expression)}
+          onBindingRemove={(row) => saveBinding("attributes", row.key, "")}
           onRemoveRow={removeAttributeRow}
+          {propertyKeys}
         />
 
         {#if showStyle}
-          <ElementAppearanceEditor {elements} />
+          <ElementAppearanceEditor {elements} {propertyKeys} />
 
-          <ElementBindingSection
+          <InputWithBindingSection
+            mode="element"
             title="Style"
             rows={styleRows}
             keyPlaceholder="property"
@@ -322,12 +374,13 @@
             onBindingSave={(row, expression) => saveBinding("style", row.key, expression)}
             onBindingRemove={(row) => saveBinding("style", row.key, "")}
             onRemoveRow={removeStyle}
+            {propertyKeys}
           />
         {/if}
 
         {#if selected}
-          <ElementStyleClassSection element={selected} />
-          <ElementEventsEditor />
+          <ElementStyleClassSection element={selected} {propertyKeys} />
+          <ElementEventsEditor {propertyKeys} />
         {/if}
       </div>
     {/if}

@@ -6,6 +6,7 @@
   import { attempt } from "$lib/util/attempt";
   import { onMount, tick, untrack } from "svelte";
   import { elementStyleToString, sortedChildren } from "$lib/elements/elementTypes";
+  import { createElementLookup } from "$lib/client/editor/elementLookup";
   import { Menu, Portal } from "@skeletonlabs/skeleton-svelte";
   import PageElement from "./PageElement.svelte";
   import PageCanvasMoveable from "./PageCanvasMoveable.svelte";
@@ -25,6 +26,7 @@
 
   let activeMode = $derived(mode ?? editor?.mode ?? "preview");
   let componentDefinitions = $derived(userComponents ?? editor?.userComponents ?? []);
+  let getElementById = $derived(createElementLookup(elements, componentDefinitions));
   let roots = $derived(sortedChildren(elements, null));
   let moveableTargets = $state<Array<HTMLElement | SVGElement>>([]);
   let selectedElements = $derived(editor?.selectedElements ?? []);
@@ -325,7 +327,13 @@
       </div>
     {/if}
     {#each roots as element (element.id)}
-      <PageElement {element} {elements} mode={activeMode} userComponents={componentDefinitions} />
+      <PageElement
+        {element}
+        {elements}
+        {getElementById}
+        mode={activeMode}
+        userComponents={componentDefinitions}
+      />
     {/each}
   </div>
 </div>

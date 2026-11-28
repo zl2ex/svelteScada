@@ -115,4 +115,19 @@ describe("EditorScriptEvaluator", () => {
 
     expect(error).toBeNull();
   });
+
+  it("exposes getElementById to element bindings", () => {
+    const evaluator = new EditorScriptEvaluator({ udts, tagValueMap });
+    const parent = { ...element(null), id: "parent", name: "Parent" };
+    const child = { ...element(null), parentId: "parent" };
+
+    const result = evaluator.evaluateElementFor(
+      child,
+      'getElementById(element.parentId).name',
+      (id) => (id === "parent" ? parent : undefined),
+    );
+
+    expect(result.isOk()).toBe(true);
+    if (result.isOk()) expect(result.value).toBe("Parent");
+  });
 });

@@ -15,8 +15,8 @@ export type SandboxBindingScope = {
 };
 
 export type SandboxElementBindingScope = SandboxBindingScope & {
-  props: Record<string, unknown>;
   element: Record<string, unknown>;
+  getElementById: (id: string | null | undefined) => unknown;
 };
 
 export type SandboxEventScope = SandboxElementBindingScope & {

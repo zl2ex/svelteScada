@@ -5,12 +5,14 @@
   import type { TagBindingKey } from "$lib/tagBindings";
   import { tagWriteLevels, type TagWriteLevel } from "$lib/permissions/constants";
   import { attempt } from "$lib/util/attempt";
-  import BindingEditor from "./BindingEditor.svelte";
-  import PropertyRowsEditor, { type PropertyRow } from "./PropertyRowsEditor.svelte";
+  import InputWithBinding from "./InputWithBinding.svelte";
+  import InputWithBindingSection from "./InputWithBindingSection.svelte";
+  import type { InputExtension, InputWithBindingRow } from "$lib/client/editor/elementBindingRows";
+  import { isUdtTag } from "$lib/util/tag";
+  import type { ScriptPropertyKeyInfo } from "$lib/client/editor/propertyKeys";
   import type { TagProperties } from "$lib/sqlite/tagProperties";
   import type { PropertyMap, PropertyValue } from "$lib/propertyValue";
-  import { fieldStyle } from "$lib/client/util/bindingStyle";
-  import { commitOrRevert } from "$lib/client/util/use";
+  import { boundStyle, boundTooltip } from "$lib/client/util/bindingStyle";
 
   type Props = {
     tags: TagOptionsInput[];
@@ -30,6 +32,7 @@
     onBindingRemove: (key: TagBindingKey) => void;
     onClearOverride: (key: string) => void;
     onPropertiesChange: (updater: (properties: TagProperties) => TagProperties) => void;
+    propertyKeys?: Iterable<ScriptPropertyKeyInfo>;
     lockedPropertyKeys?: Set<string>;
     mode?: "tag" | "udtDefinition";
     definitionProperties?: PropertyMap;
@@ -53,6 +56,7 @@
     onBindingRemove,
     onClearOverride,
     onPropertiesChange,
+    propertyKeys,
     lockedPropertyKeys = new Set<string>(),
     mode = "tag",
     definitionProperties = {},
@@ -89,7 +93,7 @@
     return mixed ? { mixed: true, value: undefined } : { mixed: false, value: values[0] };
   }
 
-  let propertyRows = $derived.by((): PropertyRow[] => {
+  let propertyRows = $derived.by((): InputWithBindingRow[] => {
     const maps = tags.map((tag) => (tag.properties ?? {}) as TagProperties);
     if (maps.length === 0) return [];
     const keys = [...new Set(maps.flatMap((map) => Object.keys(map)))]
@@ -110,6 +114,9 @@
         locked: lockedPropertyKeys.has(key),
         placeholder: sameValue ? undefined : "<multiple_values>",
         overridden: propertyOverride?.(key) ?? false,
+        binding: "",
+        result: "",
+        error: null,
       };
     });
   });
@@ -120,6 +127,9 @@
       value: String(property.value),
       description: property.description,
       required: property.required,
+      binding: "",
+      result: "",
+      error: null,
     })),
   );
 
@@ -137,6 +147,9 @@
     });
   }
 
+  let showOverrideIndicator = $derived(
+    mode === "tag" && tags.length > 0 && tags.every((tag) => isUdtTag(tag)),
+  );
   let dataType = $derived(valueOf((tag) => tag.dataType));
   let driverPath = $derived(valueOf((tag) => tag.driverPath ?? ""));
   let readonly = $derived(valueOf((tag) => tag.readonly ?? false));
@@ -153,8 +166,13 @@
   let writeLevelMixed = $derived(writeLevel.mixed || stateOf("writeLevel").mixed);
   let exposeMixed = $derived(exposeOverOpcua.mixed || stateOf("exposeOverOpcua").mixed);
   let trendEnabledMixed = $derived(trendEnabled.mixed || stateOf("trendEnabled").mixed);
-  let trendIntervalMixed = $derived(trendInterval.mixed || stateOf("trendMinimumSamplingIntervalMs").mixed);
+  let trendIntervalMixed = $derived(
+    trendInterval.mixed || stateOf("trendMinimumSamplingIntervalMs").mixed,
+  );
   let unitMixed = $derived(unit.mixed || stateOf("unit").mixed);
+  let readonlyValue = $derived(readonlyMixed ? "" : String(Boolean(readonly.value)));
+  let exposeValue = $derived(exposeMixed ? "" : String(Boolean(exposeOverOpcua.value)));
+  let trendEnabledValue = $derived(trendEnabledMixed ? "" : String(Boolean(trendEnabled.value)));
 
   /**
    * Returns the effective binding state for a field without evaluating its script.
@@ -178,23 +196,34 @@
   }
 
   /**
-   * Sets the native checkbox indeterminate state.
+   * Builds the input extension for the data type field.
    *
-   * @param node - Checkbox input to update.
-   * @param value - Whether the checkbox is indeterminate.
-   * @returns Action with an update method for reactive changes.
+   * @returns A text input when bound, otherwise a select of data types
    */
-  function indeterminate(node: HTMLInputElement, value: boolean) {
-    node.indeterminate = value;
+  function dataTypeInput(): InputExtension {
+    if (stateOf("dataType").bound) return { kind: "text" };
     return {
-      /**
-       * Updates the native indeterminate state.
-       *
-       * @param next - Whether the checkbox is indeterminate.
-       */
-      update(next: boolean) {
-        node.indeterminate = next;
-      },
+      kind: "select",
+      options: [
+        ...(dataTypeMixed ? [{ label: "multiple", value: "" }] : []),
+        ...dataTypes.map((type) => ({ label: type, value: type })),
+      ],
+    };
+  }
+
+  /**
+   * Builds the input extension for the write level field.
+   *
+   * @returns A text input when bound, otherwise a select of write levels
+   */
+  function writeLevelInput(): InputExtension {
+    if (stateOf("writeLevel").bound) return { kind: "text" };
+    return {
+      kind: "select",
+      options: [
+        ...(writeLevelMixed ? [{ label: "multiple", value: "" }] : []),
+        ...tagWriteLevels.map((level) => ({ label: level, value: level })),
+      ],
     };
   }
 
@@ -324,22 +353,6 @@
   });
 </script>
 
-{#snippet overrideIndicator(property: keyof TagOptionsInput)}
-  {#if hasOverride(property)}
-    <button
-      type="button"
-      class="size-4 shrink-0 rounded-full bg-primary-500"
-      title="Instance override - click to remove"
-      onclick={() => onClearOverride(property)}
-    ></button>
-  {:else}
-    <div
-      class="size-4 shrink-0 rounded-full bg-surface-200-800 border-1 border-surface-400-600"
-      title="Value inherited"
-    ></div>
-  {/if}
-{/snippet}
-
 <Portal>
   <Popover.Positioner>
     <Popover.Content
@@ -347,32 +360,35 @@
     >
       {#if mode === "udtDefinition"}
         <fieldset class="flex flex-col gap-2" disabled={!canUpdate}>
-          <PropertyRowsEditor
+          <InputWithBindingSection
             title="Properties"
+            showHeader={false}
             mode="definition"
+            layout="column"
             rows={definitionPropertyRows}
-            onValueCommit={(key, value) =>
+            disabled={!canUpdate}
+            onValueCommit={(row, value) =>
               onDefinitionPropertiesChange?.((properties) => ({
                 ...properties,
-                [key]: { ...(properties[key] ?? { required: true }), value },
+                [row.key]: { ...(properties[row.key] ?? { required: true }), value },
               }))}
-            onDescriptionCommit={(key, description) =>
+            onDescriptionCommit={(row, description) =>
               onDefinitionPropertiesChange?.((properties) => ({
                 ...properties,
-                [key]: {
-                  ...(properties[key] ?? { required: true }),
+                [row.key]: {
+                  ...(properties[row.key] ?? { required: true }),
                   description: description.trim() || undefined,
                 },
               }))}
-            onRequiredChange={(key, required) =>
+            onRequiredChange={(row, required) =>
               onDefinitionPropertiesChange?.((properties) => ({
                 ...properties,
-                [key]: { ...(properties[key] ?? { value: "" }), required },
+                [row.key]: { ...(properties[row.key] ?? { value: "" }), required },
               }))}
-            onRemove={(key) => {
+            onRemoveRow={(row) => {
               onDefinitionPropertiesChange?.((properties) => {
                 const next = { ...properties };
-                delete next[key];
+                delete next[row.key];
                 return next;
               });
             }}
@@ -405,7 +421,7 @@
                   <Link2Icon class="size-5" />
                 {/if}
                 {#if tags.find((tag) => tag.trendEnabled) && section.id == "history"}
-                  <ChartNoAxesCombinedIcon class="size-5" />
+                  <ChartNoAxesCombinedIcon class="size-5 opacity-50" />
                 {/if}
               </Tabs.Trigger>
             {/each}
@@ -420,63 +436,49 @@
               <p class="opacity-50 pt-4 pb-2 text-xs font-bold border-b-2 border-primary-400-600">
                 Basic
               </p>
-              <div class="py-2">
-                <label class="opacity-60 text-xs" for="multi-dataType">Data Type</label>
-                <div class="flex items-center gap-2">
-                  {#if stateOf("dataType").bound}
-                    <input
-                      id="multi-dataType"
-                      class="input py-1.5"
-                      style={fieldStyle({ bound: true })}
-                      value={dataTypeMixed ? "" : dataType.value}
-                      placeholder={dataTypeMixed ? "multiple" : ""}
-                      disabled
-                    />
-                  {:else}
-                    <select
-                      id="multi-dataType"
-                      class="select py-1.5"
-                      value={dataTypeMixed ? "" : dataType.value}
-                      disabled={!canUpdate}
-                      {@attach commitOrRevert((value) => {
-                        if (value) onSave({ dataType: value });
-                      })}
-                    >
-                      {#if dataTypeMixed}
-                        <option value="" disabled>multiple</option>
-                      {/if}
-                      {#each dataTypes as type (type)}
-                        <option value={type}>{type}</option>
-                      {/each}
-                    </select>
-                  {/if}
-                  {@render overrideIndicator("dataType")}
-                  <BindingEditor
-                    label="Data Type"
-                    binding={bindingMixed("dataType") ? "" : bindingValue("dataType")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("dataType") ? null : bindingError("dataType")}
-                    onBindingSave={(expression) => onBindingSave("dataType", expression)}
-                    onBindingRemove={() => onBindingRemove("dataType")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Data Type"
+                layout="column"
+                value={dataTypeMixed ? "" : String(dataType.value ?? "")}
+                result={dataTypeMixed ? "" : String(dataType.value ?? "")}
+                binding={bindingMixed("dataType") ? "" : bindingValue("dataType")}
+                savedError={bindingMixed("dataType") ? null : bindingError("dataType")}
+                placeholder={dataTypeMixed ? "multiple" : ""}
+                disabled={disabledFor("dataType")}
+                input={dataTypeInput()}
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("dataType")}
+                onOverrideClear={() => onClearOverride("dataType")}
+                onBindingSave={(expression) => onBindingSave("dataType", expression)}
+                onBindingRemove={() => onBindingRemove("dataType")}
+                onValueCommit={(value) => {
+                  if (!value) return false;
+                  onSave({ dataType: value });
+                  return true;
+                }}
+              />
 
               <div class="py-2">
                 <label class="opacity-60 text-xs" for="multi-properties">Properties</label>
                 <div
                   class="flex items-start gap-2"
-                  style={fieldStyle({ bound: stateOf("properties").bound })}
+                  title={stateOf("properties").bound ? boundTooltip : ""}
+                  style={boundStyle(stateOf("properties").bound)}
                 >
                   <div class="flex-1 min-w-0">
-                    <PropertyRowsEditor
+                    <InputWithBindingSection
                       title="Properties"
-                      mode="view"
+                      showHeader={false}
+                      mode="tag"
+                      layout="row"
                       rows={propertyRows}
                       disabled={disabledFor("properties")}
-                      onValueCommit={(key, value) => updateProperty(key, { value })}
-                      onOverrideClear={onPropertyOverrideClear}
+                      {showOverrideIndicator}
+                      onValueCommit={(row, value) => updateProperty(row.key, { value })}
+                      onOverrideClear={(row) => onPropertyOverrideClear?.(row.key)}
                     />
                   </div>
                 </div>
@@ -488,135 +490,108 @@
                 Connection
               </p>
 
-              <div class="py-2">
-                <label class="opacity-60 text-xs" for="multi-driverPath">Driver path</label>
-                <div class="flex items-center gap-2">
-                  <input
-                    id="multi-driverPath"
-                    type="text"
-                    class="input py-0 placeholder:opacity-50"
-                    style={fieldStyle({ bound: stateOf("driverPath").bound })}
-                    value={driverPathMixed ? "" : driverPath.value}
-                    placeholder={driverPathMixed ? "multiple" : "[deviceName]pathToTag"}
-                    disabled={disabledFor("driverPath")}
-                    {@attach commitOrRevert((value) => onSave({ driverPath: value || null }))}
-                  />
-                  {@render overrideIndicator("driverPath")}
-                  <BindingEditor
-                    label="Driver Path"
-                    binding={bindingMixed("driverPath") ? "" : bindingValue("driverPath")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("driverPath") ? null : bindingError("driverPath")}
-                    onBindingSave={(expression) => onBindingSave("driverPath", expression)}
-                    onBindingRemove={() => onBindingRemove("driverPath")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Driver path"
+                layout="column"
+                value={driverPathMixed ? "" : (driverPath.value ?? "")}
+                result={driverPathMixed ? "" : (driverPath.value ?? "")}
+                binding={bindingMixed("driverPath") ? "" : bindingValue("driverPath")}
+                savedError={bindingMixed("driverPath") ? null : bindingError("driverPath")}
+                placeholder={driverPathMixed ? "multiple" : "[deviceName]pathToTag"}
+                disabled={disabledFor("driverPath")}
+                input={{ kind: "text" }}
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("driverPath")}
+                onOverrideClear={() => onClearOverride("driverPath")}
+                onBindingSave={(expression) => onBindingSave("driverPath", expression)}
+                onBindingRemove={() => onBindingRemove("driverPath")}
+                onValueCommit={(value) => {
+                  onSave({ driverPath: value || null });
+                  return true;
+                }}
+              />
             </section>
+
             <section id="security" tabindex="-1" class="outline-none">
               <p class="opacity-50 pt-4 pb-2 text-xs font-bold border-b-2 border-primary-400-600">
                 Security
               </p>
 
-              <div class="py-2 flex items-center justify-between">
-                <label class="opacity-60 text-xs" for="multi-readonly">Readonly</label>
-                <div class="flex items-center gap-2">
-                  <input
-                    id="multi-readonly"
-                    type="checkbox"
-                    class="checkbox"
-                    style={fieldStyle({ bound: stateOf("readonly").bound })}
-                    use:indeterminate={readonlyMixed}
-                    checked={readonlyMixed ? false : Boolean(readonly.value)}
-                    disabled={disabledFor("readonly")}
-                    onchange={(event) => onSave({ readonly: event.currentTarget.checked })}
-                  />
-                  {@render overrideIndicator("readonly")}
-                  <BindingEditor
-                    label="Readonly"
-                    binding={bindingMixed("readonly") ? "" : bindingValue("readonly")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("readonly") ? null : bindingError("readonly")}
-                    onBindingSave={(expression) => onBindingSave("readonly", expression)}
-                    onBindingRemove={() => onBindingRemove("readonly")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Readonly"
+                layout="row"
+                value={readonlyValue}
+                result={readonlyValue}
+                binding={bindingMixed("readonly") ? "" : bindingValue("readonly")}
+                savedError={bindingMixed("readonly") ? null : bindingError("readonly")}
+                disabled={disabledFor("readonly")}
+                input={{ kind: "checkbox", indeterminate: readonlyMixed }}
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("readonly")}
+                onOverrideClear={() => onClearOverride("readonly")}
+                onBindingSave={(expression) => onBindingSave("readonly", expression)}
+                onBindingRemove={() => onBindingRemove("readonly")}
+                onValueCommit={(value) => {
+                  onSave({ readonly: value === "true" });
+                  return true;
+                }}
+              />
 
-              <div class="py-2">
-                <label class="opacity-60 text-xs" for="multi-writeLevel">Write Level</label>
-                <div class="flex items-center gap-2">
-                  {#if stateOf("writeLevel").bound}
-                    <input
-                      id="multi-writeLevel"
-                      class="input py-1.5 flex-1"
-                      style={fieldStyle({ bound: true })}
-                      value={writeLevelMixed ? "" : writeLevel.value}
-                      placeholder={writeLevelMixed ? "multiple" : ""}
-                      disabled
-                    />
-                  {:else}
-                    <select
-                      id="multi-writeLevel"
-                      class="select py-1.5 flex-1"
-                      value={writeLevelMixed ? "" : writeLevel.value}
-                      disabled={!canManage}
-                      {@attach commitOrRevert((value) => {
-                        if (value) onSave({ writeLevel: value as TagWriteLevel });
-                      })}
-                    >
-                      {#if writeLevelMixed}
-                        <option value="" disabled>multiple</option>
-                      {/if}
-                      {#each tagWriteLevels as level}
-                        <option value={level}>{level}</option>
-                      {/each}
-                    </select>
-                  {/if}
-                  {@render overrideIndicator("writeLevel")}
-                  <BindingEditor
-                    label="Write Level"
-                    binding={bindingMixed("writeLevel") ? "" : bindingValue("writeLevel")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("writeLevel") ? null : bindingError("writeLevel")}
-                    onBindingSave={(expression) => onBindingSave("writeLevel", expression)}
-                    onBindingRemove={() => onBindingRemove("writeLevel")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Write Level"
+                layout="column"
+                value={writeLevelMixed ? "" : (writeLevel.value ?? "operator")}
+                result={writeLevelMixed ? "" : (writeLevel.value ?? "operator")}
+                binding={bindingMixed("writeLevel") ? "" : bindingValue("writeLevel")}
+                savedError={bindingMixed("writeLevel") ? null : bindingError("writeLevel")}
+                placeholder={writeLevelMixed ? "multiple" : ""}
+                disabled={disabledFor("writeLevel", canManage)}
+                input={writeLevelInput()}
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("writeLevel")}
+                onOverrideClear={() => onClearOverride("writeLevel")}
+                onBindingSave={(expression) => onBindingSave("writeLevel", expression)}
+                onBindingRemove={() => onBindingRemove("writeLevel")}
+                onValueCommit={(value) => {
+                  if (!value) return false;
+                  onSave({ writeLevel: value as TagWriteLevel });
+                  return true;
+                }}
+              />
 
-              <div class="py-2 flex items-center justify-between">
-                <label class="opacity-60 text-xs" for="multi-expose">
-                  Expose Tag On OPCUA Server
-                </label>
-                <div class="flex items-center gap-2">
-                  <input
-                    id="multi-expose"
-                    type="checkbox"
-                    class="checkbox"
-                    style={fieldStyle({ bound: stateOf("exposeOverOpcua").bound })}
-                    use:indeterminate={exposeMixed}
-                    checked={exposeMixed ? false : Boolean(exposeOverOpcua.value)}
-                    disabled={disabledFor("exposeOverOpcua")}
-                    onchange={(event) => onSave({ exposeOverOpcua: event.currentTarget.checked })}
-                  />
-                  {@render overrideIndicator("exposeOverOpcua")}
-                  <BindingEditor
-                    label="Expose OPC UA"
-                    binding={bindingMixed("exposeOverOpcua") ? "" : bindingValue("exposeOverOpcua")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("exposeOverOpcua")
-                      ? null
-                      : bindingError("exposeOverOpcua")}
-                    onBindingSave={(expression) => onBindingSave("exposeOverOpcua", expression)}
-                    onBindingRemove={() => onBindingRemove("exposeOverOpcua")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Expose Tag On OPCUA Server"
+                layout="row"
+                value={exposeValue}
+                result={exposeValue}
+                binding={bindingMixed("exposeOverOpcua") ? "" : bindingValue("exposeOverOpcua")}
+                savedError={bindingMixed("exposeOverOpcua")
+                  ? null
+                  : bindingError("exposeOverOpcua")}
+                disabled={disabledFor("exposeOverOpcua")}
+                input={{ kind: "checkbox", indeterminate: exposeMixed }}
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("exposeOverOpcua")}
+                onOverrideClear={() => onClearOverride("exposeOverOpcua")}
+                onBindingSave={(expression) => onBindingSave("exposeOverOpcua", expression)}
+                onBindingRemove={() => onBindingRemove("exposeOverOpcua")}
+                onValueCommit={(value) => {
+                  onSave({ exposeOverOpcua: value === "true" });
+                  return true;
+                }}
+              />
             </section>
 
             <section id="history" tabindex="-1" class="outline-none">
@@ -624,71 +599,60 @@
                 History
               </p>
 
-              <div class="py-2 flex items-center justify-between">
-                <label class="opacity-60 text-xs" for="multi-trendEnabled">Enabled</label>
-                <div class="flex items-center gap-2">
-                  <input
-                    id="multi-trendEnabled"
-                    type="checkbox"
-                    class="checkbox"
-                    style={fieldStyle({ bound: stateOf("trendEnabled").bound })}
-                    use:indeterminate={trendEnabledMixed}
-                    checked={trendEnabledMixed ? false : Boolean(trendEnabled.value)}
-                    disabled={disabledFor("trendEnabled")}
-                    onchange={(event) => onSave({ trendEnabled: event.currentTarget.checked })}
-                  />
-                  {@render overrideIndicator("trendEnabled")}
-                  <BindingEditor
-                    label="Trend Enabled"
-                    binding={bindingMixed("trendEnabled") ? "" : bindingValue("trendEnabled")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("trendEnabled") ? null : bindingError("trendEnabled")}
-                    onBindingSave={(expression) => onBindingSave("trendEnabled", expression)}
-                    onBindingRemove={() => onBindingRemove("trendEnabled")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Enabled"
+                layout="row"
+                value={trendEnabledValue}
+                result={trendEnabledValue}
+                binding={bindingMixed("trendEnabled") ? "" : bindingValue("trendEnabled")}
+                savedError={bindingMixed("trendEnabled") ? null : bindingError("trendEnabled")}
+                disabled={disabledFor("trendEnabled")}
+                input={{ kind: "checkbox", indeterminate: trendEnabledMixed }}
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("trendEnabled")}
+                onOverrideClear={() => onClearOverride("trendEnabled")}
+                onBindingSave={(expression) => onBindingSave("trendEnabled", expression)}
+                onBindingRemove={() => onBindingRemove("trendEnabled")}
+                onValueCommit={(value) => {
+                  onSave({ trendEnabled: value === "true" });
+                  return true;
+                }}
+              />
 
-              <div class="py-2">
-                <label class="opacity-60 text-xs" for="multi-trendInterval">Minimum interval</label>
-                <div class="flex items-center gap-2">
-                  <input
-                    id="multi-trendInterval"
-                    type="number"
-                    class="input placeholder:opacity-50"
-                    style={fieldStyle({ bound: stateOf("trendMinimumSamplingIntervalMs").bound })}
-                    min="100"
-                    step="100"
-                    value={trendIntervalMixed ? "" : trendInterval.value}
-                    placeholder={trendIntervalMixed ? "multiple" : "minimum interval ms"}
-                    disabled={disabledFor("trendMinimumSamplingIntervalMs")}
-                    {@attach commitOrRevert(
-                      (value) => {
-                        if (value === null) return false;
-                        onSave({ trendMinimumSamplingIntervalMs: value });
-                      },
-                      "number",
-                    )}
-                  />
-                  <span class="text-xs opacity-60">ms</span>
-                  {@render overrideIndicator("trendMinimumSamplingIntervalMs")}
-                  <BindingEditor
-                    label="Trend Interval"
-                    binding={bindingMixed("trendMinimumSamplingIntervalMs")
-                      ? ""
-                      : bindingValue("trendMinimumSamplingIntervalMs")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("trendMinimumSamplingIntervalMs")
-                      ? null
-                      : bindingError("trendMinimumSamplingIntervalMs")}
-                    onBindingSave={(expression) =>
-                      onBindingSave("trendMinimumSamplingIntervalMs", expression)}
-                    onBindingRemove={() => onBindingRemove("trendMinimumSamplingIntervalMs")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Minimum interval"
+                layout="column"
+                value={trendIntervalMixed ? "" : String(trendInterval.value ?? "")}
+                result={trendIntervalMixed ? "" : String(trendInterval.value ?? "")}
+                binding={bindingMixed("trendMinimumSamplingIntervalMs")
+                  ? ""
+                  : bindingValue("trendMinimumSamplingIntervalMs")}
+                savedError={bindingMixed("trendMinimumSamplingIntervalMs")
+                  ? null
+                  : bindingError("trendMinimumSamplingIntervalMs")}
+                placeholder={trendIntervalMixed ? "multiple" : "minimum interval ms"}
+                disabled={disabledFor("trendMinimumSamplingIntervalMs")}
+                input={{ kind: "number", min: 100, step: 100 }}
+                suffix="ms"
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("trendMinimumSamplingIntervalMs")}
+                onOverrideClear={() => onClearOverride("trendMinimumSamplingIntervalMs")}
+                onBindingSave={(expression) =>
+                  onBindingSave("trendMinimumSamplingIntervalMs", expression)}
+                onBindingRemove={() => onBindingRemove("trendMinimumSamplingIntervalMs")}
+                onValueCommit={(value) => {
+                  const parsed = Number(value);
+                  if (value.trim() === "" || !Number.isFinite(parsed)) return false;
+                  onSave({ trendMinimumSamplingIntervalMs: parsed });
+                  return true;
+                }}
+              />
             </section>
 
             <section id="unit" tabindex="-1" class="outline-none">
@@ -696,31 +660,29 @@
                 Unit
               </p>
 
-              <div class="py-2">
-                <label class="opacity-60 text-xs" for="multi-unit">Unit</label>
-                <div class="flex items-center gap-2">
-                  <input
-                    id="multi-unit"
-                    type="text"
-                    class="input py-0 placeholder:opacity-50"
-                    style={fieldStyle({ bound: stateOf("unit").bound })}
-                    value={unitMixed ? "" : unit.value}
-                    placeholder={unitMixed ? "multiple" : ""}
-                    disabled={disabledFor("unit")}
-                    {@attach commitOrRevert((value) => onSave({ unit: value }))}
-                  />
-                  {@render overrideIndicator("unit")}
-                  <BindingEditor
-                    label="Unit"
-                    binding={bindingMixed("unit") ? "" : bindingValue("unit")}
-                    contextDescription="tagConfig and properties"
-                    scope="tag"
-                    savedError={bindingMixed("unit") ? null : bindingError("unit")}
-                    onBindingSave={(expression) => onBindingSave("unit", expression)}
-                    onBindingRemove={() => onBindingRemove("unit")}
-                  />
-                </div>
-              </div>
+              <InputWithBinding
+                label="Unit"
+                layout="column"
+                value={unitMixed ? "" : (unit.value ?? "")}
+                result={unitMixed ? "" : (unit.value ?? "")}
+                binding={bindingMixed("unit") ? "" : bindingValue("unit")}
+                savedError={bindingMixed("unit") ? null : bindingError("unit")}
+                placeholder={unitMixed ? "multiple" : ""}
+                disabled={disabledFor("unit")}
+                input={{ kind: "text" }}
+                bindingScope="tag"
+                bindingContextDescription="tagConfig and properties"
+                {propertyKeys}
+                {showOverrideIndicator}
+                overridden={hasOverride("unit")}
+                onOverrideClear={() => onClearOverride("unit")}
+                onBindingSave={(expression) => onBindingSave("unit", expression)}
+                onBindingRemove={() => onBindingRemove("unit")}
+                onValueCommit={(value) => {
+                  onSave({ unit: value });
+                  return true;
+                }}
+              />
             </section>
           </fieldset>
         </Tabs>

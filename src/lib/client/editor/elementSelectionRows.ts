@@ -1,5 +1,6 @@
 import { formatBindingResult } from "$lib/client/editor/bindings";
 import type { BindingContext } from "$lib/client/editor/elementExpressions";
+import type { ElementLookup } from "$lib/client/editor/elementLookup";
 import { scriptEvaluator } from "$lib/client/editor/scriptEvaluator";
 import type { TagValueMap } from "$lib/client/live/tagMap.svelte";
 import type { ElementRecord } from "$lib/elements/elementTypes";
@@ -11,7 +12,7 @@ import {
   getTopLevelAttributes,
   type AttributeBindingScope,
   type BindingScope,
-  type ElementBindingRowData,
+  type InputWithBindingRow,
 } from "$lib/client/editor/elementBindingRows";
 
 export type ElementCollectionUpdater = {
@@ -21,6 +22,8 @@ export type ElementCollectionUpdater = {
    */
   updateMany(items: { id: string; changes: Partial<Omit<ElementRecord, "id">> }[]): void;
 } | null;
+
+const noElementLookup: ElementLookup = () => undefined;
 
 /**
  * Finds a common string across values and reports whether they differ.
@@ -65,18 +68,20 @@ export function commonKeysFor(items: Array<Record<string, unknown>>) {
  * Builds a binding context backed by a tag value map.
  * @param element - Element whose bindings are evaluated.
  * @param tagValueMap - Tag lookup source.
+ * @param [getElementById] - Element lookup exposed to scripts.
  * @returns The binding context.
  */
 export function bindingContextFor(
   element: ElementRecord,
   tagValueMap: TagValueMap,
+  getElementById: ElementLookup = noElementLookup,
 ): BindingContext {
   return {
     tag: (lookup) => tagValueMap.tag(lookup),
     tagValue: (lookup) => tagValueMap.tagValue(lookup),
     tagStatus: (lookup) => tagValueMap.tagStatus(lookup),
-    props: {},
     element,
+    getElementById,
   };
 }
 
@@ -85,17 +90,19 @@ export function bindingContextFor(
  * @param element - Element whose binding is evaluated.
  * @param expression - Binding expression.
  * @param tagValueMap - Tag lookup source.
+ * @param [getElementById] - Element lookup exposed to scripts.
  * @returns The formatted result and any evaluation error.
  */
 export function evaluateElementBinding(
   element: ElementRecord,
   expression: string,
   tagValueMap: TagValueMap,
+  getElementById: ElementLookup = noElementLookup,
 ) {
   if (!expression.trim()) return { result: "", error: null };
   const evaluation = scriptEvaluator.evaluateElement(
     expression,
-    bindingContextFor(element, tagValueMap),
+    bindingContextFor(element, tagValueMap, getElementById),
   );
   if (evaluation.isErr()) {
     return { result: "", error: neverThrowErrorToString(evaluation.error) };
@@ -122,15 +129,17 @@ export function commonBinding(elements: ElementRecord[], scope: BindingScope, ke
  * @param elements - Elements to evaluate.
  * @param expression - Binding expression.
  * @param tagValueMap - Tag lookup source.
+ * @param [getElementById] - Element lookup exposed to scripts.
  * @returns The common result, or "Mixed" when values differ, plus any error.
  */
 export function commonResult(
   elements: ElementRecord[],
   expression: string,
   tagValueMap: TagValueMap,
+  getElementById: ElementLookup = noElementLookup,
 ) {
   const evaluated = elements.map((element) =>
-    evaluateElementBinding(element, expression, tagValueMap),
+    evaluateElementBinding(element, expression, tagValueMap, getElementById),
   );
   const results = commonStrings(evaluated.map((item) => item.result));
   const error = evaluated.find((item) => item.error)?.error ?? null;
@@ -145,17 +154,19 @@ export function commonResult(
  * @param elements - Elements to inspect.
  * @param key - Style property name.
  * @param tagValueMap - Tag lookup source.
+ * @param [getElementById] - Element lookup exposed to scripts.
  * @returns The style row data.
  */
 export function styleRowFor(
   elements: ElementRecord[],
   key: string,
   tagValueMap: TagValueMap,
-): ElementBindingRowData {
+  getElementById: ElementLookup = noElementLookup,
+): InputWithBindingRow {
   const common = commonStrings(elements.map((element) => getStyle(element)[key] ?? ""));
   const binding = commonBinding(elements, "style", key);
   const result = binding.value
-    ? commonResult(elements, binding.value, tagValueMap)
+    ? commonResult(elements, binding.value, tagValueMap, getElementById)
     : { result: "", error: null };
 
   return {
@@ -172,19 +183,21 @@ export function styleRowFor(
  * Builds display rows for style keys shared by all elements.
  * @param elements - Elements to inspect.
  * @param tagValueMap - Tag lookup source.
+ * @param [getElementById] - Element lookup exposed to scripts.
  * @returns The style rows.
  */
 export function buildStyleRows(
   elements: ElementRecord[],
   tagValueMap: TagValueMap,
-): ElementBindingRowData[] {
+  getElementById: ElementLookup = noElementLookup,
+): InputWithBindingRow[] {
   const keys = commonKeysFor(
     elements.map((element) => ({
       ...getStyle(element),
       ...getBindingMap(element, "style"),
     })),
   );
-  return keys.map((key) => styleRowFor(elements, key, tagValueMap));
+  return keys.map((key) => styleRowFor(elements, key, tagValueMap, getElementById));
 }
 
 /**
@@ -192,36 +205,38 @@ export function buildStyleRows(
  * @param elements - Elements to inspect.
  * @param scope - Attribute binding scope.
  * @param tagValueMap - Tag lookup source.
+ * @param [getElementById] - Element lookup exposed to scripts.
  * @returns The attribute rows.
  */
 export function buildAttributeRows(
   elements: ElementRecord[],
   scope: AttributeBindingScope,
   tagValueMap: TagValueMap,
-): ElementBindingRowData[] {
+  getElementById: ElementLookup = noElementLookup,
+): InputWithBindingRow[] {
   const keys = commonKeysFor(
     elements.map((element) => ({
-      ...(scope === "props" ? getElementProperties(element) : getTopLevelAttributes(element)),
+      ...(scope === "properties" ? getElementProperties(element) : getTopLevelAttributes(element)),
       ...getBindingMap(element, scope),
     })),
   );
 
   return keys.map((key) => {
     const values = elements.map((element) => {
-      if (scope === "props") return getElementProperties(element)[key]?.value ?? "";
+      if (scope === "properties") return getElementProperties(element)[key]?.value ?? "";
       return getTopLevelAttributes(element)[key] ?? "";
     });
     const common = commonAttributeValues(values);
     const propertyValues = elements.map((element) =>
-      scope === "props" ? getElementProperties(element)[key] : undefined,
+      scope === "properties" ? getElementProperties(element)[key] : undefined,
     );
     const descriptions = propertyValues.map((property) => property?.description ?? "");
     const commonDescription = commonStrings(descriptions);
     const required =
-      scope === "props" && propertyValues.some((property) => property?.required ?? true);
+      scope === "properties" && propertyValues.some((property) => property?.required ?? true);
     const binding = commonBinding(elements, scope, key);
     const result = binding.value
-      ? commonResult(elements, binding.value, tagValueMap)
+      ? commonResult(elements, binding.value, tagValueMap, getElementById)
       : { result: "", error: null };
 
     return {
@@ -233,7 +248,7 @@ export function buildAttributeRows(
       placeholder: common.mixed ? "<multiple_values>" : undefined,
       description: commonDescription.mixed ? undefined : commonDescription.value || undefined,
       required,
-    } satisfies ElementBindingRowData;
+    } satisfies InputWithBindingRow;
   });
 }
 

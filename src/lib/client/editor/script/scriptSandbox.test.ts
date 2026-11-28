@@ -15,8 +15,8 @@ function bindingScope(
     tag: () => undefined,
     tagValue: () => undefined,
     tagStatus: () => "missing",
-    props: {},
     element: {},
+    getElementById: () => undefined,
     ...overrides,
   };
 }
@@ -83,13 +83,32 @@ afterEach(() => {
 
 describe("expression sandbox", () => {
   it("evaluates expressions against the provided scope", () => {
-    const result = evaluateSandboxExpression('tagValue("tag").value * 2 + props.offset.value', {
-      ...bindingScope(),
-      tagValue: (lookup: string) => (lookup === "tag" ? { value: 5 } : undefined),
-      props: { offset: { value: 1, required: true } },
-    });
+    const result = evaluateSandboxExpression(
+      'tagValue("tag").value * 2 + element.properties.offset.value',
+      {
+        ...bindingScope(),
+        tagValue: (lookup: string) => (lookup === "tag" ? { value: 5 } : undefined),
+        element: { properties: { offset: { value: 1, required: true } } },
+      },
+    );
 
     expectExpressionValue(result, 11);
+  });
+
+  it("does not expose a props global", () => {
+    const result = evaluateSandboxExpression("typeof props", bindingScope());
+    expectExpressionValue(result, "undefined");
+  });
+
+  it("resolves elements through getElementById", () => {
+    const result = evaluateSandboxExpression('getElementById(element.parentId).name', {
+      ...bindingScope(),
+      element: { parentId: "parent" },
+      getElementById: (id: string | null | undefined) =>
+        id === "parent" ? { id, name: "Parent" } : undefined,
+    });
+
+    expectExpressionValue(result, "Parent");
   });
 
   it("returns a compile error when the expression does not compile", () => {

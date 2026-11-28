@@ -26,7 +26,8 @@ import {
 import elementBindingTypes from "$generated/scriptElementBindings.d.ts?raw";
 import eventBindingTypes from "$generated/scriptEventBindings.d.ts?raw";
 import tagBindingTypes from "$generated/scriptTagBindings.d.ts?raw";
-import { scriptScopeIds, scriptScopes } from "./scriptScopes";
+import { scriptScopeIds, scriptScopes, type ScriptScope } from "./scriptScopes";
+import type { ScriptPropertyKeyInfo } from "$lib/client/editor/propertyKeys";
 
 globalThis.MonacoEnvironment = {
   /**
@@ -50,6 +51,10 @@ const tagPathsLibPath = "file:///svelte-scada/scriptTagPaths.d.ts";
 let configured = false;
 let tagPaths = new Set<string>();
 const tagPathDefaults: monaco.typescript.LanguageServiceDefaults[] = [];
+const scopeDefaults = new Map<ScriptScope, monaco.typescript.LanguageServiceDefaults>();
+const scopeTypeSources = new Map<ScriptScope, string>();
+const scopeTypeLibs = new Map<ScriptScope, monaco.IDisposable>();
+const propertyKeySignatures = new Map<ScriptScope, string>();
 
 type DefaultsConstructor = new (
   compilerOptions: monaco.typescript.CompilerOptions,
@@ -72,6 +77,7 @@ function tagPathsDeclaration(paths: Set<string>) {
     .join("\n");
 
   return `declare global {\n
+    /** Known tag paths available to tag(), tagValue(), and tagStatus(). */\n
     interface ScriptTagPaths {\n
     ${properties}\n
       }\n
@@ -110,8 +116,8 @@ function createScopedDefaults(extraLib: string) {
     monaco.typescript.javascriptDefaults.modeConfiguration,
   );
 
-  defaults.addExtraLib(extraLib, apiLibPath);
-  return defaults;
+  const lib = defaults.addExtraLib(extraLib, apiLibPath);
+  return { defaults, lib };
 }
 
 /**
@@ -194,9 +200,13 @@ function setupScopedMode(modeId: string, defaults: monaco.typescript.LanguageSer
  * @param extraLib - Ambient declaration source exposed to the mode
  * @param shareTagPaths - Whether the mode should receive tag-path completions
  */
-function createScopedLanguage(modeId: string, extraLib: string, shareTagPaths: boolean) {
+function createScopedLanguage(scope: ScriptScope, extraLib: string, shareTagPaths: boolean) {
+  const modeId = scriptScopes[scope];
   registerScopedLanguage(modeId);
-  const defaults = createScopedDefaults(extraLib);
+  const { defaults, lib } = createScopedDefaults(extraLib);
+  scopeDefaults.set(scope, defaults);
+  scopeTypeSources.set(scope, extraLib);
+  scopeTypeLibs.set(scope, lib);
   setupScopedMode(modeId, defaults);
   if (shareTagPaths) tagPathDefaults.push(defaults);
 }
@@ -273,12 +283,82 @@ export function configureMonaco() {
   if (configured) return;
   configured = true;
 
-  createScopedLanguage(scriptScopes.element, elementBindingTypes, true);
-  createScopedLanguage(scriptScopes.event, eventBindingTypes, true);
-  createScopedLanguage(scriptScopes.tag, tagBindingTypes, false);
+  createScopedLanguage("element", elementBindingTypes, true);
+  createScopedLanguage("event", eventBindingTypes, true);
+  createScopedLanguage("tag", tagBindingTypes, false);
 
   applyTagPaths();
   registerTagPathCompletions();
+}
+
+/**
+ * Builds the JSDoc block for a generated property key.
+ *
+ * @param description - Optional property description
+ * @returns JSDoc source lines, or an empty string when there is no description
+ */
+function propertyKeyDoc(description?: string) {
+  if (!description) return "";
+  const lines = description
+    .split(/\r?\n/)
+    .map((line) => `     * ${line.replace(/\*\//g, "* /")}`)
+    .join("\n");
+  return `    /**\n${lines}\n     */\n`;
+}
+
+/**
+ * Replaces a scope's open property record with the keys valid for the editor context.
+ *
+ * @param source - Base script type declaration source
+ * @param alias - Property type alias to narrow
+ * @param keys - Property keys available in the current editor context
+ * @returns Declaration source with the narrowed property type and per-key JSDoc
+ */
+function withPropertyKeys(source: string, alias: string, keys: ScriptPropertyKeyInfo[]) {
+  const interfaceName =
+    alias === "ScriptTagProperties" ? "ScriptTagPropertyKeys" : "ScriptElementPropertyKeys";
+  const members = keys
+    .map((entry) => `${propertyKeyDoc(entry.description)}    ${JSON.stringify(entry.key)}: true;`)
+    .join("\n");
+  const interfaceDeclaration = `declare global {\n  interface ${interfaceName} {\n${members}\n  }\n}\n`;
+  const replacement = `export type ${alias} = Partial<Record<keyof ${interfaceName}, ScriptPropertyValue>>;`;
+  const pattern = new RegExp(`^export type ${alias} = Record<string, ScriptPropertyValue>;$`, "m");
+  return `${source.replace(pattern, replacement)}\n${interfaceDeclaration}`;
+}
+
+/**
+ * Updates the property keys injected into a scoped script language service.
+ *
+ * @param scope - Script scope being edited
+ * @param entries - Property keys and descriptions valid for the current tag or element
+ */
+export function updateScriptPropertyKeys(
+  scope: ScriptScope,
+  entries: Iterable<ScriptPropertyKeyInfo | string>,
+) {
+  const defaults = scopeDefaults.get(scope);
+  const source = scopeTypeSources.get(scope);
+  if (!defaults || !source) return;
+
+  const normalized = new Map<string, ScriptPropertyKeyInfo>();
+  for (const entry of entries) {
+    const info = typeof entry === "string" ? { key: entry } : entry;
+    if (!info.key) continue;
+    const description = info.description?.trim();
+    const existing = normalized.get(info.key);
+    if (!existing) normalized.set(info.key, { key: info.key, description: description || undefined });
+    else if (!existing.description && description) existing.description = description;
+  }
+
+  const next = [...normalized.values()].sort((a, b) => a.key.localeCompare(b.key));
+  const signature = JSON.stringify(next);
+  if (propertyKeySignatures.get(scope) === signature) return;
+
+  propertyKeySignatures.set(scope, signature);
+  scopeTypeLibs.get(scope)?.dispose();
+
+  const alias = scope === "tag" ? "ScriptTagProperties" : "ScriptElementProperties";
+  scopeTypeLibs.set(scope, defaults.addExtraLib(withPropertyKeys(source, alias, next), apiLibPath));
 }
 
 /**
